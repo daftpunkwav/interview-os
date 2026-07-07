@@ -24,7 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         <AnimatePresence mode="wait">
           <motion.div
             key={pathname}

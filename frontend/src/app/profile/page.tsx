@@ -56,8 +56,10 @@ export default function ProfilePage() {
 
   if (!profile) {
     return (
-      <div className="p-8 flex items-center gap-2 text-[var(--muted)]">
-        <Loader2 className="animate-spin" size={18} /> 加载中...
+      <div className="p-6 lg:p-8 max-w-6xl mx-auto w-full">
+        <div className="flex items-center gap-2 text-[var(--muted)]">
+          <Loader2 className="animate-spin" size={18} /> 加载中...
+        </div>
       </div>
     );
   }
@@ -78,12 +80,7 @@ export default function ProfilePage() {
   const completionPct = Math.round((completion / 9) * 100);
 
   return (
-    <motion.div
-      className="p-6 lg:p-8 max-w-6xl mx-auto no-transition"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
-    >
+    <div className="p-6 lg:p-8 max-w-6xl mx-auto w-full">
       {/* 页头 */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div className="flex items-center gap-3">
@@ -278,7 +275,7 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
