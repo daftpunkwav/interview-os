@@ -15,24 +15,33 @@ import {
   Lightbulb,
   FolderOpen,
 } from "lucide-react";
+import { LoadError } from "@/components/LoadError";
 
 export default function ResumePage() {
   const [resumes, setResumes] = useState<Resume[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const load = () =>
-    api.listResumes().then((list) => {
-      setResumes(list);
-      setPreviewId((prev) => {
-        if (prev && list.some((r) => r.id === prev)) return prev;
-        const active = list.find((r) => r.is_active);
-        return active?.id ?? list[0]?.id ?? null;
-      });
-    }).catch(console.error);
+  const load = () => {
+    setLoading(true);
+    setLoadError("");
+    return api.listResumes()
+      .then((list) => {
+        setResumes(list);
+        setPreviewId((prev) => {
+          if (prev && list.some((r) => r.id === prev)) return prev;
+          const active = list.find((r) => r.is_active);
+          return active?.id ?? list[0]?.id ?? null;
+        });
+      })
+      .catch((e) => setLoadError(e instanceof Error ? e.message : "加载失败"))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => { load(); }, []);
 
@@ -78,6 +87,13 @@ export default function ResumePage() {
         </div>
       </div>
 
+      {loading ? (
+        <div className="flex items-center gap-2 text-[var(--muted)]">
+          <Loader2 className="animate-spin" size={18} /> 加载中...
+        </div>
+      ) : loadError ? (
+        <LoadError message={loadError} onRetry={load} />
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
         {/* 左侧：上传与列表 */}
         <div>
@@ -346,6 +362,7 @@ export default function ResumePage() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

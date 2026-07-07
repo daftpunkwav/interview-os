@@ -2,16 +2,53 @@
 
 const BASE = "/api";
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    ...options,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || `请求失败: ${res.status}`);
+/** 解析后端错误响应（兼容非 JSON 的 500/HTML 代理错误） */
+async function parseErrorResponse(res: Response): Promise<string> {
+  const text = await res.text();
+  if (!text) return `请求失败: ${res.status}`;
+
+  try {
+    const data = JSON.parse(text) as { detail?: unknown; message?: string };
+    if (typeof data.detail === "string") return data.detail;
+    if (Array.isArray(data.detail)) {
+      return data.detail
+        .map((item) => (typeof item === "object" && item && "msg" in item ? String((item as { msg: string }).msg) : String(item)))
+        .join("; ");
+    }
+    if (data.detail) return JSON.stringify(data.detail);
+    if (data.message) return data.message;
+  } catch {
+    // 非 JSON，如 Next 代理返回的 Internal Server Error
   }
-  return res.json();
+
+  if (/internal server error/i.test(text)) {
+    return "后端服务不可用，请确认 backend 已在 localhost:8000 启动";
+  }
+  return text.length > 300 ? `${text.slice(0, 300)}…` : text;
+}
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      ...options,
+    });
+  } catch {
+    throw new Error("无法连接后端服务，请确认 backend 已在 localhost:8000 启动");
+  }
+
+  if (!res.ok) {
+    throw new Error(await parseErrorResponse(res));
+  }
+
+  const text = await res.text();
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("服务器返回了无效的 JSON 响应");
+  }
 }
 
 export const api = {
@@ -28,11 +65,22 @@ export const api = {
 
   // 简历
   uploadResume: async (file: File): Promise<import("@/types").Resume> => {
-    const form = new FormData();
-    form.append("file", file);
-    const res = await fetch(`${BASE}/resume/upload`, { method: "POST", body: form });
-    if (!res.ok) throw new Error((await res.json()).detail || "上传失败");
-    return res.json();
+    let res: Response;
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      res = await fetch(`${BASE}/resume/upload`, { method: "POST", body: form });
+    } catch {
+      throw new Error("无法连接后端服务，请确认 backend 已在 localhost:8000 启动");
+    }
+    if (!res.ok) throw new Error(await parseErrorResponse(res));
+    const text = await res.text();
+    if (!text) throw new Error("服务器返回了空响应");
+    try {
+      return JSON.parse(text) as import("@/types").Resume;
+    } catch {
+      throw new Error("服务器返回了无效的 JSON 响应");
+    }
   },
   listResumes: () => request<import("@/types").Resume[]>("/resume/list"),
   activateResume: (id: number) => request<{ id: number; is_active: boolean }>(`/resume/${id}/activate`, { method: "POST" }),
@@ -51,14 +99,18 @@ export const api = {
     content: string,
     onToken: (token: string) => void,
   ): Promise<{ token_usage: number }> => {
-    const res = await fetch(`${BASE}/v1/prep/sessions/${sessionId}/message/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/v1/prep/sessions/${sessionId}/message/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+    } catch {
+      throw new Error("无法连接后端服务，请确认 backend 已在 localhost:8000 启动");
+    }
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || `请求失败: ${res.status}`);
+      throw new Error(await parseErrorResponse(res));
     }
     if (!res.body) throw new Error("流式响应不可用");
 

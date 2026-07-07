@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import type { LLMSettings } from "@/types";
 import { Save, Zap, Loader2, CheckCircle, XCircle, Settings2 } from "lucide-react";
+import { LoadError } from "@/components/LoadError";
 
 const PROVIDERS = [
   { id: "openai", name: "OpenAI", base: "https://api.openai.com/v1" },
@@ -16,13 +17,24 @@ const PROVIDERS = [
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<LLMSettings & { api_key?: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [msg, setMsg] = useState("");
 
+  const loadSettings = () => {
+    setLoading(true);
+    setLoadError("");
+    api.getLLMSettings()
+      .then((s) => setSettings({ ...s, api_key: "" }))
+      .catch((e) => setLoadError(e instanceof Error ? e.message : "加载失败"))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    api.getLLMSettings().then((s) => setSettings({ ...s, api_key: "" }));
+    loadSettings();
   }, []);
 
   const handleProviderChange = (providerId: string) => {
@@ -89,11 +101,15 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {!settings ? (
+      {loading ? (
         <div className="flex items-center gap-2 text-[var(--muted)] mt-6">
           <Loader2 className="animate-spin" size={18} /> 加载中...
         </div>
-      ) : (
+      ) : loadError ? (
+        <div className="mt-6">
+          <LoadError message={loadError} onRetry={loadSettings} />
+        </div>
+      ) : settings ? (
         <>
       <div className="space-y-4 mt-6">
         <div>
@@ -218,7 +234,7 @@ export default function SettingsPage() {
         </motion.div>
       )}
         </>
-      )}
+      ) : null}
 
       <style jsx global>{`
         .input { @apply w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-300; }

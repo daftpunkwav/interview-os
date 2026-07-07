@@ -15,6 +15,7 @@ import {
   MapPin,
   Building2,
 } from "lucide-react";
+import { LoadError } from "@/components/LoadError";
 
 /** 标签与输入框样式：标签 16px 黑色，输入 18px，包在同一边框容器内 */
 const FIELD_BOX_CLS =
@@ -27,11 +28,22 @@ const INPUT_CLS =
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
+  const loadProfile = () => {
+    setLoading(true);
+    setLoadError("");
+    api.getProfile()
+      .then(setProfile)
+      .catch((e) => setLoadError(e instanceof Error ? e.message : "加载失败"))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    api.getProfile().then(setProfile).catch(console.error);
+    loadProfile();
   }, []);
 
   const handleSave = async () => {
@@ -107,11 +119,7 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {!profile ? (
-        <div className="flex items-center gap-2 text-[var(--muted)]">
-          <Loader2 className="animate-spin" size={18} /> 加载中...
-        </div>
-      ) : (
+      {!loading && !loadError && profile && (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
           <div className="space-y-5">
           <SectionCard title="基本信息" icon={User}>
@@ -271,6 +279,16 @@ export default function ProfilePage() {
           </div>
         </div>
         </div>
+      )}
+
+      {loading && (
+        <div className="flex items-center gap-2 text-[var(--muted)]">
+          <Loader2 className="animate-spin" size={18} /> 加载中...
+        </div>
+      )}
+
+      {!loading && loadError && (
+        <LoadError message={loadError} onRetry={loadProfile} />
       )}
     </div>
   );

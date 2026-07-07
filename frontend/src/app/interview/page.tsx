@@ -16,11 +16,14 @@ import {
   Lightbulb,
   ListChecks,
 } from "lucide-react";
+import { LoadError } from "@/components/LoadError";
 
 export default function InterviewSetupPage() {
   const router = useRouter();
   const [options, setOptions] = useState<Options | null>(null);
   const [resumes, setResumes] = useState<Resume[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [creating, setCreating] = useState(false);
   const [config, setConfig] = useState<InterviewConfig>({
     role: "后端工程师",
@@ -35,15 +38,24 @@ export default function InterviewSetupPage() {
     scene_id: "meeting_room",
   });
 
+  const loadData = () => {
+    setLoading(true);
+    setLoadError("");
+    Promise.all([api.getOptions(), api.listResumes()])
+      .then(([opts, res]) => {
+        setOptions(opts);
+        setResumes(res);
+        if (res.length > 0) {
+          const active = res.find((r) => r.is_active) || res[0];
+          setConfig((c) => ({ ...c, resume_id: active.id }));
+        }
+      })
+      .catch((e) => setLoadError(e instanceof Error ? e.message : "加载失败"))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    Promise.all([api.getOptions(), api.listResumes()]).then(([opts, res]) => {
-      setOptions(opts);
-      setResumes(res);
-      if (res.length > 0) {
-        const active = res.find((r) => r.is_active) || res[0];
-        setConfig((c) => ({ ...c, resume_id: active.id }));
-      }
-    });
+    loadData();
   }, []);
 
   const selectedCompany = useMemo(
@@ -108,11 +120,13 @@ export default function InterviewSetupPage() {
         </div>
       </div>
 
-      {!options ? (
+      {loading ? (
         <div className="flex items-center gap-2 text-[var(--muted)]">
           <Loader2 className="animate-spin" size={18} /> 加载中...
         </div>
-      ) : (
+      ) : loadError ? (
+        <LoadError message={loadError} onRetry={loadData} />
+      ) : options ? (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
           {/* 左侧表单 */}
           <div className="space-y-5">
@@ -355,7 +369,7 @@ export default function InterviewSetupPage() {
             </motion.button>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

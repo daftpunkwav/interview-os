@@ -45,6 +45,8 @@ export default function PrepPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [prepError, setPrepError] = useState("");
   const [tokenUsage, setTokenUsage] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -70,16 +72,25 @@ export default function PrepPage() {
   }, [messages, scrollToBottom]);
 
   const startPrep = async () => {
-    const { id } = await api.createPrepSession({ resume_id: resumeId ?? undefined });
-    setPrepSessionId(id);
-    setMessages([
-      {
-        id: nextMsgId("a"),
-        role: "assistant",
-        content: "你好！我是你的面试准备教练。告诉我你的目标岗位，或让我帮你分析简历、出题练习。",
-      },
-    ]);
-    return id;
+    setStarting(true);
+    setPrepError("");
+    try {
+      const { id } = await api.createPrepSession({ resume_id: resumeId ?? undefined });
+      setPrepSessionId(id);
+      setMessages([
+        {
+          id: nextMsgId("a"),
+          role: "assistant",
+          content: "你好！我是你的面试准备教练。告诉我你的目标岗位，或让我帮你分析简历、出题练习。",
+        },
+      ]);
+      return id;
+    } catch (e) {
+      setPrepError(e instanceof Error ? e.message : "创建辅导会话失败");
+      return null;
+    } finally {
+      setStarting(false);
+    }
   };
 
   const sendMessage = async (text: string, sessionId?: number) => {
@@ -130,6 +141,7 @@ export default function PrepPage() {
   const handleQuickPrompt = async (prompt: string) => {
     if (!prepSessionId) {
       const id = await startPrep();
+      if (!id) return;
       await sendMessage(prompt, id);
       return;
     }
@@ -185,14 +197,21 @@ export default function PrepPage() {
                   </p>
                 )}
 
+                {prepError && (
+                  <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-center">
+                    {prepError}
+                  </p>
+                )}
+
                 <motion.button
                   onClick={startPrep}
-                  className="w-full px-6 py-3 rounded-xl bg-brand-600 text-white text-sm font-medium shadow-lg shadow-brand-500/25 flex items-center justify-center gap-2"
-                  whileHover={{ scale: 1.02, y: -1 }}
-                  whileTap={{ scale: 0.98 }}
+                  disabled={starting}
+                  className="w-full px-6 py-3 rounded-xl bg-brand-600 text-white text-sm font-medium shadow-lg shadow-brand-500/25 flex items-center justify-center gap-2 disabled:opacity-60"
+                  whileHover={{ scale: starting ? 1 : 1.02, y: starting ? 0 : -1 }}
+                  whileTap={{ scale: starting ? 1 : 0.98 }}
                 >
-                  <Sparkles size={16} />
-                  开始辅导
+                  {starting ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
+                  {starting ? "正在连接…" : "开始辅导"}
                 </motion.button>
               </div>
             </div>
