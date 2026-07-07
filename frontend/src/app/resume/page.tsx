@@ -4,8 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import type { Resume } from "@/types";
-import { Upload, FileText, Loader2, CheckCircle, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
-import { FadeInView, StaggerContainer, StaggerItem } from "@/components/effects";
+import { Upload, FileText, Loader2, CheckCircle, Sparkles, ChevronDown } from "lucide-react";
 
 export default function ResumePage() {
   const [resumes, setResumes] = useState<Resume[]>([]);
@@ -35,22 +34,19 @@ export default function ResumePage() {
 
   return (
     <div className="p-8 max-w-3xl">
-      <FadeInView>
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-            <FileText className="text-white" size={20} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">简历管理</h1>
-            <p className="text-sm text-[var(--muted)]">
-              支持 PDF、Word、Markdown 格式。AI 将自动解析为职业知识档案。
-            </p>
-          </div>
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+          <FileText className="text-white" size={20} />
         </div>
-      </FadeInView>
+        <div>
+          <h1 className="text-2xl font-bold">简历管理</h1>
+          <p className="text-sm text-[var(--muted)]">
+            支持 PDF、Word、Markdown 格式。AI 将自动解析为职业知识档案。
+          </p>
+        </div>
+      </div>
 
-      <FadeInView delay={0.1}>
-        <motion.div
+      <motion.div
           onClick={() => inputRef.current?.click()}
           className="border-2 border-dashed border-[var(--border)] rounded-xl p-8 text-center cursor-pointer hover:border-brand-400 hover:bg-brand-50/30 transition-colors mb-6 mt-6"
           whileHover={{ scale: 1.01 }}
@@ -71,9 +67,8 @@ export default function ResumePage() {
             {uploading ? "正在解析简历..." : "点击上传简历"}
           </p>
           <p className="text-xs text-[var(--muted)] mt-1">PDF · DOCX · MD · TXT</p>
-          <input ref={inputRef} type="file" accept=".pdf,.docx,.doc,.md,.txt" className="hidden" onChange={handleUpload} />
-        </motion.div>
-      </FadeInView>
+        <input ref={inputRef} type="file" accept=".pdf,.docx,.doc,.md,.txt" className="hidden" onChange={handleUpload} />
+      </motion.div>
 
       {error && (
         <motion.p
@@ -85,13 +80,13 @@ export default function ResumePage() {
         </motion.p>
       )}
 
-      <StaggerContainer className="space-y-3">
+      <div className="space-y-3">
         {resumes.map((r) => (
-          <StaggerItem key={r.id}>
-            <motion.div
-              className={`border rounded-xl bg-[var(--card)] overflow-hidden ${r.is_active ? "border-brand-500" : "border-[var(--border)]"}`}
-              layout
-            >
+          <motion.div
+            key={r.id}
+            className={`border rounded-xl bg-[var(--card)] overflow-hidden ${r.is_active ? "border-brand-500" : "border-[var(--border)]"}`}
+            layout
+          >
               {/* 头部 */}
               <div
                 className="p-4 flex items-center justify-between cursor-pointer"
@@ -105,14 +100,9 @@ export default function ResumePage() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{r.filename}</span>
                       {r.is_active && (
-                        <motion.span
-                          className="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-medium"
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          transition={{ type: "spring" }}
-                        >
+                        <span className="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-medium">
                           投递简历
-                        </motion.span>
+                        </span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-[var(--muted)] mt-0.5">
@@ -210,18 +200,13 @@ export default function ResumePage() {
                 )}
               </AnimatePresence>
             </motion.div>
-          </StaggerItem>
         ))}
         {resumes.length === 0 && (
-          <motion.p
-            className="text-sm text-[var(--muted)] text-center py-8"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          >
+          <p className="text-sm text-[var(--muted)] text-center py-8">
             暂无简历，请上传一份
-          </motion.p>
+          </p>
         )}
-      </StaggerContainer>
+      </div>
     </div>
   );
 }

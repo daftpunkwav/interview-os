@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import type { Resume } from "@/types";
 import { Send, Loader2, BookOpen, Sparkles, User, Bot } from "lucide-react";
-import { FadeInView, StaggerContainer, StaggerItem } from "@/components/effects";
 
 export default function PrepPage() {
   const [resumes, setResumes] = useState<Resume[]>([]);
@@ -52,21 +51,18 @@ export default function PrepPage() {
 
   return (
     <div className="p-8 max-w-3xl h-full flex flex-col">
-      <FadeInView>
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-            <BookOpen className="text-white" size={20} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">面试准备</h1>
-            <p className="text-sm text-[var(--muted)]">ReAct 辅导 Agent — 简历分析、面经搜索、主动出题</p>
-          </div>
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+          <BookOpen className="text-white" size={20} />
         </div>
-      </FadeInView>
+        <div>
+          <h1 className="text-2xl font-bold">面试准备</h1>
+          <p className="text-sm text-[var(--muted)]">ReAct 辅导 Agent — 简历分析、面经搜索、主动出题</p>
+        </div>
+      </div>
 
       {!prepSessionId ? (
-        <FadeInView className="mt-6">
-          <div className="space-y-4">
+        <div className="mt-6 space-y-4">
             {resumes.length > 0 && (
               <div>
                 <label className="block text-sm font-medium mb-2">选择简历</label>
@@ -88,10 +84,9 @@ export default function PrepPage() {
               whileTap={{ scale: 0.98 }}
             >
               <Sparkles size={16} />
-              开始辅导
-            </motion.button>
-          </div>
-        </FadeInView>
+            开始辅导
+          </motion.button>
+        </div>
       ) : (
         <>
           <div className="text-xs text-[var(--muted)] mb-2">Token 约：{tokenUsage}</div>

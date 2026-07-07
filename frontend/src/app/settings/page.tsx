@@ -5,7 +5,6 @@ import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import type { LLMSettings } from "@/types";
 import { Save, Zap, Loader2, CheckCircle, XCircle, Settings2 } from "lucide-react";
-import { FadeInView, StaggerContainer, StaggerItem } from "@/components/effects";
 
 const PROVIDERS = [
   { id: "openai", name: "OpenAI", base: "https://api.openai.com/v1" },
@@ -76,33 +75,28 @@ export default function SettingsPage() {
     }
   };
 
-  if (!settings) {
-    return (
-      <div className="p-8 flex items-center gap-2 text-[var(--muted)]">
-        <Loader2 className="animate-spin" size={18} /> 加载中...
-      </div>
-    );
-  }
-
   return (
     <div className="p-8 max-w-2xl">
-      <FadeInView>
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center">
-            <Settings2 className="text-white" size={20} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">BYOK 设置</h1>
-            <p className="text-sm text-[var(--muted)]">
-              Bring Your Own Key — 使用你自己的 LLM API，数据完全本地存储。
-            </p>
-          </div>
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center">
+          <Settings2 className="text-white" size={20} />
         </div>
-      </FadeInView>
+        <div>
+          <h1 className="text-2xl font-bold">BYOK 设置</h1>
+          <p className="text-sm text-[var(--muted)]">
+            Bring Your Own Key — 使用你自己的 LLM API，数据完全本地存储。
+          </p>
+        </div>
+      </div>
 
-      <StaggerContainer className="space-y-4 mt-6">
-        <StaggerItem>
-          <div>
+      {!settings ? (
+        <div className="flex items-center gap-2 text-[var(--muted)] mt-6">
+          <Loader2 className="animate-spin" size={18} /> 加载中...
+        </div>
+      ) : (
+        <>
+      <div className="space-y-4 mt-6">
+        <div>
             <label className="block text-sm font-medium mb-2">服务商</label>
             <div className="flex flex-wrap gap-2">
               {PROVIDERS.map((p) => (
@@ -122,33 +116,23 @@ export default function SettingsPage() {
               ))}
             </div>
           </div>
-        </StaggerItem>
 
-        <StaggerItem>
-          <Field label="API Base URL" value={settings.api_base} onChange={(v) => setSettings({ ...settings, api_base: v })} />
-        </StaggerItem>
-        <StaggerItem>
-          <Field
+        <Field label="API Base URL" value={settings.api_base} onChange={(v) => setSettings({ ...settings, api_base: v })} />
+        <Field
             label="API Key"
             value={settings.api_key || ""}
             onChange={(v) => setSettings({ ...settings, api_key: v })}
             type="password"
             placeholder={settings.has_api_key ? "已配置（留空保持不变）" : "输入 API Key"}
-          />
-        </StaggerItem>
-        <StaggerItem>
-          <Field label="模型名称" value={settings.model} onChange={(v) => setSettings({ ...settings, model: v })} />
-        </StaggerItem>
+        />
+        <Field label="模型名称" value={settings.model} onChange={(v) => setSettings({ ...settings, model: v })} />
 
-        <StaggerItem>
-          <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4">
             <Field label="Max Tokens" value={String(settings.max_tokens)} onChange={(v) => setSettings({ ...settings, max_tokens: Number(v) })} />
             <Field label="上下文窗口" value={String(settings.context_window)} onChange={(v) => setSettings({ ...settings, context_window: Number(v) })} />
-          </div>
-        </StaggerItem>
+        </div>
 
-        <StaggerItem>
-          <div>
+        <div>
             <label className="block text-sm font-medium mb-1.5">API 协议</label>
             <select
               className="input"
@@ -160,10 +144,8 @@ export default function SettingsPage() {
               <option value="anthropic_messages">Anthropic Messages</option>
             </select>
           </div>
-        </StaggerItem>
 
-        <StaggerItem>
-          <div>
+        <div>
             <label className="block text-sm font-medium mb-1.5">思考等级 (reasoning_effort)</label>
             <select
               className="input"
@@ -175,30 +157,25 @@ export default function SettingsPage() {
               <option value="high">高</option>
             </select>
           </div>
-        </StaggerItem>
 
-        <StaggerItem>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Whisper 模型" value={settings.stt_model || "base"} onChange={(v) => setSettings({ ...settings, stt_model: v })} />
-            <Field label="Edge TTS 音色" value={settings.tts_voice || "zh-CN-XiaoxiaoNeural"} onChange={(v) => setSettings({ ...settings, tts_voice: v })} />
-          </div>
-        </StaggerItem>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Whisper 模型" value={settings.stt_model || "base"} onChange={(v) => setSettings({ ...settings, stt_model: v })} />
+          <Field label="Edge TTS 音色" value={settings.tts_voice || "zh-CN-XiaoxiaoNeural"} onChange={(v) => setSettings({ ...settings, tts_voice: v })} />
+        </div>
 
-        <StaggerItem>
-          <div className="flex gap-6 text-sm">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={settings.supports_vision ?? true} onChange={(e) => setSettings({ ...settings, supports_vision: e.target.checked })} />
-              支持视觉多模态
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={settings.supports_audio ?? false} onChange={(e) => setSettings({ ...settings, supports_audio: e.target.checked })} />
-              支持音频多模态
-            </label>
-          </div>
-        </StaggerItem>
-      </StaggerContainer>
+        <div className="flex gap-6 text-sm">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={settings.supports_vision ?? true} onChange={(e) => setSettings({ ...settings, supports_vision: e.target.checked })} />
+            支持视觉多模态
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={settings.supports_audio ?? false} onChange={(e) => setSettings({ ...settings, supports_audio: e.target.checked })} />
+            支持音频多模态
+          </label>
+        </div>
+      </div>
 
-      <FadeInView delay={0.3} className="mt-6 flex items-center gap-3">
+      <div className="mt-6 flex items-center gap-3">
         <motion.button
           onClick={handleSave}
           disabled={saving}
@@ -228,7 +205,7 @@ export default function SettingsPage() {
             {msg}
           </motion.span>
         )}
-      </FadeInView>
+      </div>
 
       {testResult && (
         <motion.div
@@ -239,6 +216,8 @@ export default function SettingsPage() {
           {testResult.success ? <CheckCircle size={16} className="mt-0.5" /> : <XCircle size={16} className="mt-0.5" />}
           <span>{testResult.message}</span>
         </motion.div>
+      )}
+        </>
       )}
 
       <style jsx global>{`

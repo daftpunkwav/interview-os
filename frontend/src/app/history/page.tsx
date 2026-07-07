@@ -6,7 +6,6 @@ import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import type { InterviewSession } from "@/types";
 import { Loader2, ExternalLink, BarChart3, Clock, CheckCircle2, Circle } from "lucide-react";
-import { FadeInView, StaggerContainer, StaggerItem } from "@/components/effects";
 
 export default function HistoryPage() {
   const [sessions, setSessions] = useState<InterviewSession[]>([]);
@@ -16,32 +15,27 @@ export default function HistoryPage() {
     api.listSessions().then(setSessions).finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
-    return (
-      <div className="p-8 flex items-center gap-2 text-[var(--muted)]">
-        <Loader2 className="animate-spin" size={18} /> 加载中...
-      </div>
-    );
-  }
-
   return (
     <div className="p-8 max-w-3xl">
-      <FadeInView>
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-            <BarChart3 className="text-white" size={20} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">面试记录</h1>
-            <p className="text-sm text-[var(--muted)]">回顾你的每一次模拟面试</p>
-          </div>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+          <BarChart3 className="text-white" size={20} />
         </div>
-      </FadeInView>
+        <div>
+          <h1 className="text-2xl font-bold">面试记录</h1>
+          <p className="text-sm text-[var(--muted)]">回顾你的每一次模拟面试</p>
+        </div>
+      </div>
 
-      <StaggerContainer className="space-y-3">
-        {sessions.map((s) => (
-          <StaggerItem key={s.id}>
+      {loading ? (
+        <div className="flex items-center gap-2 text-[var(--muted)]">
+          <Loader2 className="animate-spin" size={18} /> 加载中...
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {sessions.map((s) => (
             <motion.div
+              key={s.id}
               className="border border-[var(--border)] rounded-xl p-4 bg-[var(--card)] flex items-center justify-between group"
               whileHover={{ y: -2, scale: 1.005 }}
               transition={{ duration: 0.2 }}
@@ -57,14 +51,7 @@ export default function HistoryPage() {
               </div>
               <div className="flex items-center gap-3">
                 {s.overall_score != null && (
-                  <motion.span
-                    className="text-2xl font-bold text-brand-600"
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 300 }}
-                  >
-                    {s.overall_score}
-                  </motion.span>
+                  <span className="text-2xl font-bold text-brand-600">{s.overall_score}</span>
                 )}
                 {s.status === "completed" ? (
                   <Link href={`/report/${s.id}`} className="text-brand-600 hover:text-brand-700 text-sm flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -77,18 +64,14 @@ export default function HistoryPage() {
                 ) : null}
               </div>
             </motion.div>
-          </StaggerItem>
-        ))}
-        {sessions.length === 0 && (
-          <motion.p
-            className="text-center text-[var(--muted)] py-12"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          >
-            暂无面试记录，开始你的第一次模拟面试吧
-          </motion.p>
-        )}
-      </StaggerContainer>
+          ))}
+          {sessions.length === 0 && (
+            <p className="text-center text-[var(--muted)] py-12">
+              暂无面试记录，开始你的第一次模拟面试吧
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

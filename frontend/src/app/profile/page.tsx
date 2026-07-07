@@ -54,46 +54,37 @@ export default function ProfilePage() {
     setProfile({ ...profile, tech_domains: [...profile.tech_domains, ""] });
   };
 
-  if (!profile) {
-    return (
-      <div className="p-6 lg:p-8 max-w-6xl mx-auto w-full">
-        <div className="flex items-center gap-2 text-[var(--muted)]">
-          <Loader2 className="animate-spin" size={18} /> 加载中...
-        </div>
-      </div>
-    );
-  }
-
-  const filledDomains = profile.tech_domains.filter((d) => d.trim());
-  const completion = [
-    profile.name,
-    profile.gender,
-    profile.identity,
-    profile.school,
-    profile.major,
-    profile.job_direction,
-    profile.target_role,
-    profile.self_intro,
-    filledDomains.length > 0 ? "ok" : "",
-  ].filter(Boolean).length;
-
+  const filledDomains = profile?.tech_domains.filter((d) => d.trim()) ?? [];
+  const completion = profile
+    ? [
+        profile.name,
+        profile.gender,
+        profile.identity,
+        profile.school,
+        profile.major,
+        profile.job_direction,
+        profile.target_role,
+        profile.self_intro,
+        filledDomains.length > 0 ? "ok" : "",
+      ].filter(Boolean).length
+    : 0;
   const completionPct = Math.round((completion / 9) * 100);
 
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto w-full">
-      {/* 页头 */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <User className="text-white" size={22} />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">个人档案</h1>
-              <p className="text-sm text-[var(--muted)]">
-                本地存储，无需注册。信息用于个性化面试问题生成。
-              </p>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <User className="text-white" size={22} />
           </div>
+          <div>
+            <h1 className="text-2xl font-bold">个人档案</h1>
+            <p className="text-sm text-[var(--muted)]">
+              本地存储，无需注册。信息用于个性化面试问题生成。
+            </p>
+          </div>
+        </div>
+        {profile && (
           <div className="flex items-center gap-3">
             {msg && (
               <motion.span
@@ -104,20 +95,25 @@ export default function ProfilePage() {
                 {msg}
               </motion.span>
             )}
-            <motion.button
+            <button
               onClick={handleSave}
               disabled={saving}
               className="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2 shrink-0"
             >
               {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
               保存档案
-            </motion.button>
+            </button>
           </div>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
-        {/* 左侧表单 */}
-        <div className="space-y-5">
+      {!profile ? (
+        <div className="flex items-center gap-2 text-[var(--muted)]">
+          <Loader2 className="animate-spin" size={18} /> 加载中...
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
+          <div className="space-y-5">
           <SectionCard title="基本信息" icon={User}>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="姓名" value={profile.name} onChange={(v) => setProfile({ ...profile, name: v })} />
@@ -201,7 +197,7 @@ export default function ProfilePage() {
                 </div>
               </div>
             </SectionCard>
-        </div>
+          </div>
 
         {/* 右侧预览 */}
         <div className="lg:sticky lg:top-6 space-y-4">
@@ -274,7 +270,8 @@ export default function ProfilePage() {
             </p>
           </div>
         </div>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

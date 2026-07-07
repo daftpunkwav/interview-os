@@ -6,7 +6,6 @@ import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import type { Options, Resume, InterviewConfig } from "@/types";
 import { Play, Loader2, Sparkles } from "lucide-react";
-import { FadeInView, StaggerContainer, StaggerItem, MagneticButton } from "@/components/effects";
 
 export default function InterviewSetupPage() {
   const router = useRouter();
@@ -49,169 +48,148 @@ export default function InterviewSetupPage() {
     }
   };
 
-  if (!options) {
-    return (
-      <div className="p-8 flex items-center gap-2 text-[var(--muted)]">
-        <Loader2 className="animate-spin" size={18} /> 加载中...
-      </div>
-    );
-  }
-
   return (
     <div className="p-8 max-w-3xl">
-      <FadeInView>
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center">
-            <Sparkles className="text-white" size={20} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">配置模拟面试</h1>
-            <p className="text-sm text-[var(--muted)]">定制你的专属面试体验</p>
-          </div>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center">
+          <Sparkles className="text-white" size={20} />
         </div>
-      </FadeInView>
+        <div>
+          <h1 className="text-2xl font-bold">配置模拟面试</h1>
+          <p className="text-sm text-[var(--muted)]">定制你的专属面试体验</p>
+        </div>
+      </div>
 
-      <StaggerContainer className="space-y-5">
-        <StaggerItem>
-          <Select label="目标岗位" value={config.role} options={options.roles} onChange={(v) => setConfig({ ...config, role: v })} />
-        </StaggerItem>
-        <StaggerItem>
-          <Select label="职级" value={config.level} options={options.levels} onChange={(v) => setConfig({ ...config, level: v })} />
-        </StaggerItem>
+      {!options ? (
+        <div className="flex items-center gap-2 text-[var(--muted)]">
+          <Loader2 className="animate-spin" size={18} /> 加载中...
+        </div>
+      ) : (
+        <>
+          <div className="space-y-5">
+            <Select label="目标岗位" value={config.role} options={options.roles} onChange={(v) => setConfig({ ...config, role: v })} />
+            <Select label="职级" value={config.level} options={options.levels} onChange={(v) => setConfig({ ...config, level: v })} />
 
-        <StaggerItem>
-          <div>
-            <label className="block text-sm font-medium mb-2">目标公司</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {options.companies.map((c) => (
-                <motion.button
-                  key={c.id}
-                  onClick={() => setConfig({ ...config, company: c.id })}
-                  className={`p-3 rounded-xl border text-left text-sm transition-all ${
-                    config.company === c.id
-                      ? "border-brand-500 bg-brand-50 shadow-sm shadow-brand-500/10"
-                      : "border-[var(--border)] hover:border-brand-300 hover:shadow-sm"
-                  }`}
-                  whileHover={{ y: -2, scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <span className="font-medium">{c.name}</span>
-                  <p className="text-xs text-[var(--muted)] mt-0.5 line-clamp-2">{c.style}</p>
-                </motion.button>
-              ))}
+            <div>
+              <label className="block text-sm font-medium mb-2">目标公司</label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {options.companies.map((c) => (
+                  <motion.button
+                    key={c.id}
+                    onClick={() => setConfig({ ...config, company: c.id })}
+                    className={`p-3 rounded-xl border text-left text-sm transition-all ${
+                      config.company === c.id
+                        ? "border-brand-500 bg-brand-50 shadow-sm shadow-brand-500/10"
+                        : "border-[var(--border)] hover:border-brand-300 hover:shadow-sm"
+                    }`}
+                    whileHover={{ y: -2, scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <span className="font-medium">{c.name}</span>
+                    <p className="text-xs text-[var(--muted)] mt-0.5 line-clamp-2">{c.style}</p>
+                  </motion.button>
+                ))}
+              </div>
             </div>
-          </div>
-        </StaggerItem>
 
-        <StaggerItem>
-          <Select
-            label="面试类型"
-            value={config.workflow_type}
-            options={options.workflow_types.map((w) => w.id)}
-            labels={options.workflow_types.map((w) => w.name)}
-            onChange={(v) => setConfig({ ...config, workflow_type: v })}
-          />
-        </StaggerItem>
+            <Select
+              label="面试类型"
+              value={config.workflow_type}
+              options={options.workflow_types.map((w) => w.id)}
+              labels={options.workflow_types.map((w) => w.name)}
+              onChange={(v) => setConfig({ ...config, workflow_type: v })}
+            />
 
-        <StaggerItem>
-          <div>
-            <label className="block text-sm font-medium mb-2">面试官性格</label>
-            <div className="flex flex-wrap gap-2">
-              {options.personalities.map((p) => (
-                <motion.button
-                  key={p.id}
-                  onClick={() => setConfig({ ...config, personality: p.id })}
-                  className={`px-3 py-1.5 rounded-lg text-sm border transition-all ${
-                    config.personality === p.id
-                      ? "border-brand-500 bg-brand-50 text-brand-700 shadow-sm"
-                      : "border-[var(--border)] hover:border-brand-300"
-                  }`}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  {p.name}
-                </motion.button>
-              ))}
+            <div>
+              <label className="block text-sm font-medium mb-2">面试官性格</label>
+              <div className="flex flex-wrap gap-2">
+                {options.personalities.map((p) => (
+                  <motion.button
+                    key={p.id}
+                    onClick={() => setConfig({ ...config, personality: p.id })}
+                    className={`px-3 py-1.5 rounded-lg text-sm border transition-all ${
+                      config.personality === p.id
+                        ? "border-brand-500 bg-brand-50 text-brand-700 shadow-sm"
+                        : "border-[var(--border)] hover:border-brand-300"
+                    }`}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    {p.name}
+                  </motion.button>
+                ))}
+              </div>
             </div>
-          </div>
-        </StaggerItem>
 
-        <StaggerItem>
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              严厉程度：{config.strictness}/10
-            </label>
-            <input
-              type="range"
-              min={1}
-              max={10}
-              value={config.strictness}
-              onChange={(e) => setConfig({ ...config, strictness: Number(e.target.value) })}
-              className="w-full accent-brand-600"
-            />
-            <div className="flex justify-between text-xs text-[var(--muted)] mt-1">
-              <span>友好</span><span>正常</span><span>高压</span><span>极限</span>
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                严厉程度：{config.strictness}/10
+              </label>
+              <input
+                type="range"
+                min={1}
+                max={10}
+                value={config.strictness}
+                onChange={(e) => setConfig({ ...config, strictness: Number(e.target.value) })}
+                className="w-full accent-brand-600"
+              />
+              <div className="flex justify-between text-xs text-[var(--muted)] mt-1">
+                <span>友好</span><span>正常</span><span>高压</span><span>极限</span>
+              </div>
             </div>
+
+            <Select
+              label="面试风格"
+              value={config.interview_style}
+              options={options.interview_styles.map((s) => s.id)}
+              labels={options.interview_styles.map((s) => s.name)}
+              onChange={(v) => setConfig({ ...config, interview_style: v })}
+            />
+
+            {options.avatars && options.avatars.length > 0 && (
+              <Select
+                label="面试官形象"
+                value={config.avatar_id || "professional_male"}
+                options={options.avatars.map((a) => a.id)}
+                labels={options.avatars.map((a) => a.name)}
+                onChange={(v) => setConfig({ ...config, avatar_id: v })}
+              />
+            )}
+
+            {options.scenes && options.scenes.length > 0 && (
+              <Select
+                label="面试场景"
+                value={config.scene_id || "meeting_room"}
+                options={options.scenes.map((s) => s.id)}
+                labels={options.scenes.map((s) => s.name)}
+                onChange={(v) => setConfig({ ...config, scene_id: v })}
+              />
+            )}
+
+            {resumes.length > 0 && (
+              <Select
+                label="关联简历"
+                value={String(config.resume_id)}
+                options={resumes.map((r) => String(r.id))}
+                labels={resumes.map((r) => r.filename)}
+                onChange={(v) => setConfig({ ...config, resume_id: Number(v) })}
+              />
+            )}
           </div>
-        </StaggerItem>
 
-        <StaggerItem>
-          <Select
-            label="面试风格"
-            value={config.interview_style}
-            options={options.interview_styles.map((s) => s.id)}
-            labels={options.interview_styles.map((s) => s.name)}
-            onChange={(v) => setConfig({ ...config, interview_style: v })}
-          />
-        </StaggerItem>
-
-        {options.avatars && options.avatars.length > 0 && (
-          <StaggerItem>
-            <Select
-              label="面试官形象"
-              value={config.avatar_id || "professional_male"}
-              options={options.avatars.map((a) => a.id)}
-              labels={options.avatars.map((a) => a.name)}
-              onChange={(v) => setConfig({ ...config, avatar_id: v })}
-            />
-          </StaggerItem>
-        )}
-
-        {options.scenes && options.scenes.length > 0 && (
-          <StaggerItem>
-            <Select
-              label="面试场景"
-              value={config.scene_id || "meeting_room"}
-              options={options.scenes.map((s) => s.id)}
-              labels={options.scenes.map((s) => s.name)}
-              onChange={(v) => setConfig({ ...config, scene_id: v })}
-            />
-          </StaggerItem>
-        )}
-
-        {resumes.length > 0 && (
-          <StaggerItem>
-            <Select
-              label="关联简历"
-              value={String(config.resume_id)}
-              options={resumes.map((r) => String(r.id))}
-              labels={resumes.map((r) => r.filename)}
-              onChange={(v) => setConfig({ ...config, resume_id: Number(v) })}
-            />
-          </StaggerItem>
-        )}
-      </StaggerContainer>
-
-      <FadeInView delay={0.3} className="mt-8">
-        <MagneticButton
-          className="w-full sm:w-auto px-8 py-3 bg-brand-600 text-white rounded-xl font-medium shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 transition-shadow flex items-center justify-center gap-2"
-          strength={0.15}
-          onClick={handleStart}
-        >
-          {creating ? <Loader2 className="animate-spin" size={20} /> : <Play size={20} />}
-          开始模拟面试
-        </MagneticButton>
-      </FadeInView>
+          <motion.button
+            type="button"
+            className="mt-8 w-full sm:w-auto px-8 py-3 bg-brand-600 text-white rounded-xl font-medium shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 transition-shadow flex items-center justify-center gap-2"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={handleStart}
+            disabled={creating}
+          >
+            {creating ? <Loader2 className="animate-spin" size={20} /> : <Play size={20} />}
+            开始模拟面试
+          </motion.button>
+        </>
+      )}
     </div>
   );
 }
