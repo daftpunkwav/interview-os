@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import type { Resume } from "@/types";
-import { MarkdownContent } from "@/components/MarkdownContent";
+import { StreamingReveal } from "@/components/StreamingReveal";
 import {
   Send,
   Loader2,
@@ -48,6 +48,7 @@ export default function PrepPage() {
   const [starting, setStarting] = useState(false);
   const [prepError, setPrepError] = useState("");
   const [tokenUsage, setTokenUsage] = useState(0);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -64,6 +65,11 @@ export default function PrepPage() {
   );
 
   const scrollToBottom = useCallback(() => {
+    const el = chatScrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
@@ -149,8 +155,8 @@ export default function PrepPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 max-w-6xl mx-auto w-full flex flex-col min-h-[calc(100vh-1px)]">
-      <div className="flex items-center gap-3 mb-6 shrink-0">
+    <div className="p-6 lg:p-8 max-w-6xl mx-auto w-full h-full flex flex-col min-h-0 overflow-hidden">
+      <div className="flex items-center gap-3 mb-4 shrink-0">
         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
           <BookOpen className="text-white" size={20} />
         </div>
@@ -160,11 +166,11 @@ export default function PrepPage() {
         </div>
       </div>
 
-      <div className="grid flex-1 grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-stretch min-h-0">
+      <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 overflow-hidden">
         {/* 左侧：对话主区 */}
-        <div className="flex flex-col min-h-[calc(100vh-11rem)] lg:min-h-0">
+        <div className="flex flex-col min-h-0 overflow-hidden">
           {!prepSessionId ? (
-            <div className="flex-1 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-8 flex flex-col justify-center min-h-[calc(100vh-14rem)]">
+            <div className="flex-1 min-h-0 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-8 flex flex-col justify-center overflow-hidden">
               <div className="max-w-md mx-auto w-full space-y-5">
                 <div className="text-center">
                   <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mx-auto mb-4">
@@ -221,7 +227,10 @@ export default function PrepPage() {
                 <span>辅导进行中 · {messages.length} 条消息</span>
                 <span>Token 约 {tokenUsage}</span>
               </div>
-              <div className="flex-1 overflow-y-auto border border-[var(--border)] rounded-xl p-4 space-y-4 mb-4 bg-[var(--card)] min-h-0">
+              <div
+                ref={chatScrollRef}
+                className="flex-1 min-h-0 overflow-y-auto border border-[var(--border)] rounded-xl p-4 space-y-4 mb-3 bg-[var(--card)]"
+              >
                 {messages.map((m) => (
                   <div
                     key={m.id}
@@ -247,16 +256,7 @@ export default function PrepPage() {
                     >
                       {m.role === "assistant" ? (
                         m.content ? (
-                          <>
-                            {m.streaming ? (
-                              <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
-                            ) : (
-                              <MarkdownContent content={m.content} />
-                            )}
-                            {m.streaming && (
-                              <span className="inline-block w-1.5 h-4 ml-0.5 bg-brand-500 animate-pulse align-middle rounded-sm" />
-                            )}
-                          </>
+                          <StreamingReveal content={m.content} streaming={!!m.streaming} />
                         ) : m.streaming ? (
                           <span className="flex items-center gap-2 text-[var(--muted)]">
                             <Loader2 className="animate-spin" size={14} />
@@ -295,7 +295,7 @@ export default function PrepPage() {
         </div>
 
         {/* 右侧：上下文与快捷操作 */}
-        <div className="flex flex-col gap-4 lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
+        <div className="hidden lg:flex flex-col gap-4 min-h-0 overflow-y-auto pr-0.5">
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
             <h2 className="font-semibold text-sm mb-3 flex items-center gap-2">
               <FileText size={16} className="text-brand-600" />
