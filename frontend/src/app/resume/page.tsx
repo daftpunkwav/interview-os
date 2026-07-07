@@ -57,11 +57,36 @@ export default function ResumePage() {
 
       <div className="space-y-3">
         {resumes.map((r) => (
-          <div key={r.id} className="border border-[var(--border)] rounded-xl p-4 bg-[var(--card)]">
+          <div key={r.id} className={`border rounded-xl p-4 bg-[var(--card)] ${r.is_active ? "border-brand-500" : "border-[var(--border)]"}`}>
             <div className="flex items-center gap-2 mb-3">
               <FileText size={18} className="text-brand-600" />
               <span className="font-medium">{r.filename}</span>
+              {r.is_active && <span className="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded">投递简历</span>}
+              {r.score != null && <span className="text-xs text-[var(--muted)]">评分 {r.score}</span>}
               <span className="text-xs text-[var(--muted)] ml-auto">{r.file_type.toUpperCase()}</span>
+            </div>
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={async () => { await api.activateResume(r.id); await load(); }}
+                className="text-xs px-3 py-1 rounded-lg border border-[var(--border)] hover:bg-brand-50"
+              >
+                设为投递
+              </button>
+              <button
+                onClick={async () => {
+                  setError("");
+                  try {
+                    const data = await api.analyzeResume(r.id);
+                    await load();
+                    alert(`评分：${data.score}\n预测问题：\n${data.predicted_questions?.join("\n") || "—"}`);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "分析失败");
+                  }
+                }}
+                className="text-xs px-3 py-1 rounded-lg bg-brand-600 text-white"
+              >
+                AI 分析
+              </button>
             </div>
             <div className="text-sm space-y-2">
               {r.parsed_profile.name && (

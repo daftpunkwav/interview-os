@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    # 语音
+    whisper_model: str = "base"
+    tts_voice: str = "zh-CN-XiaoxiaoNeural"
+    silence_nudge_seconds: int = 10
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

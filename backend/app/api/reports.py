@@ -1,7 +1,6 @@
 """面试报告 API。"""
 
 import json
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -11,6 +10,21 @@ from app.models import GrowthRecord, InterviewSession
 from app.schemas import InterviewReport, InterviewReportResponse
 
 router = APIRouter()
+
+
+@router.get("/growth/history")
+def get_growth_history(db: Session = Depends(get_db)):
+    records = db.query(GrowthRecord).order_by(GrowthRecord.created_at.desc()).limit(20).all()
+    return [
+        {
+            "id": r.id,
+            "session_id": r.session_id,
+            "weak_skills": json.loads(r.weak_skills),
+            "training_plan": json.loads(r.training_plan),
+            "created_at": r.created_at,
+        }
+        for r in records
+    ]
 
 
 @router.get("/{session_id}", response_model=InterviewReportResponse)
@@ -36,18 +50,3 @@ def get_report(session_id: int, db: Session = Depends(get_db)):
         messages_count=len([m for m in messages if m["role"] in ("user", "assistant")]),
         duration_minutes=duration,
     )
-
-
-@router.get("/growth/history")
-def get_growth_history(db: Session = Depends(get_db)):
-    records = db.query(GrowthRecord).order_by(GrowthRecord.created_at.desc()).limit(20).all()
-    return [
-        {
-            "id": r.id,
-            "session_id": r.session_id,
-            "weak_skills": json.loads(r.weak_skills),
-            "training_plan": json.loads(r.training_plan),
-            "created_at": r.created_at,
-        }
-        for r in records
-    ]

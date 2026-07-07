@@ -51,9 +51,20 @@ export default function ProfilePage() {
 
       <div className="space-y-4">
         <Field label="姓名" value={profile.name} onChange={(v) => setProfile({ ...profile, name: v })} />
+        <Field label="性别" value={profile.gender || ""} onChange={(v) => setProfile({ ...profile, gender: v })} />
+        <Field label="身份" value={profile.identity || ""} onChange={(v) => setProfile({ ...profile, identity: v })} placeholder="学生/在职/待业" />
+        <Field label="学校" value={profile.school || ""} onChange={(v) => setProfile({ ...profile, school: v })} />
+        <Field label="专业" value={profile.major || ""} onChange={(v) => setProfile({ ...profile, major: v })} />
+        <Field label="毕业年份" value={profile.graduation_year || ""} onChange={(v) => setProfile({ ...profile, graduation_year: v })} />
         <Field label="求职方向" value={profile.job_direction} onChange={(v) => setProfile({ ...profile, job_direction: v })} />
         <Field label="目标岗位" value={profile.target_role} onChange={(v) => setProfile({ ...profile, target_role: v })} />
         <Field label="工作年限" value={profile.experience_years} onChange={(v) => setProfile({ ...profile, experience_years: v })} />
+        <Field label="当前公司" value={profile.current_company || ""} onChange={(v) => setProfile({ ...profile, current_company: v })} />
+        <Field label="期望薪资" value={profile.expected_salary || ""} onChange={(v) => setProfile({ ...profile, expected_salary: v })} />
+        <div>
+          <label className="block text-sm font-medium mb-1.5">自我介绍</label>
+          <textarea className="input" rows={3} value={profile.self_intro || ""} onChange={(e) => setProfile({ ...profile, self_intro: e.target.value })} />
+        </div>
 
         <div>
           <label className="block text-sm font-medium mb-1.5">技术领域</label>
@@ -96,11 +107,11 @@ export default function ProfilePage() {
   );
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
   return (
     <div>
       <label className="block text-sm font-medium mb-1.5">{label}</label>
-      <input className="input" value={value} onChange={(e) => onChange(e.target.value)} />
+      <input className="input" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }

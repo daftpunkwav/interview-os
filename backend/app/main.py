@@ -9,7 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.config import get_settings
-from app.database import init_db, SessionLocal
+from app.database import init_db, SessionLocal, engine
+from app.core.migrate import run_migrations
 from app.services.seed import seed_llm_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -21,6 +22,7 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
     init_db()
+    run_migrations(engine)
     db = SessionLocal()
     try:
         seed_llm_settings(db)

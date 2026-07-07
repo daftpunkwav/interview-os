@@ -58,12 +58,13 @@ export default function ReportPage() {
       </div>
 
       {/* 能力雷达 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-8">
         {[
           { label: "技术能力", score: scores.technical },
           { label: "表达能力", score: scores.communication },
           { label: "项目深度", score: scores.project_depth },
           { label: "问题解决", score: scores.problem_solving },
+          { label: "临场状态", score: scores.presence ?? scores.communication },
         ].map((item) => (
           <div key={item.label} className="border border-[var(--border)] rounded-xl p-4 text-center bg-[var(--card)]">
             <div className="text-2xl font-bold" style={{ color: scoreColor(item.score) }}>{item.score}</div>
@@ -75,10 +76,18 @@ export default function ReportPage() {
         ))}
       </div>
 
+      <RadarChart scores={scores} />
+
       <Section title="优势" items={report.strengths} color="green" />
       <Section title="不足" items={report.weaknesses} color="red" />
-      <Section title="改进建议" items={report.improvement_suggestions} color="blue" />
+      <Section title="简历改进建议" items={report.resume_suggestions || []} color="blue" />
+      <Section title="面试表现建议" items={report.interview_suggestions || []} color="blue" />
+      <Section title="综合建议" items={report.improvement_suggestions} color="blue" />
       <Section title="下一阶段训练计划" items={report.training_plan} color="brand" />
+
+      {report.presence_moments && report.presence_moments.length > 0 && (
+        <Section title="临场关键时刻" items={report.presence_moments} color="brand" />
+      )}
 
       {report.face_analysis_summary && (
         <div className="mt-6 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)]">
@@ -94,6 +103,59 @@ export default function ReportPage() {
         <Link href="/growth" className="px-5 py-2.5 rounded-lg border border-[var(--border)] text-sm font-medium hover:bg-gray-50">
           查看成长记录
         </Link>
+      </div>
+    </div>
+  );
+}
+
+function RadarChart({ scores }: { scores: import("@/types").ScoreBreakdown }) {
+  const dims = [
+    { key: "technical", label: "技术" },
+    { key: "communication", label: "表达" },
+    { key: "project_depth", label: "项目" },
+    { key: "problem_solving", label: "解题" },
+    { key: "presence", label: "临场" },
+  ] as const;
+  const cx = 120;
+  const cy = 120;
+  const r = 80;
+  const values = dims.map((d) => (scores[d.key] ?? scores.communication) / 100);
+  const points = dims.map((_, i) => {
+    const angle = (Math.PI * 2 * i) / dims.length - Math.PI / 2;
+    const v = values[i];
+    return `${cx + Math.cos(angle) * r * v},${cy + Math.sin(angle) * r * v}`;
+  }).join(" ");
+  const rings = [0.25, 0.5, 0.75, 1];
+
+  return (
+    <div className="mb-8 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)]">
+      <h3 className="font-semibold mb-4 text-center">能力雷达图</h3>
+      <div className="flex justify-center">
+        <svg width="240" height="240" viewBox="0 0 240 240">
+          {rings.map((ring) => (
+            <polygon
+              key={ring}
+              points={dims.map((_, i) => {
+                const angle = (Math.PI * 2 * i) / dims.length - Math.PI / 2;
+                return `${cx + Math.cos(angle) * r * ring},${cy + Math.sin(angle) * r * ring}`;
+              }).join(" ")}
+              fill="none"
+              stroke="#e5e7eb"
+              strokeWidth="1"
+            />
+          ))}
+          {dims.map((d, i) => {
+            const angle = (Math.PI * 2 * i) / dims.length - Math.PI / 2;
+            const x = cx + Math.cos(angle) * (r + 18);
+            const y = cy + Math.sin(angle) * (r + 18);
+            return (
+              <text key={d.key} x={x} y={y} textAnchor="middle" dominantBaseline="middle" className="text-[10px] fill-gray-500">
+                {d.label}
+              </text>
+            );
+          })}
+          <polygon points={points} fill="rgba(59,130,246,0.35)" stroke="#3b82f6" strokeWidth="2" />
+        </svg>
       </div>
     </div>
   );

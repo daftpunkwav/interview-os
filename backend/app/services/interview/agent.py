@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models import InterviewSession, Resume
+from app.models import InterviewSession, Resume, UserProfile
 from app.schemas import CandidateProfile, InterviewConfig, InterviewReport, ScoreBreakdown
 from app.services.company.knowledge import get_company_context
 from app.services.interview.workflows import (
@@ -29,15 +29,31 @@ def _build_system_prompt(
     company_context: str,
     workflow: Workflow,
     current_phase: InterviewPhase,
+    profile: UserProfile | None = None,
 ) -> str:
     personality = PERSONALITY_PROMPTS.get(config.personality, PERSONALITY_PROMPTS["professional"])
     style = STYLE_PROMPTS.get(config.interview_style, STYLE_PROMPTS["deep_dive"])
     strictness = STRICTNESS_DESCRIPTIONS.get(config.strictness, STRICTNESS_DESCRIPTIONS[3])
 
     candidate_info = ""
+    if profile and (profile.name or profile.school or profile.self_intro):
+        candidate_info += f"""
+## 候选人个人档案
+姓名：{profile.name}
+性别/身份：{profile.gender or '—'} / {profile.identity or '—'}
+学校/专业：{profile.school or '—'} / {profile.major or '—'}
+毕业年份：{profile.graduation_year or '—'}
+求职方向：{profile.job_direction}
+目标岗位：{profile.target_role}
+工作年限：{profile.experience_years}
+当前公司：{profile.current_company or '—'}
+期望薪资：{profile.expected_salary or '—'}
+技术领域：{', '.join(profile.tech_domains_list)}
+自我介绍：{(profile.self_intro or '')[:800]}
+"""
     if candidate:
-        candidate_info = f"""
-## 候选人档案
+        candidate_info += f"""
+## 简历解析
 姓名：{candidate.name}
 技能：{', '.join(candidate.skills)}
 项目：{json.dumps(candidate.projects, ensure_ascii=False)[:2000]}
@@ -134,6 +150,9 @@ class InterviewAgent:
             resume_id=self.session.resume_id,
         )
 
+    def _get_user_profile(self, db: Session) -> UserProfile | None:
+        return db.query(UserProfile).filter(UserProfile.id == self.session.profile_id).first()
+
     def _get_candidate(self, db: Session) -> CandidateProfile | None:
         if not self.session.resume_id:
             return None
@@ -149,10 +168,11 @@ class InterviewAgent:
         """启动面试，返回面试官开场白。"""
         config = self._get_config()
         candidate = self._get_candidate(db)
+        profile = self._get_user_profile(db)
         company_ctx = get_company_context(config.company)
         phase = self._current_phase()
 
-        system_prompt = _build_system_prompt(config, candidate, company_ctx, self.workflow, phase)
+        system_prompt = _build_system_prompt(config, candidate, company_ctx, self.workflow, phase, profile)
         self.messages = [{"role": "system", "content": system_prompt}]
 
         # 请求 AI 开场
@@ -173,22 +193,43 @@ class InterviewAgent:
         user_content: str,
         db: Session,
         face_analysis: dict[str, Any] | None = None,
+        image_base64: str | None = None,
     ) -> tuple[str, bool]:
         """处理候选人回答，返回 (面试官回复, 是否结束)。"""
-        # 附加面部分析上下文
         content = user_content
         if face_analysis:
             hints = []
-            if face_analysis.get("looking_away"):
+            if not face_analysis.get("face_detected", True):
+                hints.append("画面中未检测到人脸")
+            elif face_analysis.get("looking_away"):
                 hints.append("候选人似乎没有看镜头")
-            if face_analysis.get("nervousness", 0) > 0.7:
+            nervousness = face_analysis.get("nervousness", 0)
+            if isinstance(nervousness, (int, float)) and nervousness > 0.5:
                 hints.append("候选人看起来比较紧张")
             if hints:
-                content += f"\n[面部分析提示：{'; '.join(hints)}]"
+                content += f"\n[面部分析：{'; '.join(hints)}]"
 
+        # 历史记录仅存文本，避免 SQLite 膨胀
         self.messages.append({"role": "user", "content": content})
 
-        reply = await self.llm.chat(self.messages, temperature=0.75)
+        # 若有视频帧，构建多模态请求发给 LLM
+        api_messages = list(self.messages)
+        if image_base64:
+            api_messages[-1] = {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": content},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
+                    },
+                ],
+            }
+
+        reply = await self.llm.chat(
+            api_messages if image_base64 else self.messages,
+            temperature=0.75,
+        )
         self.messages.append({"role": "assistant", "content": reply})
 
         is_complete = "[INTERVIEW_COMPLETE]" in reply
@@ -234,17 +275,19 @@ REPORT_SYSTEM_PROMPT = """你是一位资深面试评估专家。根据面试对
     "communication": 75,
     "project_depth": 80,
     "problem_solving": 85,
+    "presence": 78,
     "overall": 85
   },
   "strengths": ["优势1", "优势2"],
   "weaknesses": ["不足1", "不足2"],
-  "improvement_suggestions": ["建议1", "建议2"],
-  "training_plan": ["训练计划1", "训练计划2"],
-  "phase_summary": {"自我介绍": "评价", "项目深挖": "评价"},
-  "face_analysis_summary": "面部表情与状态综合评价"
+  "improvement_suggestions": ["综合建议1"],
+  "resume_suggestions": ["简历修改建议1"],
+  "interview_suggestions": ["面试表现改进建议1"],
+  "training_plan": ["训练计划1"],
+  "phase_summary": {"自我介绍": "评价"},
+  "face_analysis_summary": "临场状态评价",
+  "presence_moments": ["紧张时刻描述"]
 }
-
-评分标准：90+优秀，80-89良好，70-79中等，60-69需改进，<60不足。
 只返回 JSON。"""
 
 
@@ -277,7 +320,7 @@ async def generate_report(
         logger.error("报告生成失败: %s", e)
         return InterviewReport(
             overall_score=70,
-            score_breakdown=ScoreBreakdown(overall=70, technical=70, communication=70, project_depth=70, problem_solving=70),
+            score_breakdown=ScoreBreakdown(overall=70, technical=70, communication=70, project_depth=70, problem_solving=70, presence=70),
             weaknesses=["报告生成时遇到错误，请重试"],
             improvement_suggestions=["完成更多面试练习以获得准确评估"],
         )

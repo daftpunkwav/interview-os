@@ -35,6 +35,17 @@ export const api = {
     return res.json();
   },
   listResumes: () => request<import("@/types").Resume[]>("/resume/list"),
+  activateResume: (id: number) => request<{ id: number; is_active: boolean }>(`/resume/${id}/activate`, { method: "POST" }),
+  analyzeResume: (id: number) => request<import("@/types").ResumeAnalysis>(`/resume/${id}/analyze`, { method: "POST" }),
+
+  // 面试准备
+  createPrepSession: (data: { resume_id?: number; target_role?: string; target_company?: string }) =>
+    request<{ id: number }>("/v1/prep/sessions", { method: "POST", body: JSON.stringify(data) }),
+  prepMessage: (sessionId: number, content: string) =>
+    request<{ reply: string; token_usage: number }>(`/v1/prep/sessions/${sessionId}/message`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
 
   // 选项
   getOptions: () => request<import("@/types").Options>("/options"),
@@ -46,12 +57,13 @@ export const api = {
       body: JSON.stringify(config),
     }),
   listSessions: () => request<import("@/types").InterviewSession[]>("/interview/sessions"),
+  getSession: (id: number) => request<import("@/types").InterviewSession>(`/interview/sessions/${id}`),
   startInterview: (id: number) =>
     request<{ message: import("@/types").ChatMessage; current_phase: string }>(
       `/interview/sessions/${id}/start`,
       { method: "POST" }
     ),
-  sendMessage: (id: number, content: string, faceAnalysis?: Record<string, unknown>) =>
+  sendMessage: (id: number, content: string, faceAnalysis?: Record<string, unknown>, imageBase64?: string) =>
     request<{
       message: import("@/types").ChatMessage;
       current_phase: string;
@@ -59,7 +71,7 @@ export const api = {
       phases_remaining: string[];
     }>(`/interview/sessions/${id}/message`, {
       method: "POST",
-      body: JSON.stringify({ content, face_analysis: faceAnalysis }),
+      body: JSON.stringify({ content, face_analysis: faceAnalysis, image_base64: imageBase64 }),
     }),
   getMessages: (id: number) => request<import("@/types").ChatMessage[]>(`/interview/sessions/${id}/messages`),
   finishInterview: (id: number) =>

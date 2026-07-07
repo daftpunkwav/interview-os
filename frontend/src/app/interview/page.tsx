@@ -20,13 +20,18 @@ export default function InterviewSetupPage() {
     strictness: 3,
     interview_style: "deep_dive",
     resume_id: null,
+    avatar_id: "professional_male",
+    scene_id: "meeting_room",
   });
 
   useEffect(() => {
     Promise.all([api.getOptions(), api.listResumes()]).then(([opts, res]) => {
       setOptions(opts);
       setResumes(res);
-      if (res.length > 0) setConfig((c) => ({ ...c, resume_id: res[0].id }));
+      if (res.length > 0) {
+        const active = res.find((r) => r.is_active) || res[0];
+        setConfig((c) => ({ ...c, resume_id: active.id }));
+      }
     });
   }, []);
 
@@ -121,6 +126,26 @@ export default function InterviewSetupPage() {
           labels={options.interview_styles.map((s) => s.name)}
           onChange={(v) => setConfig({ ...config, interview_style: v })}
         />
+
+        {options.avatars && options.avatars.length > 0 && (
+          <Select
+            label="面试官形象"
+            value={config.avatar_id || "professional_male"}
+            options={options.avatars.map((a) => a.id)}
+            labels={options.avatars.map((a) => a.name)}
+            onChange={(v) => setConfig({ ...config, avatar_id: v })}
+          />
+        )}
+
+        {options.scenes && options.scenes.length > 0 && (
+          <Select
+            label="面试场景"
+            value={config.scene_id || "meeting_room"}
+            options={options.scenes.map((s) => s.id)}
+            labels={options.scenes.map((s) => s.name)}
+            onChange={(v) => setConfig({ ...config, scene_id: v })}
+          />
+        )}
 
         {resumes.length > 0 && (
           <Select

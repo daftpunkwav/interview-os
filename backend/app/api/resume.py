@@ -67,6 +67,9 @@ async def upload_resume(
         filename=resume.filename,
         file_type=resume.file_type,
         parsed_profile=parsed,
+        is_active=resume.is_active,
+        score=resume.score,
+        analysis=json.loads(resume.analysis or "{}"),
         created_at=resume.created_at,
     )
 
@@ -85,6 +88,9 @@ def list_resumes(db: Session = Depends(get_db)):
             filename=r.filename,
             file_type=r.file_type,
             parsed_profile=profile,
+            is_active=bool(r.is_active),
+            score=r.score,
+            analysis=json.loads(r.analysis or "{}"),
             created_at=r.created_at,
         ))
     return result
@@ -101,5 +107,49 @@ def get_resume(resume_id: int, db: Session = Depends(get_db)):
         filename=r.filename,
         file_type=r.file_type,
         parsed_profile=profile,
+        is_active=bool(r.is_active),
+        score=r.score,
+        analysis=json.loads(r.analysis or "{}"),
         created_at=r.created_at,
     )
+
+
+@router.post("/{resume_id}/activate")
+def activate_resume(resume_id: int, db: Session = Depends(get_db)):
+    r = db.query(Resume).filter(Resume.id == resume_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="简历不存在")
+    db.query(Resume).update({Resume.is_active: False})
+    r.is_active = True
+    db.commit()
+    return {"id": resume_id, "is_active": True}
+
+
+RESUME_ANALYZE_PROMPT = """你是资深简历顾问和面试官。分析以下简历，返回 JSON：
+{
+  "score": 85,
+  "strengths": ["优势"],
+  "weaknesses": ["不足"],
+  "improvement_suggestions": ["简历改进建议"],
+  "predicted_questions": ["面试官可能问的问题1", "问题2"]
+}
+只返回 JSON。"""
+
+
+@router.post("/{resume_id}/analyze")
+async def analyze_resume(resume_id: int, db: Session = Depends(get_db)):
+    r = db.query(Resume).filter(Resume.id == resume_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="简历不存在")
+    llm = LLMClient.from_db(db)
+    if not llm.api_key:
+        raise HTTPException(status_code=400, detail="请先配置 API Key")
+    messages = [
+        {"role": "system", "content": RESUME_ANALYZE_PROMPT},
+        {"role": "user", "content": r.raw_text[:12000] or r.parsed_profile},
+    ]
+    data = await llm.chat_json(messages)
+    r.score = data.get("score", 70)
+    r.analysis = json.dumps(data, ensure_ascii=False)
+    db.commit()
+    return data

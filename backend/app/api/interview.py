@@ -32,6 +32,8 @@ def create_session(config: InterviewConfig, db: Session = Depends(get_db)):
         strictness=config.strictness,
         interview_style=config.interview_style,
         resume_id=config.resume_id,
+        avatar_id=config.avatar_id,
+        scene_id=config.scene_id,
         status="pending",
         current_phase="identity_check",
     )
@@ -91,7 +93,9 @@ async def send_message(
 
     llm = LLMClient.from_db(db)
     agent = InterviewAgent(session, llm)
-    reply, is_complete = await agent.respond(body.content, db, body.face_analysis)
+    reply, is_complete = await agent.respond(
+        body.content, db, body.face_analysis, body.image_base64
+    )
 
     # 面试结束时自动生成报告
     if is_complete:
@@ -171,6 +175,8 @@ def _to_response(session: InterviewSession) -> InterviewSessionResponse:
         personality=session.personality,
         strictness=session.strictness,
         interview_style=session.interview_style,
+        avatar_id=getattr(session, "avatar_id", None) or "professional_male",
+        scene_id=getattr(session, "scene_id", None) or "meeting_room",
         status=session.status,
         current_phase=session.current_phase,
         overall_score=session.overall_score,

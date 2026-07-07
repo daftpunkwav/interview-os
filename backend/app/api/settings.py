@@ -32,6 +32,12 @@ def get_llm_settings(db: Session = Depends(get_db)):
         max_tokens=row.max_tokens,
         context_window=row.context_window,
         provider=row.provider,
+        protocol=getattr(row, "protocol", "openai_chat") or "openai_chat",
+        reasoning_effort=getattr(row, "reasoning_effort", "medium") or "medium",
+        supports_vision=bool(getattr(row, "supports_vision", True)),
+        supports_audio=bool(getattr(row, "supports_audio", False)),
+        stt_model=getattr(row, "stt_model", "base") or "base",
+        tts_voice=getattr(row, "tts_voice", "zh-CN-XiaoxiaoNeural") or "zh-CN-XiaoxiaoNeural",
         has_api_key=bool(row.api_key),
         updated_at=row.updated_at,
     )
@@ -47,6 +53,12 @@ def update_llm_settings(body: LLMSettingsUpdate, db: Session = Depends(get_db)):
     row.max_tokens = body.max_tokens
     row.context_window = body.context_window
     row.provider = body.provider
+    row.protocol = body.protocol
+    row.reasoning_effort = body.reasoning_effort
+    row.supports_vision = body.supports_vision
+    row.supports_audio = body.supports_audio
+    row.stt_model = body.stt_model
+    row.tts_voice = body.tts_voice
     row.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(row)
@@ -56,6 +68,12 @@ def update_llm_settings(body: LLMSettingsUpdate, db: Session = Depends(get_db)):
         max_tokens=row.max_tokens,
         context_window=row.context_window,
         provider=row.provider,
+        protocol=getattr(row, "protocol", "openai_chat") or "openai_chat",
+        reasoning_effort=getattr(row, "reasoning_effort", "medium") or "medium",
+        supports_vision=bool(getattr(row, "supports_vision", True)),
+        supports_audio=bool(getattr(row, "supports_audio", False)),
+        stt_model=getattr(row, "stt_model", "base") or "base",
+        tts_voice=getattr(row, "tts_voice", "zh-CN-XiaoxiaoNeural") or "zh-CN-XiaoxiaoNeural",
         has_api_key=bool(row.api_key),
         updated_at=row.updated_at,
     )

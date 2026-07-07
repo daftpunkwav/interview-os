@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.schemas import OptionsResponse
+from app.schemas import OptionsResponse, WorkflowTypeOption
 from app.services.company.knowledge import get_all_companies
 from app.services.interview.workflows import WORKFLOWS
 
@@ -34,8 +34,28 @@ INTERVIEW_STYLES = [
 ]
 
 WORKFLOW_TYPES = [
-    {"id": wf.id, "name": wf.name, "phases": [p.name for p in wf.phases]}
+    WorkflowTypeOption(id=wf.id, name=wf.name, phases=[p.name for p in wf.phases])
     for wf in WORKFLOWS.values()
+]
+
+AVATARS = [
+    {"id": "professional_male", "name": "专业男面试官", "voice": "zh-CN-YunyangNeural"},
+    {"id": "gentle_female", "name": "温和女面试官", "voice": "zh-CN-XiaoxiaoNeural"},
+    {"id": "strict_expert", "name": "严厉技术专家", "voice": "zh-CN-YunjianNeural"},
+]
+
+SCENES = [
+    {"id": "meeting_room", "name": "企业会议室"},
+    {"id": "glass_office", "name": "玻璃隔断办公室"},
+    {"id": "online_interview", "name": "线上面试间"},
+]
+
+TTS_VOICES = [
+    {"id": "zh-CN-XiaoxiaoNeural", "name": "晓晓（女声）"},
+    {"id": "zh-CN-YunxiNeural", "name": "云希（男声）"},
+    {"id": "zh-CN-YunyangNeural", "name": "云扬（男声专业）"},
+    {"id": "zh-CN-XiaoyiNeural", "name": "晓伊（女声活泼）"},
+    {"id": "zh-CN-YunjianNeural", "name": "云健（男声沉稳）"},
 ]
 
 
@@ -49,4 +69,7 @@ def get_options():
         personalities=PERSONALITIES,
         interview_styles=INTERVIEW_STYLES,
         workflow_types=WORKFLOW_TYPES,
+        avatars=AVATARS,
+        scenes=SCENES,
+        tts_voices=TTS_VOICES,
     )

@@ -10,6 +10,7 @@ import {
   Mic,
   BarChart3,
   TrendingUp,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,7 @@ const NAV = [
   { href: "/", label: "首页", icon: Home },
   { href: "/profile", label: "个人档案", icon: User },
   { href: "/resume", label: "简历管理", icon: FileText },
+  { href: "/prep", label: "面试准备", icon: BookOpen },
   { href: "/interview", label: "模拟面试", icon: Mic },
   { href: "/history", label: "面试记录", icon: BarChart3 },
   { href: "/growth", label: "成长追踪", icon: TrendingUp },

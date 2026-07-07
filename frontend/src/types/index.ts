@@ -6,6 +6,12 @@ export interface LLMSettings {
   max_tokens: number;
   context_window: number;
   provider: string;
+  protocol?: string;
+  reasoning_effort?: string;
+  supports_vision?: boolean;
+  supports_audio?: boolean;
+  stt_model?: string;
+  tts_voice?: string;
   has_api_key: boolean;
   updated_at?: string;
 }
@@ -13,10 +19,20 @@ export interface LLMSettings {
 export interface UserProfile {
   id: number;
   name: string;
+  gender?: string;
+  identity?: string;
+  school?: string;
+  major?: string;
+  graduation_year?: string;
   job_direction: string;
   experience_years: string;
+  work_years_detail?: string;
+  current_company?: string;
+  expected_salary?: string;
+  self_intro?: string;
   tech_domains: string[];
   target_role: string;
+  updated_at?: string;
 }
 
 export interface CandidateProfile {
@@ -28,11 +44,22 @@ export interface CandidateProfile {
   summary: string;
 }
 
+export interface ResumeAnalysis {
+  score: number;
+  strengths: string[];
+  weaknesses: string[];
+  improvement_suggestions: string[];
+  predicted_questions: string[];
+}
+
 export interface Resume {
   id: number;
   filename: string;
   file_type: string;
   parsed_profile: CandidateProfile;
+  is_active?: boolean;
+  score?: number | null;
+  analysis?: ResumeAnalysis | Record<string, unknown>;
   created_at: string;
 }
 
@@ -52,6 +79,9 @@ export interface Options {
   personalities: { id: string; name: string; description: string }[];
   interview_styles: { id: string; name: string; description: string }[];
   workflow_types: { id: string; name: string; phases: string[] }[];
+  avatars?: { id: string; name: string; voice?: string }[];
+  scenes?: { id: string; name: string }[];
+  tts_voices?: { id: string; name: string }[];
 }
 
 export interface InterviewConfig {
@@ -63,6 +93,8 @@ export interface InterviewConfig {
   strictness: number;
   interview_style: string;
   resume_id?: number | null;
+  avatar_id?: string;
+  scene_id?: string;
 }
 
 export interface InterviewSession {
@@ -74,6 +106,8 @@ export interface InterviewSession {
   personality: string;
   strictness: number;
   interview_style: string;
+  avatar_id?: string;
+  scene_id?: string;
   status: string;
   current_phase: string;
   overall_score?: number;
@@ -93,6 +127,7 @@ export interface ScoreBreakdown {
   communication: number;
   project_depth: number;
   problem_solving: number;
+  presence?: number;
   overall: number;
 }
 
@@ -102,9 +137,12 @@ export interface InterviewReport {
   strengths: string[];
   weaknesses: string[];
   improvement_suggestions: string[];
+  resume_suggestions?: string[];
+  interview_suggestions?: string[];
   training_plan: string[];
   phase_summary: Record<string, string>;
   face_analysis_summary: string;
+  presence_moments?: string[];
 }
 
 export interface GrowthRecord {

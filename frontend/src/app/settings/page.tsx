@@ -45,6 +45,12 @@ export default function SettingsPage() {
         max_tokens: settings.max_tokens,
         context_window: settings.context_window,
         provider: settings.provider,
+        protocol: settings.protocol || "openai_chat",
+        reasoning_effort: settings.reasoning_effort || "medium",
+        supports_vision: settings.supports_vision ?? true,
+        supports_audio: settings.supports_audio ?? false,
+        stt_model: settings.stt_model || "base",
+        tts_voice: settings.tts_voice || "zh-CN-XiaoxiaoNeural",
       });
       setMsg("保存成功");
       setTimeout(() => setMsg(""), 2000);
@@ -111,6 +117,48 @@ export default function SettingsPage() {
         <div className="grid grid-cols-2 gap-4">
           <Field label="Max Tokens" value={String(settings.max_tokens)} onChange={(v) => setSettings({ ...settings, max_tokens: Number(v) })} />
           <Field label="上下文窗口" value={String(settings.context_window)} onChange={(v) => setSettings({ ...settings, context_window: Number(v) })} />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1.5">API 协议</label>
+          <select
+            className="input"
+            value={settings.protocol || "openai_chat"}
+            onChange={(e) => setSettings({ ...settings, protocol: e.target.value })}
+          >
+            <option value="openai_chat">OpenAI Chat Completions</option>
+            <option value="openai_responses">OpenAI Responses</option>
+            <option value="anthropic_messages">Anthropic Messages</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1.5">思考等级 (reasoning_effort)</label>
+          <select
+            className="input"
+            value={settings.reasoning_effort || "medium"}
+            onChange={(e) => setSettings({ ...settings, reasoning_effort: e.target.value })}
+          >
+            <option value="low">低</option>
+            <option value="medium">中</option>
+            <option value="high">高</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Whisper 模型" value={settings.stt_model || "base"} onChange={(v) => setSettings({ ...settings, stt_model: v })} />
+          <Field label="Edge TTS 音色" value={settings.tts_voice || "zh-CN-XiaoxiaoNeural"} onChange={(v) => setSettings({ ...settings, tts_voice: v })} />
+        </div>
+
+        <div className="flex gap-6 text-sm">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={settings.supports_vision ?? true} onChange={(e) => setSettings({ ...settings, supports_vision: e.target.checked })} />
+            支持视觉多模态
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={settings.supports_audio ?? false} onChange={(e) => setSettings({ ...settings, supports_audio: e.target.checked })} />
+            支持音频多模态
+          </label>
         </div>
       </div>
 
