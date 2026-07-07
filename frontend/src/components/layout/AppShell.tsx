@@ -7,7 +7,7 @@ import { Sidebar } from "./Sidebar";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isFullscreen = /^\/interview\/\d+/.test(pathname);
-  const isFixedHeightPage = pathname === "/prep";
+  const isFixedHeightPage = pathname === "/prep" || pathname === "/interview";
 
   if (isFullscreen) {
     return (
