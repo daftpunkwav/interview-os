@@ -248,7 +248,11 @@ export default function PrepPage() {
                       {m.role === "assistant" ? (
                         m.content ? (
                           <>
-                            <MarkdownContent content={m.content} />
+                            {m.streaming ? (
+                              <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
+                            ) : (
+                              <MarkdownContent content={m.content} />
+                            )}
                             {m.streaming && (
                               <span className="inline-block w-1.5 h-4 ml-0.5 bg-brand-500 animate-pulse align-middle rounded-sm" />
                             )}

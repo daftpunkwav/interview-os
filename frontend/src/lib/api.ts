@@ -2,6 +2,18 @@
 
 const BASE = "/api";
 
+/** 流式接口直连后端，绕过 Next rewrites 对 SSE 的缓冲 */
+function getStreamBase(): string {
+  if (typeof window !== "undefined") {
+    const custom = process.env.NEXT_PUBLIC_STREAM_API_BASE;
+    if (custom) return custom.replace(/\/$/, "");
+    if (process.env.NODE_ENV === "development") {
+      return "http://127.0.0.1:8000/api";
+    }
+  }
+  return BASE;
+}
+
 /** 解析后端错误响应（兼容非 JSON 的 500/HTML 代理错误） */
 async function parseErrorResponse(res: Response): Promise<string> {
   const text = await res.text();
@@ -101,7 +113,7 @@ export const api = {
   ): Promise<{ token_usage: number }> => {
     let res: Response;
     try {
-      res = await fetch(`${BASE}/v1/prep/sessions/${sessionId}/message/stream`, {
+      res = await fetch(`${getStreamBase()}/v1/prep/sessions/${sessionId}/message/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
@@ -127,8 +139,9 @@ export const api = {
       buffer = lines.pop() ?? "";
 
       for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const payload = JSON.parse(line.slice(6)) as {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data: ")) continue;
+        const payload = JSON.parse(trimmed.slice(6)) as {
           type: string;
           content?: string;
           token_usage?: number;
