@@ -46,6 +46,53 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ content }),
     }),
+  prepMessageStream: async (
+    sessionId: number,
+    content: string,
+    onToken: (token: string) => void,
+  ): Promise<{ token_usage: number }> => {
+    const res = await fetch(`${BASE}/v1/prep/sessions/${sessionId}/message/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || `请求失败: ${res.status}`);
+    }
+    if (!res.body) throw new Error("流式响应不可用");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let tokenUsage = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = JSON.parse(line.slice(6)) as {
+          type: string;
+          content?: string;
+          token_usage?: number;
+          message?: string;
+        };
+        if (payload.type === "token" && payload.content) {
+          onToken(payload.content);
+        } else if (payload.type === "done") {
+          tokenUsage = payload.token_usage ?? 0;
+        } else if (payload.type === "error") {
+          throw new Error(payload.message || "流式输出失败");
+        }
+      }
+    }
+    return { token_usage: tokenUsage };
+  },
 
   // 选项
   getOptions: () => request<import("@/types").Options>("/options"),

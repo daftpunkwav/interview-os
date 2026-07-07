@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+from collections.abc import AsyncIterator
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -84,6 +85,47 @@ class PrepAgent:
         self.session.token_usage = sum(estimate_tokens(str(m.get("content", ""))) for m in self.messages)
         self._save(db)
         return reply
+
+    async def chat_stream(self, user_text: str, db: Session) -> AsyncIterator[str]:
+        """流式返回辅导回复，工具调用后会继续流式输出第二轮结果。"""
+        if not self.messages:
+            ctx = self._get_resume_context(db)
+            company = get_company_context(self.session.target_company or "")
+            self.messages = [
+                {"role": "system", "content": f"{PREP_SYSTEM}\n\n{company}\n{ctx}"},
+            ]
+
+        self.messages.append({"role": "user", "content": user_text})
+        self.messages = compress_messages(self.messages, 128000)
+
+        reply_parts: list[str] = []
+        async for token in self.llm.chat_stream(self.messages, temperature=0.7):
+            reply_parts.append(token)
+            yield token
+        reply = "".join(reply_parts)
+
+        tool_match = re.search(r'\{["\']tool["\']:\s*["\'](\w+)["\'].*\}', reply, re.DOTALL)
+        if tool_match:
+            try:
+                tool_call = json.loads(tool_match.group(0).replace("'", '"'))
+                observation = await self._run_tool(tool_call, db)
+                self.messages.append({"role": "assistant", "content": reply})
+                self.messages.append({
+                    "role": "user",
+                    "content": f"工具结果：{observation}\n请基于结果继续辅导用户。",
+                })
+                final_parts: list[str] = []
+                yield "\n\n"
+                async for token in self.llm.chat_stream(self.messages, temperature=0.7):
+                    final_parts.append(token)
+                    yield token
+                reply = "".join(final_parts)
+            except Exception as e:
+                logger.warning("工具执行失败: %s", e)
+
+        self.messages.append({"role": "assistant", "content": reply})
+        self.session.token_usage = sum(estimate_tokens(str(m.get("content", ""))) for m in self.messages)
+        self._save(db)
 
     async def _run_tool(self, tool_call: dict[str, Any], db: Session) -> str:
         tool = tool_call.get("tool", "")

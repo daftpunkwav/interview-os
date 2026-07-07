@@ -1,6 +1,9 @@
 """面试准备 API。"""
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -46,10 +49,32 @@ async def prep_message(session_id: int, body: PrepMessageRequest, db: Session = 
     return {"reply": reply, "token_usage": session.token_usage}
 
 
+@router.post("/sessions/{session_id}/message/stream")
+async def prep_message_stream(session_id: int, body: PrepMessageRequest, db: Session = Depends(get_db)):
+    session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    llm = LLMClient.from_db(db)
+    agent = PrepAgent(session, llm)
+
+    async def event_stream():
+        try:
+            async for token in agent.chat_stream(body.content, db):
+                yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'token_usage': session.token_usage})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.get("/sessions/{session_id}/messages")
 def get_prep_messages(session_id: int, db: Session = Depends(get_db)):
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在")
-    import json
     return json.loads(session.messages or "[]")
