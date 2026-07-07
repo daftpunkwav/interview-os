@@ -39,6 +39,20 @@ body {
   color: var(--foreground);
 }
 
+/* 流式 Markdown 尾部渐显 */
+@keyframes stream-fade-in {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.markdown-streaming > *:last-child {
+  animation: stream-fade-in 0.14s ease-out;
+}
+
 /* 输入框焦点样式 */
 input:focus,
 textarea:focus,

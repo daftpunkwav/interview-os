@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
 import { MarkdownContent } from "./MarkdownContent";
 
 interface StreamingRevealProps {
@@ -15,36 +14,9 @@ interface StreamingRevealProps {
   tickMs?: number;
 }
 
-/** 单字渐显 */
-function FadeChar({ char }: { char: string }) {
-  if (char === "\n") {
-    return (
-      <motion.span
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.12, ease: "easeOut" }}
-        className="block"
-      >
-        <br />
-      </motion.span>
-    );
-  }
-
-  return (
-    <motion.span
-      initial={{ opacity: 0, y: 1 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.12, ease: "easeOut" }}
-      className="inline"
-    >
-      {char}
-    </motion.span>
-  );
-}
-
 /**
- * 流式输出渐显：显示进度略落后于真实内容，逐字淡入；
- * 结束后切换为 Markdown 渲染。
+ * 流式输出：显示进度略落后于真实内容，全程 Markdown 渲染保持格式；
+ * 流式结束后展示完整内容。
  */
 export function StreamingReveal({
   content,
@@ -86,19 +58,19 @@ export function StreamingReveal({
     }
   }, [content.length, visibleLength]);
 
-  if (!streaming) {
-    return <MarkdownContent content={content} />;
-  }
+  const visibleContent = useMemo(
+    () => (streaming ? content.slice(0, visibleLength) : content),
+    [content, streaming, visibleLength],
+  );
 
-  const visible = content.slice(0, visibleLength);
-  if (!visible) return null;
+  if (!visibleContent && streaming) return null;
 
   return (
-    <div className="leading-relaxed break-words">
-      {visible.split("").map((ch, i) => (
-        <FadeChar key={i} char={ch} />
-      ))}
-      <span className="inline-block w-1.5 h-4 ml-0.5 bg-brand-500 animate-pulse align-middle rounded-sm" />
+    <div className="relative">
+      <MarkdownContent content={visibleContent} className={streaming ? "markdown-streaming" : ""} />
+      {streaming && (
+        <span className="inline-block w-1.5 h-4 ml-0.5 bg-brand-500 animate-pulse align-middle rounded-sm" />
+      )}
     </div>
   );
 }
