@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import type { Resume } from "@/types";
-import { Send, Loader2 } from "lucide-react";
+import { Send, Loader2, BookOpen, Sparkles, User, Bot } from "lucide-react";
+import { FadeInView, StaggerContainer, StaggerItem } from "@/components/effects";
 
 export default function PrepPage() {
   const [resumes, setResumes] = useState<Resume[]>([]);
@@ -50,51 +52,103 @@ export default function PrepPage() {
 
   return (
     <div className="p-8 max-w-3xl h-full flex flex-col">
-      <h1 className="text-2xl font-bold mb-2">面试准备</h1>
-      <p className="text-sm text-[var(--muted)] mb-4">ReAct 辅导 Agent — 简历分析、面经搜索、主动出题</p>
+      <FadeInView>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+            <BookOpen className="text-white" size={20} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">面试准备</h1>
+            <p className="text-sm text-[var(--muted)]">ReAct 辅导 Agent — 简历分析、面经搜索、主动出题</p>
+          </div>
+        </div>
+      </FadeInView>
 
       {!prepSessionId ? (
-        <div className="space-y-4">
-          {resumes.length > 0 && (
-            <select
-              className="w-full px-3 py-2 rounded-lg border border-[var(--border)]"
-              value={resumeId ?? ""}
-              onChange={(e) => setResumeId(Number(e.target.value))}
+        <FadeInView className="mt-6">
+          <div className="space-y-4">
+            {resumes.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium mb-2">选择简历</label>
+                <select
+                  className="w-full px-3 py-2.5 rounded-xl border border-[var(--border)] bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
+                  value={resumeId ?? ""}
+                  onChange={(e) => setResumeId(Number(e.target.value))}
+                >
+                  {resumes.map((r) => (
+                    <option key={r.id} value={r.id}>{r.filename}{r.is_active ? " (投递)" : ""}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <motion.button
+              onClick={startPrep}
+              className="px-6 py-3 rounded-xl bg-brand-600 text-white text-sm font-medium shadow-lg shadow-brand-500/25 flex items-center gap-2"
+              whileHover={{ scale: 1.02, y: -1 }}
+              whileTap={{ scale: 0.98 }}
             >
-              {resumes.map((r) => (
-                <option key={r.id} value={r.id}>{r.filename}{r.is_active ? " (投递)" : ""}</option>
-              ))}
-            </select>
-          )}
-          <button onClick={startPrep} className="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm">
-            开始辅导
-          </button>
-        </div>
+              <Sparkles size={16} />
+              开始辅导
+            </motion.button>
+          </div>
+        </FadeInView>
       ) : (
         <>
           <div className="text-xs text-[var(--muted)] mb-2">Token 约：{tokenUsage}</div>
-          <div className="flex-1 overflow-y-auto border border-[var(--border)] rounded-xl p-4 space-y-3 mb-4 min-h-[400px]">
-            {messages.map((m, i) => (
-              <div key={i} className={`text-sm ${m.role === "user" ? "text-right" : ""}`}>
-                <span className={`inline-block px-3 py-2 rounded-xl max-w-[85%] ${m.role === "user" ? "bg-brand-600 text-white" : "bg-gray-100"}`}>
-                  {m.content}
-                </span>
-              </div>
-            ))}
-            {loading && <Loader2 className="animate-spin text-[var(--muted)]" size={18} />}
+          <div className="flex-1 overflow-y-auto border border-[var(--border)] rounded-xl p-4 space-y-4 mb-4 min-h-[400px] bg-[var(--card)]">
+            <AnimatePresence>
+              {messages.map((m, i) => (
+                <motion.div
+                  key={i}
+                  className={`flex gap-3 ${m.role === "user" ? "flex-row-reverse" : ""}`}
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+                >
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                    m.role === "user" ? "bg-brand-600" : "bg-gray-200"
+                  }`}>
+                    {m.role === "user" ? <User size={14} className="text-white" /> : <Bot size={14} className="text-gray-600" />}
+                  </div>
+                  <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm ${
+                    m.role === "user"
+                      ? "bg-brand-600 text-white rounded-br-md"
+                      : "bg-gray-100 text-gray-800 rounded-bl-md"
+                  }`}>
+                    {m.content}
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            {loading && (
+              <motion.div
+                className="flex items-center gap-2 text-[var(--muted)]"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
+                <Loader2 className="animate-spin" size={18} />
+                <span className="text-sm">思考中...</span>
+              </motion.div>
+            )}
             <div ref={endRef} />
           </div>
           <div className="flex gap-2">
             <input
-              className="flex-1 px-3 py-2 rounded-lg border border-[var(--border)] text-sm"
+              className="flex-1 px-4 py-3 rounded-xl border border-[var(--border)] text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 transition-all"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
               placeholder="问我任何面试相关问题..."
             />
-            <button onClick={handleSend} disabled={loading} className="px-4 py-2 rounded-lg bg-brand-600 text-white">
+            <motion.button
+              onClick={handleSend}
+              disabled={loading}
+              className="px-5 py-3 rounded-xl bg-brand-600 text-white disabled:opacity-50"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
               <Send size={16} />
-            </button>
+            </motion.button>
           </div>
         </>
       )}

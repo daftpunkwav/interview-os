@@ -13,6 +13,9 @@
 body {
   background: var(--background);
   color: var(--foreground);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* 自定义滚动条 */
@@ -25,4 +28,39 @@ body {
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* 选中文本样式 */
+::selection {
+  background: rgba(92, 124, 250, 0.2);
+  color: var(--foreground);
+}
+
+/* 输入框焦点样式 */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(92, 124, 250, 0.15);
+}
+
+/* 按钮点击反馈 */
+button:active {
+  transform: scale(0.98);
+}
+
+/* 平滑过渡 */
+* {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* 禁用默认动画的元素 */
+.no-transition,
+.no-transition * {
+  transition: none !important;
 }
