@@ -41,8 +41,13 @@ MIGRATIONS: dict[str, list[str]] = {
 
 
 def run_migrations(engine: Engine) -> None:
+    """幂等地为已有库补齐缺失列。
+
+    仅当某列实际被新增时才记录 INFO；列已存在则静默跳过。
+    """
     inspector = inspect(engine)
     existing_tables = inspector.get_table_names()
+    applied: list[str] = []
     with engine.connect() as conn:
         for table, statements in MIGRATIONS.items():
             if table not in existing_tables:
@@ -55,6 +60,12 @@ def run_migrations(engine: Engine) -> None:
                 try:
                     conn.execute(text(stmt))
                     conn.commit()
+                    applied.append(stmt)
                     logger.info("迁移成功: %s", stmt[:60])
                 except Exception as e:
                     logger.debug("迁移跳过: %s", e)
+
+    if applied:
+        logger.info("数据库迁移完成，新增 %d 列", len(applied))
+    else:
+        logger.debug("数据库无需迁移")
