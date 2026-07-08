@@ -14,7 +14,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models import InterviewSession
+from app.models import InterviewSession, LLMSettings
+from app.services.context.manager import compress_messages, estimate_messages_tokens
 from app.services.interview.agent import (
     INTERVIEW_COMPLETE_MARKER,
     PHASE_COMPLETE_MARKER,
@@ -71,8 +72,9 @@ class InterviewRunner:
         text: str,
         face: dict[str, Any] | None,
         image_b64: str | None,
+        context_window: int | None = None,
     ) -> list[dict[str, Any]]:
-        """构造 LLM API 调用的 messages 列表（必要时附加图像模态）。
+        """构造 LLM API 调用的 messages 列表（必要时附加图像模态 + 上下文压缩）。
 
         调用方需确保 ``self.agent.messages`` 末尾已经是当前回合的 user 消息（已被
         :meth:`stream_turn` 设置）。本方法不再追加额外的 user 消息。
@@ -90,6 +92,15 @@ class InterviewRunner:
                     },
                 ],
             }
+
+        if context_window:
+            compressed = compress_messages(messages, context_window)
+            if len(compressed) < len(messages):
+                logger.info(
+                    "上下文压缩: session=%s %d->%d (budget=%d)",
+                    self.session.id, len(messages), len(compressed), context_window,
+                )
+            return compressed
         return messages
 
     def _last_assistant_question(self) -> str:
@@ -108,6 +119,16 @@ class InterviewRunner:
             return []
         return profile.tech_domains_list or []
 
+    def _get_context_window(self, db: Session) -> int:
+        """读取当前 LLM 设置中的 context window。
+
+        0 或未设置视为无限制（不压缩）。
+        """
+        row = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
+        if not row or not row.context_window:
+            return 0
+        return int(row.context_window)
+
     # ------------------------------------------------------------------
     # 开场
     # ------------------------------------------------------------------
@@ -119,6 +140,11 @@ class InterviewRunner:
             self.agent.reset_messages()
             system_prompt = self.agent.build_opening_prompt(db)
             self.agent.messages = [{"role": "system", "content": system_prompt}]
+            context_window = self._get_context_window(db)
+            if context_window:
+                self.agent.messages = compress_messages(
+                    self.agent.messages, context_window
+                )
             opening_messages = list(self.agent.messages) + [
                 {"role": "user", "content": "面试开始，请按照当前阶段开始提问。"},
             ]
@@ -208,7 +234,11 @@ class InterviewRunner:
             self.agent.messages[-1] = {"role": "user", "content": user_content}
             if followup_msg is not None:
                 self.agent.messages.append(followup_msg)
-            api_messages = self._build_api_messages(user_text, face, image_b64)
+
+            context_window = self._get_context_window(db)
+            api_messages = self._build_api_messages(
+                user_text, face, image_b64, context_window=context_window
+            )
 
             # 流式生成
             content_buf = ""

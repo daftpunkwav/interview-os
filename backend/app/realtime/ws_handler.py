@@ -4,11 +4,12 @@
 - 接收前端消息（音频/文本/视觉/静音/请求提纲）
 - 调用 :class:`InterviewRunner` 驱动面试回合
 - 消费 runner 的 :class:`StreamEvent` 并翻译为前端事件
-- 调度 TTS 句子级播放
+- 调度 TTS 句子级播放（非阻塞，使用串行队列避免重叠）
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -26,10 +27,56 @@ from app.services.interview.events import EventKind, StreamEvent
 from app.services.interview.runner import InterviewRunner
 from app.services.llm.client import LLMClient
 from app.services.stt.whisper import transcribe_pcm_base64_async
-from app.services.tts.edge import split_sentences, synthesize_to_base64
+from app.services.tts.edge import synthesize_to_base64
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+class _SentenceTTSQueue:
+    """串行 TTS 队列：保证句子按到达顺序逐个合成并播放，不与 LLM 流相互阻塞。"""
+
+    def __init__(self) -> None:
+        self._queue: asyncio.Queue[str | None] = asyncio.Queue()
+        self._worker_task: asyncio.Task | None = None
+        self._lock = asyncio.Lock()
+
+    async def start(self, send_callback) -> None:
+        """启动后台 worker；每个 WS 连接初始化时调用一次。"""
+        self._send = send_callback
+        if self._worker_task is None or self._worker_task.done():
+            self._worker_task = asyncio.create_task(self._worker())
+
+    async def stop(self) -> None:
+        """结束 worker，丢弃未播放的句子。"""
+        if self._worker_task is not None and not self._worker_task.done():
+            await self._queue.put(None)
+            await self._worker_task
+
+    async def enqueue(self, sentence: str) -> None:
+        if sentence.strip():
+            await self._queue.put(sentence.strip())
+
+    async def flush_remainder(self, sentence: str) -> None:
+        """回合结束时把残留 buffer 入队，并等待队列清空。"""
+        if sentence.strip():
+            await self._queue.put(sentence.strip())
+        # 等待当前任务完成
+        async with self._lock:
+            pass
+
+    async def _worker(self) -> None:
+        while True:
+            item = await self._queue.get()
+            if item is None:
+                return
+            async with self._lock:
+                audio_b64 = await synthesize_to_base64(item, settings.tts_voice)
+                if audio_b64:
+                    try:
+                        await self._send("tts_audio", data=audio_b64, sentence=item)
+                    except Exception as e:
+                        logger.warning("TTS 发送失败: %s", e)
 
 
 class InterviewWSHandler:
@@ -46,6 +93,7 @@ class InterviewWSHandler:
         self.runner: InterviewRunner | None = None
         self.tts_voice = settings.tts_voice
         self._whisper_model = settings.whisper_model
+        self._tts_queue = _SentenceTTSQueue()
 
     # ------------------------------------------------------------------
     # 传输层工具
@@ -86,11 +134,14 @@ class InterviewWSHandler:
                 self._whisper_model = settings.whisper_model
 
             if session.status == "pending":
+                await self._tts_queue.start(self.send)
                 await self.set_turn(TurnState.AI_SPEAKING)
                 async for event in self._consume_runner_opening(db):
                     await self._dispatch_event(event)
+                await self._tts_queue.flush_remainder("")
                 await self.set_turn(TurnState.USER_SPEAKING)
             elif session.status == "active":
+                await self._tts_queue.start(self.send)
                 await self.set_turn(TurnState.USER_SPEAKING)
             else:
                 await self.send("error", message="面试已结束")
@@ -108,6 +159,7 @@ class InterviewWSHandler:
             except Exception:
                 pass
         finally:
+            await self._tts_queue.stop()
             db.close()
 
     # ------------------------------------------------------------------
@@ -220,14 +272,16 @@ class InterviewWSHandler:
             if event.kind == EventKind.TOKEN:
                 sentence_buf += event.token
                 if any(sentence_buf.endswith(p) for p in ["。", "！", "？", "!", "?", "\n"]):
-                    sent = sentence_buf.strip()
-                    if sent:
-                        await self._speak_one(sent)
+                    # 非阻塞入队：让 TTS worker 异步合成与发送，
+                    # LLM 流不会被 TTS 网络往返阻塞。
+                    await self._tts_queue.enqueue(sentence_buf)
                     sentence_buf = ""
             elif event.kind == EventKind.TURN_COMPLETE:
                 if sentence_buf.strip():
-                    await self._speak_one(sentence_buf.strip())
-                sentence_buf = ""
+                    await self._tts_queue.enqueue(sentence_buf)
+                    sentence_buf = ""
+                # 等待当前回合所有句子播放完
+                await self._tts_queue.flush_remainder("")
                 if event.is_complete:
                     await self.set_turn(TurnState.IDLE)
                 else:
@@ -307,12 +361,8 @@ class InterviewWSHandler:
         await self.set_turn(TurnState.USER_SPEAKING)
 
     # ------------------------------------------------------------------
-    # TTS
+    # TTS（一次性短句静默追问仍使用直发；流式回合 TTS 走 _tts_queue）
     # ------------------------------------------------------------------
-
-    async def _speak_sentences(self, text: str) -> None:
-        for s in split_sentences(text):
-            await self._speak_one(s)
 
     async def _speak_one(self, sentence: str) -> None:
         audio_b64 = await synthesize_to_base64(sentence, self.tts_voice)

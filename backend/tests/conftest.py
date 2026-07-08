@@ -37,22 +37,16 @@ def _isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[
 
 @pytest.fixture
 def engine():
-    """提供独立内存 SQLite 引擎，供需要数据库 fixture 的测试使用。"""
-    eng = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    yield eng
-    eng.dispose()
+    """复用全局 engine，确保 fixture 与 FastAPI Depends 注入的 Session 共享同一份 :memory: 库。"""
+    from app.database import get_engine
+
+    return get_engine()
 
 
 @pytest.fixture
 def session_factory(engine):
-    """返回 (SessionLocal, init 函数) 元组，方便测试中按需建表。"""
+    """返回 sessionmaker，绑定到全局 engine，使测试 fixture 与 FastAPI 注入共享同一份库。"""
     from app.database import Base
-
-    # 触发模型注册
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
