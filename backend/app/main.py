@@ -26,11 +26,38 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         seed_llm_settings(db)
+        await _ensure_rag_index(db)
     finally:
         db.close()
     logger.info("InterviewOS 后端已启动")
     yield
     logger.info("InterviewOS 后端已关闭")
+
+
+async def _ensure_rag_index(db) -> None:
+    """首次启动时构建企业知识库 RAG 索引。
+
+    若未配置 LLM API Key，跳过（不影响启动）。
+    """
+    from app.services.llm.client import LLMClient
+    from app.services.rag.company_rag import CompanyKnowledgeRAG
+
+    try:
+        llm = LLMClient.from_db(db)
+    except Exception as e:
+        logger.warning("跳过 RAG 初始化（LLM 配置不可用）: %s", e)
+        return
+
+    api_key = getattr(llm, "api_key", None)
+    if not api_key:
+        logger.info("未配置 LLM API Key，跳过 RAG 索引构建")
+        return
+
+    try:
+        rag = CompanyKnowledgeRAG(llm)
+        await rag.ensure_index()
+    except Exception as e:
+        logger.warning("RAG 索引构建失败（启动继续）: %s", e)
 
 
 app = FastAPI(

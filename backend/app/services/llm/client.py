@@ -150,3 +150,31 @@ class LLMClient:
             return False, f"HTTP {e.response.status_code}: {e.response.text[:200]}"
         except Exception as e:
             return False, str(e)
+
+    async def embed(
+        self,
+        texts: list[str],
+        *,
+        model: str | None = None,
+    ) -> list[list[float]]:
+        """调用 OpenAI 兼容 /embeddings 端点，返回每段文本的向量。
+
+        Args:
+            texts: 待嵌入的文本列表。
+            model: 可选覆盖默认模型；不传则用 ``self.model``。
+
+        Returns:
+            与输入等长的向量列表。
+        """
+        url = f"{self.api_base}/embeddings"
+        payload: dict[str, Any] = {
+            "model": model or self.model,
+            "input": texts,
+        }
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, headers=self._headers(), json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+
+        # OpenAI 标准：{"data": [{"embedding": [...]}, ...]}
+        return [item["embedding"] for item in data["data"]]

@@ -123,7 +123,18 @@ class InterviewWSHandler:
 
             self.llm = LLMClient.from_db(db)
             self.agent = InterviewAgent(session, self.llm)
-            self.runner = InterviewRunner(session, self.llm, self.agent)
+
+            # 企业知识库 RAG（若 LLM 未配置 key 则降级为 None）
+            rag = None
+            if self.llm.api_key:
+                try:
+                    from app.services.rag.company_rag import CompanyKnowledgeRAG
+
+                    rag = CompanyKnowledgeRAG(self.llm)
+                except Exception as e:
+                    logger.warning("RAG 实例化失败，继续无 RAG 模式: %s", e)
+
+            self.runner = InterviewRunner(session, self.llm, self.agent, rag=rag)
 
             row = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
             if row:
