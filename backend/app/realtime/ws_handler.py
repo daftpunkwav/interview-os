@@ -1,7 +1,14 @@
-"""WebSocket 面试会话处理器。"""
+"""WebSocket 面试会话处理器。
 
-import base64
-import json
+仅负责传输层职责：
+- 接收前端消息（音频/文本/视觉/静音/请求提纲）
+- 调用 :class:`InterviewRunner` 驱动面试回合
+- 消费 runner 的 :class:`StreamEvent` 并翻译为前端事件
+- 调度 TTS 句子级播放
+"""
+
+from __future__ import annotations
+
 import logging
 from typing import Any
 
@@ -14,10 +21,12 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.models import InterviewSession, LLMSettings
 from app.realtime.events import TurnState
-from app.services.interview.agent import InterviewAgent
+from app.services.interview.agent import InterviewAgent, strip_markers
+from app.services.interview.events import EventKind, StreamEvent
+from app.services.interview.runner import InterviewRunner
 from app.services.llm.client import LLMClient
 from app.services.stt.whisper import transcribe_pcm_base64_async
-from app.services.tts.edge import extract_emotion, split_sentences, synthesize_to_base64
+from app.services.tts.edge import split_sentences, synthesize_to_base64
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -34,8 +43,13 @@ class InterviewWSHandler:
         self.orchestrator = InterviewOrchestrator()
         self.agent: InterviewAgent | None = None
         self.llm: LLMClient | None = None
+        self.runner: InterviewRunner | None = None
         self.tts_voice = settings.tts_voice
         self._whisper_model = settings.whisper_model
+
+    # ------------------------------------------------------------------
+    # 传输层工具
+    # ------------------------------------------------------------------
 
     async def send(self, msg_type: str, **payload: Any) -> None:
         await self.ws.send_json({"type": msg_type, **payload})
@@ -44,17 +58,25 @@ class InterviewWSHandler:
         self.turn_state = state
         await self.send("turn_state", state=state.value)
 
+    # ------------------------------------------------------------------
+    # 主循环
+    # ------------------------------------------------------------------
+
     async def handle(self) -> None:
         await self.ws.accept()
         db = SessionLocal()
         try:
-            session = db.query(InterviewSession).filter(InterviewSession.id == self.session_id).first()
+            session = db.query(InterviewSession).filter(
+                InterviewSession.id == self.session_id
+            ).first()
             if not session:
                 await self.send("error", message="面试会话不存在")
                 return
 
             self.llm = LLMClient.from_db(db)
             self.agent = InterviewAgent(session, self.llm)
+            self.runner = InterviewRunner(session, self.llm, self.agent)
+
             row = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
             if row:
                 if row.tts_voice:
@@ -65,10 +87,8 @@ class InterviewWSHandler:
 
             if session.status == "pending":
                 await self.set_turn(TurnState.AI_SPEAKING)
-                opening = await self.agent.start(db)
-                clean = self._clean_reply(opening)
-                await self.send("assistant_done", content=clean, phase=session.current_phase, is_complete=False, emotion=extract_emotion(opening))
-                await self._speak_sentences(clean)
+                async for event in self._consume_runner_opening(db):
+                    await self._dispatch_event(event)
                 await self.set_turn(TurnState.USER_SPEAKING)
             elif session.status == "active":
                 await self.set_turn(TurnState.USER_SPEAKING)
@@ -90,6 +110,10 @@ class InterviewWSHandler:
         finally:
             db.close()
 
+    # ------------------------------------------------------------------
+    # 消息分发
+    # ------------------------------------------------------------------
+
     async def _dispatch(self, data: dict[str, Any], db: Session, session: InterviewSession) -> None:
         msg_type = data.get("type", "")
         if msg_type == "audio_chunk":
@@ -97,7 +121,6 @@ class InterviewWSHandler:
             if chunk:
                 self.audio_buffer.append(chunk)
         elif msg_type == "stt_text":
-            # 浏览器 Web Speech 备用文本
             text = data.get("text", "").strip()
             if text:
                 await self.send("stt_partial", text=text)
@@ -119,7 +142,13 @@ class InterviewWSHandler:
         elif msg_type == "request_hint":
             await self._on_request_hint(data, db, session)
 
-    async def _on_user_turn_end(self, data: dict[str, Any], db: Session, session: InterviewSession) -> None:
+    # ------------------------------------------------------------------
+    # 用户回合结束
+    # ------------------------------------------------------------------
+
+    async def _on_user_turn_end(
+        self, data: dict[str, Any], db: Session, session: InterviewSession
+    ) -> None:
         if self.turn_state == TurnState.PROCESSING:
             return
         await self.set_turn(TurnState.PROCESSING)
@@ -149,92 +178,86 @@ class InterviewWSHandler:
 
         await self._process_user_text(text, data, db, session)
 
-    async def _process_user_text(self, text: str, data: dict[str, Any], db: Session, session: InterviewSession) -> None:
+    # ------------------------------------------------------------------
+    # 核心：消费 runner 流式事件
+    # ------------------------------------------------------------------
+
+    async def _consume_runner_opening(self, db: Session):
+        assert self.runner is not None
+        async for event in self.runner.stream_opening(db):
+            yield event
+
+    async def _consume_runner_turn(
+        self,
+        text: str,
+        data: dict[str, Any],
+        db: Session,
+    ):
+        assert self.runner is not None
         face = data.get("face_analysis") or self.orchestrator.snapshot.face_analysis
         image_b64 = data.get("image_base64")
         self.orchestrator.snapshot.last_user_text = text
         self.orchestrator.snapshot.merge_face(face)
 
-        extra = self.orchestrator.build_context_prefix()
-        full_text = f"{extra}\n{text}" if extra else text
+        async for event in self.runner.stream_turn(
+            text,
+            db,
+            face=face,
+            image_b64=image_b64,
+        ):
+            yield event
 
-        assert self.agent and self.llm
+    async def _process_user_text(
+        self, text: str, data: dict[str, Any], db: Session, session: InterviewSession
+    ) -> None:
+        assert self.runner is not None
         await self.set_turn(TurnState.PROCESSING)
-
-        # 流式生成
-        content_buf = ""
-        sentence_buf = ""
         await self.set_turn(TurnState.AI_SPEAKING)
-        user_content = full_text
-        if face:
-            hints = []
-            if not face.get("face_detected", True):
-                hints.append("画面中未检测到人脸")
-            elif face.get("looking_away"):
-                hints.append("候选人似乎没有看镜头")
-            if face.get("nervousness", 0) > 0.5:
-                hints.append("候选人看起来比较紧张")
-            if hints:
-                user_content += f"\n[面部分析：{'; '.join(hints)}]"
 
-        self.agent.messages.append({"role": "user", "content": user_content})
-        if image_b64:
-            api_messages = list(self.agent.messages)
-            api_messages[-1] = {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": user_content},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
-                ],
-            }
-            stream_messages = api_messages
-        else:
-            stream_messages = self.agent.messages
-
-        async for token in self.llm.chat_stream(stream_messages):
-            content_buf += token
-            sentence_buf += token
-            await self.send("assistant_token", token=token)
-            if any(sentence_buf.endswith(p) for p in ["。", "！", "？", "!", "?", "\n"]):
-                sent = sentence_buf.strip()
-                if sent:
-                    await self._speak_one(sent)
+        sentence_buf = ""
+        async for event in self._consume_runner_turn(text, data, db):
+            await self._dispatch_event(event)
+            if event.kind == EventKind.TOKEN:
+                sentence_buf += event.token
+                if any(sentence_buf.endswith(p) for p in ["。", "！", "？", "!", "?", "\n"]):
+                    sent = sentence_buf.strip()
+                    if sent:
+                        await self._speak_one(sent)
+                    sentence_buf = ""
+            elif event.kind == EventKind.TURN_COMPLETE:
+                if sentence_buf.strip():
+                    await self._speak_one(sentence_buf.strip())
                 sentence_buf = ""
+                if event.is_complete:
+                    await self.set_turn(TurnState.IDLE)
+                else:
+                    await self.set_turn(TurnState.USER_SPEAKING)
+            elif event.kind == EventKind.ERROR:
+                await self.set_turn(TurnState.USER_SPEAKING)
 
-        if sentence_buf.strip():
-            await self._speak_one(sentence_buf.strip())
+    # ------------------------------------------------------------------
+    # runner 事件 → 前端 WS 事件
+    # ------------------------------------------------------------------
 
-        self.agent.messages.append({"role": "assistant", "content": content_buf})
-        is_complete = "[INTERVIEW_COMPLETE]" in content_buf
-        clean = self._clean_reply(content_buf)
+    async def _dispatch_event(self, event: StreamEvent) -> None:
+        if event.kind == EventKind.TOKEN:
+            await self.send("assistant_token", token=event.token)
+        elif event.kind == EventKind.TURN_COMPLETE:
+            await self.send(
+                "assistant_done",
+                content=event.content,
+                phase=event.phase_id,
+                is_complete=event.is_complete,
+                emotion=event.emotion,
+            )
+        elif event.kind == EventKind.ERROR:
+            await self.send("error", message=event.error)
 
-        if "[PHASE_COMPLETE]" in content_buf or self.agent.questions_in_phase >= self.agent._current_phase().max_questions:
-            self.agent._advance_phase()
-        else:
-            self.agent.questions_in_phase += 1
-
-        if is_complete:
-            session.status = "completed"
-            from datetime import datetime, timezone
-            session.ended_at = datetime.now(timezone.utc)
-
-        self.agent._save_state(db)
-        emotion = extract_emotion(content_buf)
-        await self.send(
-            "assistant_done",
-            content=clean,
-            phase=session.current_phase,
-            is_complete=is_complete,
-            emotion=emotion,
-        )
-
-        if is_complete:
-            await self.set_turn(TurnState.IDLE)
-        else:
-            await self.set_turn(TurnState.USER_SPEAKING)
+    # ------------------------------------------------------------------
+    # 参考提纲
+    # ------------------------------------------------------------------
 
     async def _on_request_hint(self, data: dict[str, Any], db: Session, session: InterviewSession) -> None:
-        """根据面试官问题生成参考回答提纲。"""
         question = data.get("question", "").strip()
         if not question or not self.llm:
             return
@@ -270,6 +293,10 @@ class InterviewWSHandler:
             logger.warning("参考提纲生成失败: %s", e)
             return "暂时无法生成参考回答，请根据你的实际经历组织语言。"
 
+    # ------------------------------------------------------------------
+    # 静默追问
+    # ------------------------------------------------------------------
+
     async def _on_silence_nudge(self, db: Session, session: InterviewSession) -> None:
         if self.turn_state != TurnState.USER_SPEAKING:
             return
@@ -278,6 +305,10 @@ class InterviewWSHandler:
         await self.send("silence_nudge", content=nudge)
         await self._speak_one(nudge)
         await self.set_turn(TurnState.USER_SPEAKING)
+
+    # ------------------------------------------------------------------
+    # TTS
+    # ------------------------------------------------------------------
 
     async def _speak_sentences(self, text: str) -> None:
         for s in split_sentences(text):
@@ -288,13 +319,5 @@ class InterviewWSHandler:
         if audio_b64:
             await self.send("tts_audio", data=audio_b64, sentence=sentence)
 
-    @staticmethod
-    def _clean_reply(text: str) -> str:
-        return (
-            text.replace("[INTERVIEW_COMPLETE]", "")
-            .replace("[PHASE_COMPLETE]", "")
-            .replace("[emotion:neutral]", "")
-            .replace("[emotion:smile]", "")
-            .replace("[emotion:serious]", "")
-            .strip()
-        )
+    # 兼容旧接口，handler 内部不再直接使用
+    _clean_reply = staticmethod(strip_markers)
