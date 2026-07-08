@@ -26,6 +26,7 @@ htmlcov/
 *.db
 *.sqlite3
 data/*.db
+backend/app/data/
 
 # Node
 node_modules/

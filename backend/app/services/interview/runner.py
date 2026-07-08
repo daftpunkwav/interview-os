@@ -26,6 +26,7 @@ from app.services.interview.agent import (
 from app.services.interview.events import EventKind, StreamEvent
 from app.services.interview.followup import analyze as analyze_followup
 from app.services.llm.client import LLMClient
+from app.services.rag.company_rag import CompanyKnowledgeRAG, format_context as format_rag_context
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +39,12 @@ class InterviewRunner:
         session: InterviewSession,
         llm: LLMClient,
         agent: InterviewAgent | None = None,
+        rag: CompanyKnowledgeRAG | None = None,
     ):
         self.session = session
         self.llm = llm
         self.agent = agent or InterviewAgent(session, llm)
+        self.rag = rag
 
     # ------------------------------------------------------------------
     # 工具方法
@@ -128,6 +131,45 @@ class InterviewRunner:
         if not row or not row.context_window:
             return 0
         return int(row.context_window)
+
+    async def _maybe_retrieve_rag(
+        self,
+        query: str,
+        *,
+        top_k: int = 3,
+    ) -> dict[str, str] | None:
+        """如有 RAG 实例则检索；返回可注入 messages 的 system 消息或 None。
+
+        - 若未配置 RAG、索引为空或 API 失败：返回 None（不影响主流程）
+        - 检索失败时记录 warning，不抛出
+        """
+        if self.rag is None or not query:
+            return None
+        try:
+            company_id = self.session.company or None
+            hits = await self.rag.query_for_company(
+                query, company_id, top_k=top_k
+            ) if company_id else await self.rag.query(query, top_k=top_k)
+        except Exception as e:
+            logger.warning("RAG 检索失败: %s", e)
+            return None
+
+        if not hits:
+            return None
+
+        # 过滤距离过大的弱匹配
+        hits = [h for h in hits if h.get("distance", 1.0) < 0.5]
+        if not hits:
+            return None
+
+        logger.info(
+            "RAG 命中: session=%s company=%s hits=%d",
+            self.session.id, self.session.company, len(hits),
+        )
+        return {
+            "role": "system",
+            "content": format_rag_context(hits),
+        }
 
     # ------------------------------------------------------------------
     # 开场
@@ -221,19 +263,29 @@ class InterviewRunner:
                     self.session.id, signal.category, user_text[:40],
                 )
 
+            # 2.5 RAG 检索：从企业知识库检索与当前问题/回答相关的文档片段
+            rag_msg = await self._maybe_retrieve_rag(
+                query=f"{last_question} {user_text}".strip(),
+            )
+            if rag_msg:
+                self.agent.messages.append(rag_msg)
+
             # 3. 重新计算包含面部分析提示的 user content。
-            # 追问引导（若存在）追加在 user 之后，不能被覆盖 —— 因此先 pop 引导，
-            # 再替换 user，最后把引导重新追加到末尾。
-            followup_msg = None
-            if signal.needs_followup and self.agent.messages and \
-                    self.agent.messages[-1].get("role") == "system" and \
-                    self.agent.messages[-1].get("content", "").startswith("[追问引导"):
-                followup_msg = self.agent.messages.pop()
+            # 追问引导与 RAG（若存在）追加在 user 之后，不能被覆盖 —— 因此先 pop
+            # 末尾追加的辅助消息，再替换 user，最后按顺序追加回去。
+            trailing_msgs: list[dict[str, Any]] = []
+            while self.agent.messages and self.agent.messages[-1].get("role") == "system":
+                content = self.agent.messages[-1].get("content", "")
+                if content.startswith("[追问引导") or content.startswith("## 企业知识库"):
+                    trailing_msgs.append(self.agent.messages.pop())
+                else:
+                    break
+            trailing_msgs.reverse()
 
             user_content = self._build_user_content(user_text, face)
             self.agent.messages[-1] = {"role": "user", "content": user_content}
-            if followup_msg is not None:
-                self.agent.messages.append(followup_msg)
+            for m in trailing_msgs:
+                self.agent.messages.append(m)
 
             context_window = self._get_context_window(db)
             api_messages = self._build_api_messages(

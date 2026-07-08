@@ -316,6 +316,128 @@ def test_stream_turn_applies_context_compression(db) -> None:
     assert any("上下文压缩" in m.get("content", "") for m in last_call)
 
 
+def test_stream_turn_injects_rag_context(db) -> None:
+    """当 RAG 命中时，检索片段应作为 system 消息注入到 LLM 调用。"""
+    import uuid
+    from pathlib import Path
+    from app.services.rag import company_rag as rag_mod
+
+    # 用临时目录隔离 chroma
+    chroma_dir = Path(db.get_bind().url.database).parent / f"chroma_{uuid.uuid4().hex[:6]}"
+    chroma_dir.mkdir(parents=True, exist_ok=True)
+
+    import chromadb
+    from chromadb.config import Settings
+
+    class _StubRAG:
+        def __init__(self):
+            self.embed_called_with: list[str] = []
+
+        async def query_for_company(self, query, company_id, top_k=4):
+            self.embed_called_with.append(query)
+            return [
+                {
+                    "text": f"{company_id} 风格：高频追问",
+                    "metadata": {"company_id": company_id, "section": "style"},
+                    "distance": 0.1,
+                },
+            ]
+
+        async def query(self, query, top_k=3, company_id=None):
+            return []
+
+    rag = _StubRAG()
+    session = _make_session(db)
+    session.messages = json.dumps([
+        {"role": "system", "content": "你是面试官"},
+        {"role": "assistant", "content": "请说说性能优化"},
+    ], ensure_ascii=False)
+    db.commit()
+    db.refresh(session)
+
+    llm = FakeLLMClient(tokens=["好。"])
+    runner = InterviewRunner(session, llm, rag=rag)
+
+    import asyncio
+
+    async def run():
+        async for _ in runner.stream_turn("接口 RT 从 200ms 降到 35ms", db):
+            pass
+
+    asyncio.run(run())
+
+    last_call = llm.stream_calls[-1]
+    system_msgs = [m["content"] for m in last_call if m["role"] == "system"]
+    assert any("企业知识库检索补充" in s and "bytedance" in s for s in system_msgs), system_msgs
+
+
+def test_stream_turn_skips_rag_when_no_hits(db) -> None:
+    """RAG 无命中时不应注入空片段。"""
+    class _EmptyRAG:
+        async def query_for_company(self, query, company_id, top_k=4):
+            return []
+        async def query(self, query, top_k=3, company_id=None):
+            return []
+
+    rag = _EmptyRAG()
+    session = _make_session(db)
+    session.messages = json.dumps([
+        {"role": "system", "content": "你是面试官"},
+        {"role": "assistant", "content": "自我介绍"},
+    ], ensure_ascii=False)
+    db.commit()
+    db.refresh(session)
+
+    llm = FakeLLMClient(tokens=["好。"])
+    runner = InterviewRunner(session, llm, rag=rag)
+
+    import asyncio
+
+    async def run():
+        async for _ in runner.stream_turn("我叫张三", db):
+            pass
+
+    asyncio.run(run())
+
+    last_call = llm.stream_calls[-1]
+    system_msgs = [m["content"] for m in last_call if m["role"] == "system"]
+    assert not any("企业知识库" in s for s in system_msgs)
+
+
+def test_stream_turn_rag_error_does_not_break_turn(db) -> None:
+    """RAG 抛错时面试回合应正常完成，不影响主流程。"""
+    class _BrokenRAG:
+        async def query_for_company(self, query, company_id, top_k=4):
+            raise RuntimeError("RAG unavailable")
+        async def query(self, query, top_k=3, company_id=None):
+            raise RuntimeError("RAG unavailable")
+
+    rag = _BrokenRAG()
+    session = _make_session(db)
+    session.messages = json.dumps([
+        {"role": "system", "content": "你是面试官"},
+        {"role": "assistant", "content": "自我介绍"},
+    ], ensure_ascii=False)
+    db.commit()
+    db.refresh(session)
+
+    llm = FakeLLMClient(tokens=["好的。"])
+    runner = InterviewRunner(session, llm, rag=rag)
+
+    import asyncio
+
+    async def run():
+        events = []
+        async for e in runner.stream_turn("我叫李四", db):
+            events.append(e)
+        return events
+
+    events = asyncio.run(run())
+    # 应有 turn_done 且无 error
+    assert any(e.kind.value == "turn_done" for e in events)
+    assert not any(e.kind.value == "error" for e in events)
+
+
 def test_agent_public_methods_no_longer_underscore(db) -> None:
     """确保私有字段已被收敛为公共方法（防止 ws_handler 直接访问）。"""
     from app.services.interview.agent import InterviewAgent
