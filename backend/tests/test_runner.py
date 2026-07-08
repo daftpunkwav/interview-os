@@ -276,6 +276,46 @@ def test_stream_turn_no_followup_probe_when_solid(db) -> None:
     assert not any("追问引导" in s for s in system_msgs)
 
 
+def test_stream_turn_applies_context_compression(db) -> None:
+    """context_window 较小时应触发上下文压缩。"""
+    from app.models import LLMSettings
+    session = _make_session(db)
+    # 写入 200 条 user/assistant 对话，迫使压缩
+    base = [{"role": "system", "content": "你是面试官"}]
+    base += [
+        {"role": "user" if i % 2 == 0 else "assistant",
+         "content": "对话内容" * 20}
+        for i in range(40)
+    ]
+    session.messages = json.dumps(base, ensure_ascii=False)
+    settings = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
+    if settings is None:
+        settings = LLMSettings(id=1, api_key="x", api_base="http://x", model="m",
+                                context_window=500, max_tokens=100)
+        db.add(settings)
+    else:
+        settings.context_window = 500
+    db.commit()
+    db.refresh(session)
+
+    llm = FakeLLMClient(tokens=["好。"])
+    runner = InterviewRunner(session, llm)
+
+    import asyncio
+
+    async def run():
+        async for _ in runner.stream_turn("新回答", db):
+            pass
+
+    asyncio.run(run())
+
+    last_call = llm.stream_calls[-1]
+    # 压缩后消息数应少于原始
+    assert len(last_call) < len(base) + 1  # +1 for new user msg
+    # 应包含压缩说明
+    assert any("上下文压缩" in m.get("content", "") for m in last_call)
+
+
 def test_agent_public_methods_no_longer_underscore(db) -> None:
     """确保私有字段已被收敛为公共方法（防止 ws_handler 直接访问）。"""
     from app.services.interview.agent import InterviewAgent

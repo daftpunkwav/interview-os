@@ -368,46 +368,84 @@ REPORT_SYSTEM_PROMPT = """你是一位资深面试评估专家。根据面试对
 只返回 JSON。"""
 
 
-async def generate_report(
+def build_report_messages(
     session: InterviewSession,
-    llm: LLMClient,
     face_records: list[dict] | None = None,
-) -> InterviewReport:
-    """根据面试对话生成评估报告。"""
+) -> list[dict[str, str]]:
+    """构造报告生成的 LLM 输入。"""
     messages = json.loads(session.messages or "[]")
-    conversation = "\n".join(
-        f"{m['role']}: {m['content']}"
-        for m in messages
-        if m["role"] in ("user", "assistant")
-    )
+    conversation_lines: list[str] = []
+    for m in messages:
+        if m["role"] not in ("user", "assistant"):
+            continue
+        content = m.get("content", "")
+        if isinstance(content, list):
+            # 多模态消息：仅取 text 部分
+            text_parts = [
+                p.get("text", "")
+                for p in content
+                if isinstance(p, dict) and p.get("type") == "text"
+            ]
+            content = "\n".join(text_parts)
+        conversation_lines.append(f"{m['role']}: {content}")
+    conversation = "\n".join(conversation_lines)
 
     face_ctx = ""
     if face_records:
         face_ctx = f"\n面部分析记录：{json.dumps(face_records, ensure_ascii=False)[:1000]}"
 
-    report_messages = [
+    # 截取尾部以避免超出上下文窗口；用切片而不是索引，永不越界
+    tail = conversation[-12000:]
+
+    return [
         {"role": "system", "content": REPORT_SYSTEM_PROMPT},
         {
             "role": "user",
             "content": (
                 f"面试岗位：{session.role}（{session.level}）\n"
                 f"公司：{session.company}\n\n对话记录：\n"
-                f"{conversation[-12000]}{face_ctx}"
+                f"{tail}{face_ctx}"
             ),
         },
     ]
 
+
+def _fallback_report() -> InterviewReport:
+    return InterviewReport(
+        overall_score=70,
+        score_breakdown=ScoreBreakdown(
+            overall=70, technical=70, communication=70,
+            project_depth=70, problem_solving=70, presence=70,
+        ),
+        weaknesses=["报告生成时遇到错误，请重试"],
+        improvement_suggestions=["完成更多面试练习以获得准确评估"],
+    )
+
+
+async def generate_report(
+    session: InterviewSession,
+    llm: LLMClient,
+    face_records: list[dict] | None = None,
+) -> InterviewReport:
+    """根据面试对话生成评估报告（同步版本）。"""
     try:
-        data = await llm.chat_json(report_messages)
+        data = await llm.chat_json(build_report_messages(session, face_records))
         return InterviewReport(**data)
     except Exception as e:
         logger.error("报告生成失败: %s", e)
-        return InterviewReport(
-            overall_score=70,
-            score_breakdown=ScoreBreakdown(
-                overall=70, technical=70, communication=70,
-                project_depth=70, problem_solving=70, presence=70,
-            ),
-            weaknesses=["报告生成时遇到错误，请重试"],
-            improvement_suggestions=["完成更多面试练习以获得准确评估"],
-        )
+        return _fallback_report()
+
+
+async def stream_report(
+    session: InterviewSession,
+    llm: LLMClient,
+    face_records: list[dict] | None = None,
+):
+    """流式生成评估报告，每次 yield 一个 token 字符串。
+
+    与同步版不同：流式版本不复用 ``chat_json``，而是直接 ``chat_stream`` 让前端可以
+    增量渲染。返回的最终结构仍通过 SSE 的 ``done`` 事件承载（由调用方解析）。
+    """
+    report_messages = build_report_messages(session, face_records)
+    async for token in llm.chat_stream(report_messages, temperature=0.3):
+        yield token
