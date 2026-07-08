@@ -1,4 +1,12 @@
-"""面试 Agent 核心逻辑：动态问题生成、追问、阶段管理。"""
+"""面试 Agent 核心逻辑：动态问题生成、追问、阶段管理。
+
+设计说明：
+- 本模块是 *数据层*，负责消息历史、阶段索引、状态持久化。
+- 回合执行（流式 LLM 调用、句子切分、TTS 调度、错误恢复）由 :class:`InterviewRunner` 负责。
+- 上层（ws_handler、HTTP API）只应通过公共方法访问状态，禁止触碰 ``_*`` 字段。
+"""
+
+from __future__ import annotations
 
 import json
 import logging
@@ -23,14 +31,25 @@ from app.services.llm.client import LLMClient
 logger = logging.getLogger(__name__)
 
 
-def _build_system_prompt(
+# ---------------------------------------------------------------------------
+# 系统 Prompt 构建
+# ---------------------------------------------------------------------------
+
+
+def build_system_prompt(
     config: InterviewConfig,
     candidate: CandidateProfile | None,
     company_context: str,
     workflow: Workflow,
     current_phase: InterviewPhase,
     profile: UserProfile | None = None,
+    followup_probe: str | None = None,
 ) -> str:
+    """组装面试官系统提示。
+
+    Args:
+        followup_probe: 可选的追问引导（由 followup 分析器注入）。
+    """
     personality = PERSONALITY_PROMPTS.get(config.personality, PERSONALITY_PROMPTS["professional"])
     style = STYLE_PROMPTS.get(config.interview_style, STYLE_PROMPTS["deep_dive"])
     strictness = STRICTNESS_DESCRIPTIONS.get(config.strictness, STRICTNESS_DESCRIPTIONS[3])
@@ -62,6 +81,14 @@ def _build_system_prompt(
 
     phase_list = " → ".join(p.name for p in workflow.phases)
 
+    followup_section = ""
+    if followup_probe:
+        followup_section = f"""
+## 追问引导（来自结构化分析）
+{followup_probe}
+请围绕上述方向深入追问至少一个问题，避免重复已经讨论过的角度。
+"""
+
     return f"""你是 InterviewOS 的 AI 面试官，正在进行一场模拟面试。
 
 {personality}
@@ -84,7 +111,7 @@ def _build_system_prompt(
 
 ## 完整流程
 {phase_list}
-
+{followup_section}
 ## 行为准则
 1. 根据候选人简历和回答动态生成问题，绝不使用固定题库
 2. 发现模糊描述、数据缺失、技术漏洞时主动追问
@@ -98,13 +125,58 @@ def _build_system_prompt(
 请开始当前阶段的面试。"""
 
 
+# ---------------------------------------------------------------------------
+# 状态推进辅助
+# ---------------------------------------------------------------------------
+
+
+PHASE_COMPLETE_MARKER = "[PHASE_COMPLETE]"
+INTERVIEW_COMPLETE_MARKER = "[INTERVIEW_COMPLETE]"
+
+
+def has_marker(content: str, marker: str) -> bool:
+    """判断 LLM 输出是否包含指定标记。"""
+    return marker in content
+
+
+def strip_markers(content: str) -> str:
+    """移除所有控制标记，返回纯文本回复。"""
+    return (
+        content.replace(INTERVIEW_COMPLETE_MARKER, "")
+        .replace(PHASE_COMPLETE_MARKER, "")
+        .replace("[emotion:neutral]", "")
+        .replace("[emotion:smile]", "")
+        .replace("[emotion:serious]", "")
+        .strip()
+    )
+
+
+def detect_emotion(content: str) -> str:
+    """从 LLM 输出中抽取情感标签，默认 neutral。"""
+    for marker, emotion in (
+        ("[emotion:smile]", "smile"),
+        ("[emotion:serious]", "serious"),
+        ("[emotion:neutral]", "neutral"),
+    ):
+        if marker in content:
+            return emotion
+    return "neutral"
+
+
+# ---------------------------------------------------------------------------
+# InterviewAgent：数据层
+# ---------------------------------------------------------------------------
+
+
 class InterviewAgent:
-    """面试 Agent：管理状态、生成问题、处理追问。"""
+    """面试 Agent 数据层：消息历史、阶段索引、状态持久化。"""
 
     def __init__(self, session: InterviewSession, llm: LLMClient):
         self.session = session
         self.llm = llm
         self._load_state()
+
+    # ---- 状态加载/保存 -----------------------------------------------------
 
     def _load_state(self) -> None:
         try:
@@ -118,11 +190,12 @@ class InterviewAgent:
             self.messages = []
 
         self.workflow = get_workflow(self.session.workflow_type)
-        self.current_phase_idx = self.agent_state.get("phase_idx", 0)
-        self.questions_in_phase = self.agent_state.get("questions_in_phase", 0)
+        self.current_phase_idx: int = self.agent_state.get("phase_idx", 0)
+        self.questions_in_phase: int = self.agent_state.get("questions_in_phase", 0)
         self.asked_topics: list[str] = self.agent_state.get("asked_topics", [])
 
-    def _save_state(self, db: Session) -> None:
+    def save_state(self, db: Session) -> None:
+        """将当前状态写回数据库。"""
         self.agent_state.update({
             "phase_idx": self.current_phase_idx,
             "questions_in_phase": self.questions_in_phase,
@@ -130,15 +203,22 @@ class InterviewAgent:
         })
         self.session.agent_state = json.dumps(self.agent_state, ensure_ascii=False)
         self.session.messages = json.dumps(self.messages, ensure_ascii=False)
-        self.session.current_phase = self._current_phase().id
+        self.session.current_phase = self.current_phase().id
         db.commit()
 
-    def _current_phase(self) -> InterviewPhase:
+    # ---- 阶段查询 -----------------------------------------------------------
+
+    def current_phase(self) -> InterviewPhase:
         if self.current_phase_idx < len(self.workflow.phases):
             return self.workflow.phases[self.current_phase_idx]
         return self.workflow.phases[-1]
 
-    def _get_config(self) -> InterviewConfig:
+    def phases_remaining(self) -> list[str]:
+        return [p.name for p in self.workflow.phases[self.current_phase_idx:]]
+
+    # ---- 配置/上下文查询（只读） --------------------------------------------
+
+    def get_config(self) -> InterviewConfig:
         return InterviewConfig(
             role=self.session.role,
             level=self.session.level,
@@ -150,10 +230,10 @@ class InterviewAgent:
             resume_id=self.session.resume_id,
         )
 
-    def _get_user_profile(self, db: Session) -> UserProfile | None:
+    def get_user_profile(self, db: Session) -> UserProfile | None:
         return db.query(UserProfile).filter(UserProfile.id == self.session.profile_id).first()
 
-    def _get_candidate(self, db: Session) -> CandidateProfile | None:
+    def get_candidate(self, db: Session) -> CandidateProfile | None:
         if not self.session.resume_id:
             return None
         resume = db.query(Resume).filter(Resume.id == self.session.resume_id).first()
@@ -164,105 +244,102 @@ class InterviewAgent:
         except (json.JSONDecodeError, Exception):
             return None
 
-    async def start(self, db: Session) -> str:
-        """启动面试，返回面试官开场白。"""
-        config = self._get_config()
-        candidate = self._get_candidate(db)
-        profile = self._get_user_profile(db)
+    def build_opening_prompt(self, db: Session) -> str:
+        """构建首回合系统提示。"""
+        config = self.get_config()
+        candidate = self.get_candidate(db)
+        profile = self.get_user_profile(db)
         company_ctx = get_company_context(config.company)
-        phase = self._current_phase()
+        phase = self.current_phase()
+        return build_system_prompt(
+            config, candidate, company_ctx, self.workflow, phase, profile
+        )
 
-        system_prompt = _build_system_prompt(config, candidate, company_ctx, self.workflow, phase, profile)
-        self.messages = [{"role": "system", "content": system_prompt}]
+    def build_turn_prompt(
+        self,
+        db: Session,
+        followup_probe: str | None = None,
+    ) -> str:
+        """构建常规回合系统提示（如果 messages 已有 system prompt 则复用，否则重建）。"""
+        # 保留已有的 system prompt 头部；仅在缺失时重建
+        existing_system = next(
+            (m for m in self.messages if m.get("role") == "system"), None
+        )
+        if existing_system is None:
+            config = self.get_config()
+            candidate = self.get_candidate(db)
+            profile = self.get_user_profile(db)
+            company_ctx = get_company_context(config.company)
+            return build_system_prompt(
+                config,
+                candidate,
+                company_ctx,
+                self.workflow,
+                self.current_phase(),
+                profile,
+                followup_probe=followup_probe,
+            )
+        return existing_system["content"]
 
-        # 请求 AI 开场
-        opening_messages = self.messages + [
-            {"role": "user", "content": "面试开始，请按照当前阶段开始提问。"},
-        ]
-        reply = await self.llm.chat(opening_messages, temperature=0.8)
+    # ---- 状态推进 ----------------------------------------------------------
 
-        self.messages.append({"role": "assistant", "content": reply})
-        self.questions_in_phase = 1
+    def mark_active(self) -> None:
+        """标记会话为进行中。"""
         self.session.status = "active"
         self.session.started_at = datetime.now(timezone.utc)
-        self._save_state(db)
-        return reply
 
-    async def respond(
-        self,
-        user_content: str,
-        db: Session,
-        face_analysis: dict[str, Any] | None = None,
-        image_base64: str | None = None,
-    ) -> tuple[str, bool]:
-        """处理候选人回答，返回 (面试官回复, 是否结束)。"""
-        content = user_content
-        if face_analysis:
-            hints = []
-            if not face_analysis.get("face_detected", True):
-                hints.append("画面中未检测到人脸")
-            elif face_analysis.get("looking_away"):
-                hints.append("候选人似乎没有看镜头")
-            nervousness = face_analysis.get("nervousness", 0)
-            if isinstance(nervousness, (int, float)) and nervousness > 0.5:
-                hints.append("候选人看起来比较紧张")
-            if hints:
-                content += f"\n[面部分析：{'; '.join(hints)}]"
+    def mark_completed(self) -> None:
+        """标记面试结束，并把阶段索引指向末尾。"""
+        self.session.status = "completed"
+        self.session.ended_at = datetime.now(timezone.utc)
+        self.current_phase_idx = len(self.workflow.phases) - 1
 
-        # 历史记录仅存文本，避免 SQLite 膨胀
+    def record_user_text(self, content: str) -> None:
+        """记录候选人发言到消息历史。"""
         self.messages.append({"role": "user", "content": content})
 
-        # 若有视频帧，构建多模态请求发给 LLM
-        api_messages = list(self.messages)
-        if image_base64:
-            api_messages[-1] = {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": content},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
-                    },
-                ],
-            }
+    def record_assistant_text(self, content: str) -> None:
+        """记录面试官发言到消息历史。"""
+        self.messages.append({"role": "assistant", "content": content})
 
-        reply = await self.llm.chat(
-            api_messages if image_base64 else self.messages,
-            temperature=0.75,
-        )
-        self.messages.append({"role": "assistant", "content": reply})
+    def reset_messages(self) -> None:
+        """重置消息历史（用于 start 时）。"""
+        self.messages = []
 
-        is_complete = "[INTERVIEW_COMPLETE]" in reply
-        clean_reply = reply.replace("[INTERVIEW_COMPLETE]", "").replace("[PHASE_COMPLETE]", "").strip()
+    def set_questions_in_phase(self, value: int) -> None:
+        self.questions_in_phase = value
 
-        # 阶段推进
-        if "[PHASE_COMPLETE]" in reply or self.questions_in_phase >= self._current_phase().max_questions:
+    def advance_phase_if_needed(self, reply: str) -> bool:
+        """根据 LLM 回复决定是否推进到下一阶段。
+
+        Returns:
+            bool: 是否发生阶段切换。
+        """
+        phase_complete = has_marker(reply, PHASE_COMPLETE_MARKER)
+        max_reached = self.questions_in_phase >= self.current_phase().max_questions
+        if phase_complete or max_reached:
             self._advance_phase()
-        else:
-            self.questions_in_phase += 1
-
-        if is_complete:
-            self.session.status = "completed"
-            self.session.ended_at = datetime.now(timezone.utc)
-            self.current_phase_idx = len(self.workflow.phases) - 1
-
-        self._save_state(db)
-        return clean_reply, is_complete
+            return True
+        self.questions_in_phase += 1
+        return False
 
     def _advance_phase(self) -> None:
         self.current_phase_idx += 1
         self.questions_in_phase = 0
-
         if self.current_phase_idx < len(self.workflow.phases):
-            phase = self._current_phase()
-            # 注入新阶段系统提示
+            phase = self.current_phase()
             self.messages.append({
                 "role": "system",
-                "content": f"进入新阶段：{phase.name}（{phase.description}）。请开始本阶段提问。",
+                "content": (
+                    f"进入新阶段：{phase.name}（{phase.description}）。"
+                    "请开始本阶段提问。"
+                ),
             })
 
-    def get_phases_remaining(self) -> list[str]:
-        return [p.name for p in self.workflow.phases[self.current_phase_idx:]]
+
+# ---------------------------------------------------------------------------
+# 报告生成
+# ---------------------------------------------------------------------------
 
 
 REPORT_SYSTEM_PROMPT = """你是一位资深面试评估专家。根据面试对话记录，生成结构化评估报告。
@@ -310,7 +387,14 @@ async def generate_report(
 
     report_messages = [
         {"role": "system", "content": REPORT_SYSTEM_PROMPT},
-        {"role": "user", "content": f"面试岗位：{session.role}（{session.level}）\n公司：{session.company}\n\n对话记录：\n{conversation[-12000]}{face_ctx}"},
+        {
+            "role": "user",
+            "content": (
+                f"面试岗位：{session.role}（{session.level}）\n"
+                f"公司：{session.company}\n\n对话记录：\n"
+                f"{conversation[-12000]}{face_ctx}"
+            ),
+        },
     ]
 
     try:
@@ -320,7 +404,10 @@ async def generate_report(
         logger.error("报告生成失败: %s", e)
         return InterviewReport(
             overall_score=70,
-            score_breakdown=ScoreBreakdown(overall=70, technical=70, communication=70, project_depth=70, problem_solving=70, presence=70),
+            score_breakdown=ScoreBreakdown(
+                overall=70, technical=70, communication=70,
+                project_depth=70, problem_solving=70, presence=70,
+            ),
             weaknesses=["报告生成时遇到错误，请重试"],
             improvement_suggestions=["完成更多面试练习以获得准确评估"],
         )
