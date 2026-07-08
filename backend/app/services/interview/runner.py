@@ -23,6 +23,7 @@ from app.services.interview.agent import (
     strip_markers,
 )
 from app.services.interview.events import EventKind, StreamEvent
+from app.services.interview.followup import analyze as analyze_followup
 from app.services.llm.client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -71,13 +72,15 @@ class InterviewRunner:
         face: dict[str, Any] | None,
         image_b64: str | None,
     ) -> list[dict[str, Any]]:
-        """构造 LLM API 调用的 messages 列表（必要时附加图像模态）。"""
-        user_content = self._build_user_content(text, face)
-        if not image_b64:
-            return list(self.agent.messages) + [{"role": "user", "content": user_content}]
+        """构造 LLM API 调用的 messages 列表（必要时附加图像模态）。
 
-        return list(self.agent.messages) + [
-            {
+        调用方需确保 ``self.agent.messages`` 末尾已经是当前回合的 user 消息（已被
+        :meth:`stream_turn` 设置）。本方法不再追加额外的 user 消息。
+        """
+        messages = list(self.agent.messages)
+        if image_b64:
+            user_content = self._build_user_content(text, face)
+            messages[-1] = {
                 "role": "user",
                 "content": [
                     {"type": "text", "text": user_content},
@@ -87,7 +90,23 @@ class InterviewRunner:
                     },
                 ],
             }
-        ]
+        return messages
+
+    def _last_assistant_question(self) -> str:
+        """取消息历史中最近一条面试官发言，用于追问信号分析。"""
+        for m in reversed(self.agent.messages):
+            if m.get("role") == "assistant":
+                content = m.get("content", "")
+                if isinstance(content, str):
+                    return content
+        return ""
+
+    def _get_tech_domains(self, db: Session) -> list[str]:
+        """从候选人 profile 读取技术领域列表。"""
+        profile = self.agent.get_user_profile(db)
+        if profile is None:
+            return []
+        return profile.tech_domains_list or []
 
     # ------------------------------------------------------------------
     # 开场
@@ -152,8 +171,43 @@ class InterviewRunner:
             return
 
         try:
+            # 1. 写入 user 原文（占位，稍后会被覆盖为带面部分析提示的完整版）
+            self.agent.record_user_text(user_text)
+
+            # 2. 结构化追问分析（基于最近一轮 LLM 问题与候选人回答）
+            last_question = self._last_assistant_question()
+            tech_domains = self._get_tech_domains(db)
+            signal = analyze_followup(
+                user_text,
+                question=last_question,
+                tech_domains=tech_domains,
+            )
+            if signal.needs_followup:
+                self.agent.messages.append({
+                    "role": "system",
+                    "content": (
+                        f"[追问引导：{signal.category}] "
+                        f"{signal.suggested_probe}"
+                    ),
+                })
+                logger.info(
+                    "追问信号: session=%s cat=%s text=%s",
+                    self.session.id, signal.category, user_text[:40],
+                )
+
+            # 3. 重新计算包含面部分析提示的 user content。
+            # 追问引导（若存在）追加在 user 之后，不能被覆盖 —— 因此先 pop 引导，
+            # 再替换 user，最后把引导重新追加到末尾。
+            followup_msg = None
+            if signal.needs_followup and self.agent.messages and \
+                    self.agent.messages[-1].get("role") == "system" and \
+                    self.agent.messages[-1].get("content", "").startswith("[追问引导"):
+                followup_msg = self.agent.messages.pop()
+
             user_content = self._build_user_content(user_text, face)
-            self.agent.record_user_text(user_content)
+            self.agent.messages[-1] = {"role": "user", "content": user_content}
+            if followup_msg is not None:
+                self.agent.messages.append(followup_msg)
             api_messages = self._build_api_messages(user_text, face, image_b64)
 
             # 流式生成

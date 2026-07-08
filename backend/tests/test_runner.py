@@ -220,6 +220,62 @@ def test_stream_turn_emits_error_on_llm_failure(db, monkeypatch) -> None:
     assert errors and "LLM 不可用" in errors[0].error
 
 
+def test_stream_turn_injects_followup_probe_when_vague(db) -> None:
+    """模糊回答触发追问引导注入到 LLM messages。"""
+    session = _make_session(db)
+    # 注入上一轮 LLM 提问
+    session.messages = json.dumps([
+        {"role": "system", "content": "你是面试官"},
+        {"role": "assistant", "content": "请描述一次性能优化经历"},
+    ])
+    db.commit()
+    db.refresh(session)
+
+    llm = FakeLLMClient(tokens=["好的。"])
+    runner = InterviewRunner(session, llm)
+
+    import asyncio
+
+    async def run():
+        async for _ in runner.stream_turn("差不多就是这样吧", db):
+            pass
+
+    asyncio.run(run())
+
+    last_call = llm.stream_calls[-1]
+    system_msgs = [m["content"] for m in last_call if m["role"] == "system"]
+    assert any("追问引导" in s and "vague" in s for s in system_msgs), system_msgs
+
+
+def test_stream_turn_no_followup_probe_when_solid(db) -> None:
+    """具体回答不应触发追问引导。"""
+    session = _make_session(db)
+    session.messages = json.dumps([
+        {"role": "system", "content": "你是面试官"},
+        {"role": "assistant", "content": "请说说性能优化的效果"},
+    ])
+    db.commit()
+    db.refresh(session)
+
+    llm = FakeLLMClient(tokens=["好。"])
+    runner = InterviewRunner(session, llm)
+
+    import asyncio
+
+    async def run():
+        async for _ in runner.stream_turn(
+            "接口 RT 从 200ms 降到 35ms，QPS 提升 5 倍，错误率下降 90%。",
+            db,
+        ):
+            pass
+
+    asyncio.run(run())
+
+    last_call = llm.stream_calls[-1]
+    system_msgs = [m["content"] for m in last_call if m["role"] == "system"]
+    assert not any("追问引导" in s for s in system_msgs)
+
+
 def test_agent_public_methods_no_longer_underscore(db) -> None:
     """确保私有字段已被收敛为公共方法（防止 ws_handler 直接访问）。"""
     from app.services.interview.agent import InterviewAgent
