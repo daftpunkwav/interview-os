@@ -202,7 +202,7 @@ def test_stream_turn_emits_error_on_llm_failure(db, monkeypatch) -> None:
     session = _make_session(db)
 
     class BrokenLLM(FakeLLMClient):
-        async def chat_stream(self, messages, temperature: float = 0.75):
+        async def chat_stream(self, messages, temperature: float = 0.75, tools=None):
             raise RuntimeError("LLM 不可用")
             yield  # unreachable，但让 mypy 满意
 
