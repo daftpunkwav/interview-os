@@ -159,6 +159,23 @@ def is_safe_http_url(
         return False
 
     if allow_local:
+        # dev 模式：放行 loopback / IPv6 loopback；
+        # 私网 / metadata / multicast 仍拒（防止误用 ollama 等本地服务时
+        # 退化到攻击内网 metadata 服务）。
+        try:
+            ips = _resolve_all(parsed.hostname)
+        except ValueError:
+            return False
+        for ip in ips:
+            for net in _DEFAULT_BLOCKED_NETS:
+                if ip in net:
+                    # loopback 允许
+                    if net in (
+                        ipaddress.ip_network("127.0.0.0/8"),
+                        ipaddress.ip_network("::1/128"),
+                    ):
+                        return True
+                    return False
         return True
 
     # 端口白名单（非 allow_local 时）
