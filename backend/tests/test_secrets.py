@@ -1,21 +1,24 @@
 """``app.core.secrets`` 单元测试。
 
 覆盖：
-- 加解密往返；
+
+- AES-256-GCM 加解密往返；
 - 旧明文格式向后兼容（无前缀）；
-- 篡改 MAC 校验失败；
-- 空值/None 边界。
+- 旧 ``enc:v1:`` 密文显式抛 ``LegacySecretFormatError``；
+- 篡改密文/tag/salt/nonce 任何字段都应被 AEAD 拒收；
+- 空值/None 边界；
+- 同明文两次加密密文不同（salt + nonce 随机）。
 """
 
 from __future__ import annotations
 
 import base64
-import os
 
 import pytest
 
 from app.core.secrets import (
-    _load_secret_bytes,
+    LegacySecretFormatError,
+    _reset_cache,
     decrypt_secret,
     encrypt_secret,
 )
@@ -23,12 +26,20 @@ from app.core.secrets import (
 
 @pytest.fixture(autouse=True)
 def _stable_master_key(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    """用临时固定 master 隔离测试，避免污染全局 ``data/.secret.key``。"""
-    master = b"a" * 32
+    """用临时固定 master + 隔离 keyfile 避免污染全局 ``data/.secret.key``。"""
+    import base64 as _b64
+
+    monkeypatch.setenv("INTERVIEWOS_SECRET_KEY", _b64.b64encode(b"a" * 32).decode())
+    # 用临时目录覆盖默认 keyfile
     monkeypatch.setattr(
-        "app.core.secrets._load_secret_bytes", lambda: master
+        "app.core.secrets._BACKEND_DATA", tmp_path
     )
+    monkeypatch.setattr(
+        "app.core.secrets._DEFAULT_KEYFILE", tmp_path / ".secret.key"
+    )
+    _reset_cache()
     yield
+    _reset_cache()
 
 
 class TestEncryptDecrypt:
@@ -36,7 +47,7 @@ class TestEncryptDecrypt:
         plain = "sk-1234567890abcdef"
         enc = encrypt_secret(plain)
         assert enc is not None
-        assert enc.startswith("enc:v1:")
+        assert enc.startswith("enc:v2:")
         assert enc != plain
         assert decrypt_secret(enc) == plain
 
@@ -47,9 +58,18 @@ class TestEncryptDecrypt:
         assert encrypt_secret(enc) == enc
 
     def test_decrypt_legacy_plaintext(self) -> None:
-        """未带 ``enc:v1:`` 前缀的旧明文直接返回,保证迁移期兼容。"""
+        """未带 ``enc:v2:`` 前缀的旧明文直接返回,保证迁移期兼容。"""
         legacy = "legacy-plain-key"
         assert decrypt_secret(legacy) == legacy
+
+    def test_decrypt_legacy_v1_raises(self) -> None:
+        """``enc:v1:`` 旧密文应显式抛 ``LegacySecretFormatError``。"""
+        with pytest.raises(LegacySecretFormatError):
+            decrypt_secret(
+                "enc:v1:" + base64.b64encode(b"x" * 16).decode() +
+                ":" + base64.b64encode(b"y" * 32).decode() +
+                ":" + base64.b64encode(b"z").decode()
+            )
 
     def test_decrypt_empty_and_none(self) -> None:
         assert decrypt_secret(None) is None
@@ -57,25 +77,48 @@ class TestEncryptDecrypt:
         assert encrypt_secret(None) is None
         assert encrypt_secret("") == ""
 
-    def test_tampered_mac_rejected(self) -> None:
+    def test_tampered_cipher_rejected(self) -> None:
+        """AEAD 篡改密文应抛异常。"""
         enc = encrypt_secret("top-secret")
-        assert enc is not None
-        # 替换 MAC 段:enc:v1:nonce:mac:cipher,整体翻转 MAC 段第一个字符。
+        assert enc is not None and enc.startswith("enc:v2:")
         parts = enc.split(":")
-        assert len(parts) == 5
-        mac = parts[3]
-        # 替换 MAC 第一字符(确保仍是合法 base64,但值不同)
-        parts[3] = ("B" if mac[0] != "B" else "C") + mac[1:]
+        assert len(parts) == 6
+        ct = parts[5]
+        # 翻转首字符（保持 base64 合法）
+        parts[5] = ("B" if ct[0] != "B" else "C") + ct[1:]
         tampered = ":".join(parts)
-        with pytest.raises(ValueError, match="MAC 校验失败"):
+        with pytest.raises(ValueError, match="AES-GCM 解密或认证失败"):
+            decrypt_secret(tampered)
+
+    def test_tampered_tag_rejected(self) -> None:
+        enc = encrypt_secret("top-secret")
+        assert enc is not None and enc.startswith("enc:v2:")
+        parts = enc.split(":")
+        assert len(parts) == 6
+        tag = parts[4]
+        parts[4] = ("Z" if tag[0] != "Z" else "Y") + tag[1:]
+        tampered = ":".join(parts)
+        with pytest.raises(ValueError, match="AES-GCM 解密或认证失败"):
+            decrypt_secret(tampered)
+
+    def test_tampered_salt_rejected(self) -> None:
+        enc = encrypt_secret("top-secret")
+        assert enc is not None and enc.startswith("enc:v2:")
+        parts = enc.split(":")
+        assert len(parts) == 6
+        salt = parts[2]
+        parts[2] = ("Z" if salt[0] != "Z" else "Y") + salt[1:]
+        tampered = ":".join(parts)
+        # salt 改变 → 派生 key 不同 → GCM 解密必失败（也可视为加密不可逆）
+        with pytest.raises((ValueError, Exception)):
             decrypt_secret(tampered)
 
     def test_wrong_format_raises(self) -> None:
         with pytest.raises(ValueError, match="加密串格式错误"):
-            decrypt_secret("enc:v1:only:three")
+            decrypt_secret("enc:v2:only:four")
 
-    def test_random_nonce_each_time(self) -> None:
-        """同一明文两次加密应得到不同密文（nonce 随机）。"""
+    def test_random_salt_and_nonce(self) -> None:
+        """同一明文两次加密应得到不同密文（salt + nonce 随机）。"""
         a = encrypt_secret("same")
         b = encrypt_secret("same")
         assert a != b

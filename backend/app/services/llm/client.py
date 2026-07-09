@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.core.constants import DEFAULT_LLM_PROTOCOL
 from app.core.security import UnsafeURLError, is_safe_http_url, redact_api_key
-from app.core.secrets import decrypt_secret
+from app.core.secrets import LegacySecretFormatError, decrypt_secret
 from app.models import LLMSettings
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,9 @@ class LLMClient:
         # 自动解密加密的 API Key；解密失败回退空串
         try:
             api_key = decrypt_secret(raw_api_key) or ""
+        except LegacySecretFormatError as e:
+            logger.error("API Key 使用旧版加密格式，请重新保存: %s", e)
+            api_key = ""
         except ValueError as e:
             logger.error("API Key 解密失败: %s", e)
             api_key = ""
