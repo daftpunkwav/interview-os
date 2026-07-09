@@ -28,12 +28,6 @@ interface ChatMessage {
   streaming?: boolean;
 }
 
-let msgSeq = 0;
-function nextMsgId(prefix: string) {
-  msgSeq += 1;
-  return `${prefix}-${msgSeq}`;
-}
-
 export default function PrepPage() {
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [resumeId, setResumeId] = useState<number | null>(null);
@@ -46,6 +40,12 @@ export default function PrepPage() {
   const [tokenUsage, setTokenUsage] = useState(0);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const msgSeqRef = useRef(0);
+
+  function nextMsgId(prefix: string) {
+    msgSeqRef.current += 1;
+    return `${prefix}-${msgSeqRef.current}`;
+  }
 
   useEffect(() => {
     api.listResumes().then((list) => {

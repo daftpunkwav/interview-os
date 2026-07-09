@@ -64,16 +64,37 @@ export default function ReportPage() {
           { label: "表达能力", score: scores.communication },
           { label: "项目深度", score: scores.project_depth },
           { label: "问题解决", score: scores.problem_solving },
-          { label: "临场状态", score: scores.presence ?? scores.communication },
-        ].map((item) => (
-          <div key={item.label} className="border border-[var(--border)] rounded-xl p-4 text-center bg-[var(--card)]">
-            <div className="text-2xl font-bold" style={{ color: scoreColor(item.score) }}>{item.score}</div>
-            <div className="text-xs text-[var(--muted)] mt-1">{item.label}</div>
-            <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-              <div className="h-full rounded-full transition-all" style={{ width: `${item.score}%`, backgroundColor: scoreColor(item.score) }} />
+          { label: "临场状态", score: scores.presence },
+        ].map((item) => {
+          // 缺失值（LLM 未返回或设为 0）显式显示 —，避免雷达图维度归零造成视觉失真。
+          const display =
+            typeof item.score === "number" && item.score > 0 ? item.score : "—";
+          return (
+            <div
+              key={item.label}
+              className="border border-[var(--border)] rounded-xl p-4 text-center bg-[var(--card)]"
+            >
+              <div
+                className="text-2xl font-bold"
+                style={{ color: typeof display === "number" ? scoreColor(display) : "#9ca3af" }}
+              >
+                {display}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">{item.label}</div>
+              {typeof display === "number" && (
+                <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${display}%`,
+                      backgroundColor: scoreColor(display),
+                    }}
+                  />
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <RadarChart scores={scores} />
