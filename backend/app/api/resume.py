@@ -191,10 +191,12 @@ def activate_resume(resume_id: int, db: Session = Depends(get_db)):
     r = db.query(Resume).filter(Resume.id == resume_id).first()
     if not r:
         raise HTTPException(status_code=404, detail="简历不存在")
-    db.query(Resume).update({Resume.is_active: False})
-    r.is_active = True
+    # 单条 UPDATE 等价于"先全置 False，再设当前为 True"，避免 ORM
+    # 实例 mutation 与全表 update 之间的状态漂移。
+    db.query(Resume).update({Resume.is_active: Resume.id == resume_id})
     db.commit()
-    return {"id": resume_id, "is_active": True}
+    db.refresh(r)
+    return {"id": resume_id, "is_active": bool(r.is_active)}
 
 
 @router.post("/{resume_id}/analyze")
