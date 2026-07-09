@@ -140,10 +140,40 @@ def assert_safe_http_url(url: str, *, allow_local: bool = False) -> None:
 
 
 def redact_api_key(value: str | None) -> str:
-    """用于日志输出的 API Key 脱敏。"""
+    """用于日志输出的 API Key 脱敏。
+
+    同时覆盖两种形态:
+    - 完整 Key(`sk-xxxx`、`sk-proj-xxxx` 等);
+    - ``Authorization: Bearer xxxx`` / ``authorization=xxxx`` 头形式。
+
+    日志过滤器通过本函数进行单一来源脱敏,避免两套正则漂移导致漏脱敏。
+    """
     if not value:
         return ""
     v = value.strip()
+
+    # Authorization / authorization=xxx 形式:只保留 scheme,后续 token 整体遮蔽
+    lowered = v.lower()
+    if lowered.startswith("authorization"):
+        # 形式: "Authorization: Bearer xxx" / "authorization=bearer xxx"
+        scheme_idx = v.find(":") if ":" in v else v.find("=")
+        if scheme_idx >= 0:
+            head = v[: scheme_idx + 1]
+            return f"{head} ***"
+        return "Authorization ***"
+
+    # 显式 Bearer / Token 前缀
+    for prefix in ("bearer ", "token ", "basic "):
+        if lowered.startswith(prefix):
+            return f"{prefix[:1].upper()}{prefix[1:]}***"
+
+    # sk- / sk-proj- 等典型 API Key
+    if v.startswith("sk-") or v.startswith("sk_"):
+        if len(v) <= 8:
+            return "***"
+        return f"{v[:4]}***{v[-4:]}"
+
+    # 默认:首尾各 4 字符脱敏
     if len(v) <= 8:
         return "***"
     return f"{v[:4]}***{v[-4:]}"

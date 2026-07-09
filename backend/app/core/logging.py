@@ -10,11 +10,10 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
-import re
 import sys
 import uuid
 
-from app.core.security import redact_api_key
+from app.core.security import redact_api_key as _redact
 
 # 请求级 trace_id，便于把同一次请求的日志串起来
 _trace_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
@@ -35,20 +34,22 @@ def get_trace_id() -> str:
     return _trace_id_var.get()
 
 
-# 日志中的 API Key / Bearer token 自动脱敏
-_TOKEN_RE = re.compile(
-    r"(?i)(authorization\s*[:=]\s*(?:bearer\s+)?[\w\-]+|sk-[A-Za-z0-9_\-]+)"
-)
+# 日志中的 API Key / Bearer token 自动脱敏。
+# 复用 :func:`app.core.security.redact_api_key` 的统一入口，避免两套正则漂移。
 
 
 class RedactFilter(logging.Filter):
-    """日志输出前脱敏敏感字段。"""
+    """日志输出前脱敏敏感字段。
+
+    直接复用 :func:`app.core.security.redact_api_key` 覆盖常见形态
+    (``sk-xxx``、``Bearer xxx``、``Authorization: xxx`` 等);
+    若未来增加新的 Key 形态，只需在 :func:`redact_api_key` 中扩展。
+    """
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
             msg = record.getMessage()
-            msg = _TOKEN_RE.sub(lambda m: redact_api_key(m.group(0)), msg)
-            record.msg = msg
+            record.msg = _redact(msg)
             record.args = ()
         except Exception:  # pragma: no cover - fail open
             pass

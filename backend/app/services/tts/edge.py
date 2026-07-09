@@ -21,7 +21,9 @@ DEFAULT_VOICE = VOICE_PRESETS["xiaoxiao"]
 def split_sentences(text: str) -> list[str]:
     """按中英文句号切分，用于流式 TTS。"""
     clean = re.sub(r"\[(PHASE_COMPLETE|INTERVIEW_COMPLETE|emotion:\w+)\]", "", text)
-    parts = re.split(r"(?<=[。！？!?；;])", clean)
+    # 中英文句末标点 + 换行 + 省略号尾部视为切分点。
+    # 与 frontend ``@/lib/sentenceSplit.ts`` 保持一致(若有)。
+    parts = re.split(r"(?<=[。！？!?；;…\.\n])", clean)
     return [p.strip() for p in parts if p.strip()]
 
 

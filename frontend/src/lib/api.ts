@@ -77,15 +77,39 @@ async function parseErrorResponse(res: Response): Promise<string> {
   return text.length > 300 ? `${text.slice(0, 300)}…` : text;
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+async function request<T>(
+  path: string,
+  options: RequestInit & { timeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<T> {
+  const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, signal: externalSignal, ...rest } = options;
+  // 组合外部 signal 与超时 signal，任一触发即取消。
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(new Error("request timeout")), timeoutMs);
+  const onExternalAbort = () => controller.abort(externalSignal?.reason);
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      clearTimeout(timeoutId);
+      throw new ApiError("请求已取消", 0);
+    }
+    externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+  }
   let res: Response;
   try {
     res = await fetch(`/api${path}`, {
-      headers: { "Content-Type": "application/json", ...options.headers },
-      ...options,
+      ...rest,
+      headers: { "Content-Type": "application/json", ...rest.headers },
+      signal: controller.signal,
     });
-  } catch {
+  } catch (e) {
+    if (controller.signal.aborted) {
+      throw new ApiError("请求超时或被取消", 0);
+    }
     throw new ApiError("无法连接后端服务，请确认 backend 已在 localhost:8000 启动", 0);
+  } finally {
+    clearTimeout(timeoutId);
+    externalSignal?.removeEventListener("abort", onExternalAbort);
   }
   if (!res.ok) {
     throw new ApiError(await parseErrorResponse(res), res.status);

@@ -149,7 +149,9 @@ def list_resumes(db: Session = Depends(get_db)):
     for r in resumes:
         try:
             profile = CandidateProfile(**json.loads(r.parsed_profile))
-        except Exception:
+        except Exception as e:
+            # 单条简历解析 JSON 损坏时降级为空 profile 但要记录,便于后续人工修复
+            logger.warning("简历解析 JSON 损坏: id=%s err=%s", r.id, e)
             profile = CandidateProfile()
         result.append(
             ResumeResponse(

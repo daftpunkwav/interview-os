@@ -295,13 +295,20 @@ class InterviewRunner:
             # 3. 重新计算包含面部分析提示的 user content。
             # 追问引导与 RAG（若存在）追加在 user 之后，不能被覆盖 —— 因此先 pop
             # 末尾追加的辅助消息，再替换 user，最后按顺序追加回去。
+            # 防御性上限：最多 pop 5 条 system 消息，防止匹配前缀误判时无限循环。
             trailing_msgs: list[dict[str, Any]] = []
-            while self.agent.messages and self.agent.messages[-1].get("role") == "system":
-                content = self.agent.messages[-1].get("content", "")
-                if content.startswith("[追问引导") or content.startswith("## 企业知识库"):
-                    trailing_msgs.append(self.agent.messages.pop())
-                else:
+            for _ in range(5):
+                if not self.agent.messages:
                     break
+                tail = self.agent.messages[-1]
+                if tail.get("role") != "system":
+                    break
+                content = tail.get("content", "")
+                if not (isinstance(content, str) and (
+                    content.startswith("[追问引导") or content.startswith("## 企业知识库")
+                )):
+                    break
+                trailing_msgs.append(self.agent.messages.pop())
             trailing_msgs.reverse()
 
             user_content = self._build_user_content(user_text, face)
