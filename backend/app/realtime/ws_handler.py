@@ -5,12 +5,16 @@
 - 调用 :class:`InterviewRunner` 驱动面试回合
 - 消费 runner 的 :class:`StreamEvent` 并翻译为前端事件
 - 调度 TTS 句子级播放（非阻塞，使用串行队列避免重叠）
+- 心跳 + 死锁 fallback：30s 收不到客户端消息发 ping，连续 3 次未回 pong
+  关闭；异常路径强制 turn_state 回到 ``USER_SPEAKING`` 防卡死。
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
+import uuid
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -19,6 +23,8 @@ from sqlalchemy.orm import Session
 from app.agents.orchestrator import InterviewOrchestrator
 from app.agents.vision.agent import VisionAgent
 from app.config import get_settings
+from app.core.constants import SessionStatus
+from app.core.logging import get_trace_id, set_trace_id
 from app.database import SessionLocal
 from app.models import InterviewSession, LLMSettings
 from app.realtime.events import TurnState
@@ -31,6 +37,12 @@ from app.services.tts.edge import synthesize_to_base64
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# 心跳与超时配置
+_HEARTBEAT_TIMEOUT_SEC = 30.0
+_HEARTBEAT_MAX_MISSES = 3
+# audio_buffer 字节上限（按 base64 后的 raw pcm 估算）；超过强制刷 turn_end
+_AUDIO_BUFFER_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
 class _SentenceTTSQueue:
@@ -130,6 +142,9 @@ class InterviewWSHandler:
 
     async def handle(self) -> None:
         await self.ws.accept()
+        # 注入 trace_id 便于按 WS 会话串联日志
+        ws_tid = f"ws-{self.session_id}-{uuid.uuid4().hex[:8]}"
+        set_trace_id(ws_tid)
         db = SessionLocal()
         try:
             session = db.query(InterviewSession).filter(
@@ -162,34 +177,70 @@ class InterviewWSHandler:
             else:
                 self._whisper_model = settings.whisper_model
 
-            if session.status == "pending":
+            # 状态判断统一走枚举值
+            if session.status == SessionStatus.PENDING.value:
                 await self._tts_queue.start(self.send)
                 await self.set_turn(TurnState.AI_SPEAKING)
                 async for event in self._consume_runner_opening(db):
                     await self._dispatch_event(event)
                 await self._tts_queue.flush_remainder("")
                 await self.set_turn(TurnState.USER_SPEAKING)
-            elif session.status == "active":
+            elif session.status == SessionStatus.ACTIVE.value:
                 await self._tts_queue.start(self.send)
                 await self.set_turn(TurnState.USER_SPEAKING)
             else:
                 await self.send("error", message="面试已结束")
                 return
 
+            # 主循环带心跳：30s 未收到客户端消息主动 ping；累计 3 次失败断开
+            miss_count = 0
             while True:
-                data = await self.ws.receive_json()
+                try:
+                    data = await asyncio.wait_for(
+                        self.ws.receive_json(),
+                        timeout=_HEARTBEAT_TIMEOUT_SEC,
+                    )
+                except asyncio.TimeoutError:
+                    miss_count += 1
+                    if miss_count >= _HEARTBEAT_MAX_MISSES:
+                        logger.warning(
+                            "WS 心跳超时断开 session=%s miss=%s",
+                            self.session_id, miss_count,
+                        )
+                        await self.send(
+                            "error", message="心跳超时，连接已断开"
+                        )
+                        break
+                    try:
+                        await self.send("server_ping", t=int(asyncio.get_event_loop().time() * 1000))
+                    except Exception:
+                        break
+                    continue
+                miss_count = 0  # 收到任何客户端消息即重置
                 await self._dispatch(data, db, session)
         except WebSocketDisconnect:
             logger.info("WS 断开 session=%s", self.session_id)
         except Exception as e:
             logger.exception("WS 错误: %s", e)
+            # deadlock fallback：异常路径强制回到 USER_SPEAKING 防卡死
             try:
-                await self.send("error", message=str(e))
+                await self.set_turn(TurnState.USER_SPEAKING)
+                await self.send("error", message="服务端异常，已恢复 USER_SPEAKING")
+            except Exception:
+                pass
+            try:
+                db.rollback()
             except Exception:
                 pass
         finally:
-            await self._tts_queue.stop()
-            db.close()
+            try:
+                await self._tts_queue.stop()
+            except Exception:
+                logger.exception("TTS queue 关闭失败")
+            try:
+                db.close()
+            except Exception:
+                logger.exception("DB 关闭失败")
 
     # ------------------------------------------------------------------
     # 消息分发
@@ -200,11 +251,38 @@ class InterviewWSHandler:
         if msg_type == "audio_chunk":
             chunk = data.get("data", "")
             if chunk:
+                # 上限保护：先估算累计解码后字节数，超阈拒绝新 chunk 并清空
+                # 使用 b64decode 自身的 padding 容错，避免手算 padding
+                try:
+                    current_bytes = sum(
+                        len(base64.b64decode(c, validate=False))
+                        for c in self.audio_buffer
+                    )
+                except Exception:
+                    current_bytes = 0
+                try:
+                    new_bytes = len(base64.b64decode(chunk, validate=False))
+                except Exception:
+                    new_bytes = 0
+                if current_bytes + new_bytes > _AUDIO_BUFFER_MAX_BYTES:
+                    logger.warning(
+                        "audio_buffer 超上限 session=%s bytes=%s",
+                        self.session_id, current_bytes + new_bytes,
+                    )
+                    await self.send(
+                        "error",
+                        message="音频缓存超限，请先结束当前回合",
+                    )
+                    self.audio_buffer = []
+                    return
                 self.audio_buffer.append(chunk)
         elif msg_type == "stt_text":
             text = data.get("text", "").strip()
             if text:
                 await self.send("stt_partial", text=text)
+        elif msg_type == "pong":
+            # 心跳应答；miss_count 已在主循环收到消息时清零
+            return
         elif msg_type == "vision_update":
             face = data.get("face_analysis")
             if face:
