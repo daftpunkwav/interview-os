@@ -4,8 +4,8 @@
 
 - 文件名清洗（防路径穿越）
 - MIME 类型嗅探
-- URL/SSRF 过滤
-- API Key 脱敏
+- URL/SSRF 过滤（多 A 记录遍历 + IPv6 + 端口白名单）
+- API Key 脱敏（覆盖主流形态）
 """
 
 from __future__ import annotations
@@ -70,21 +70,59 @@ def assert_within_dir(path: Path, root: Path) -> Path:
 
 # ── URL / SSRF ────────────────────────────────────
 
-# 默认拒绝的网段：loopback、link-local、private、multicast、reserved
+# 默认拒绝的网段：loopback、link-local、private、multicast、reserved、IPv6 等价
 _DEFAULT_BLOCKED_NETS = [
     ipaddress.ip_network("127.0.0.0/8"),
     ipaddress.ip_network("10.0.0.0/8"),
     ipaddress.ip_network("172.16.0.0/12"),
     ipaddress.ip_network("192.168.0.0/16"),
     ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("0.0.0.0/8"),
     ipaddress.ip_network("::1/128"),
     ipaddress.ip_network("fc00::/7"),
     ipaddress.ip_network("fe80::/10"),
+    # IPv4-mapped IPv6（攻击者常用绕路）
+    ipaddress.ip_network("::ffff:0:0/96"),
 ]
+
+
+# 允许的对外端口：dev 模式可放行任意；生产期仅 HTTP/HTTPS。
+_DEFAULT_ALLOWED_PORTS = frozenset({80, 443})
 
 
 class UnsafeURLError(ValueError):
     """传入的 URL 命中安全策略。"""
+
+
+def _resolve_all(hostname: str) -> list[ipaddress._BaseNetwork | ipaddress._BaseAddress]:
+    """解析域名/字面量为所有候选 IP。
+
+    - IPv4 / IPv6 字面量直接返回；
+    - 域名返回 getaddrinfo 全量 SOCK_STREAM 解析结果。
+
+    任一记录在私有/loopback 网段内都视为不安全。
+    """
+    try:
+        # IPv4 / IPv6 字面量（如 1.2.3.4 或 ::1）
+        return [ipaddress.ip_address(hostname.strip("[]"))]
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+    except (socket.gaierror, OSError):
+        raise ValueError(f"无法解析主机: {hostname!r}")
+    out: list[ipaddress._BaseAddress] = []
+    seen: set[str] = set()
+    for info in infos:
+        addr = info[4][0]
+        if addr in seen:
+            continue
+        seen.add(addr)
+        try:
+            out.append(ipaddress.ip_address(addr))
+        except ValueError:
+            continue
+    return out
 
 
 def is_safe_http_url(
@@ -92,12 +130,21 @@ def is_safe_http_url(
     *,
     allow_local: bool = False,
     timeout: float = 3.0,
+    allowed_ports: frozenset[int] | None = None,
 ) -> bool:
     """校验 ``url`` 是否为安全可外发的 HTTP/HTTPS URL。
 
     - 仅允许 http(s) 协议；
     - 解析并校验主机名；
-    - 若 ``allow_local`` 为 False，拒绝 loopback / 私网 / 链路本地地址。
+    - 多 A 记录遍历：任一记录在 loopback / 私网 / 链路本地内即拒绝；
+    - ``allow_local=False`` 时拒绝非常规端口（默认仅 80/443）；
+    - ``allow_local=True``（dev 模式）放行 loopback，但端口仍受约束。
+
+    .. note::
+
+        本函数为 BEST-EFFORT 校验：DNS 重绑定（TOCTOU）需要上游 LLMClient
+        把校验过的 IP 透传到 httpx transport 才能根治。建议后续用
+        httpx transport layer 在该 IP 上强制连接并保留 ``Host`` 头。
     """
     if not url:
         return False
@@ -112,50 +159,127 @@ def is_safe_http_url(
         return False
 
     if allow_local:
+        # dev 模式：放行 loopback / IPv6 loopback；
+        # 私网 / metadata / multicast 仍拒（防止误用 ollama 等本地服务时
+        # 退化到攻击内网 metadata 服务）。
+        try:
+            ips = _resolve_all(parsed.hostname)
+        except ValueError:
+            return False
+        for ip in ips:
+            for net in _DEFAULT_BLOCKED_NETS:
+                if ip in net:
+                    # loopback 允许
+                    if net in (
+                        ipaddress.ip_network("127.0.0.0/8"),
+                        ipaddress.ip_network("::1/128"),
+                    ):
+                        return True
+                    return False
         return True
 
+    # 端口白名单（非 allow_local 时）
+    port = parsed.port
+    if port is not None and port not in (allowed_ports or _DEFAULT_ALLOWED_PORTS):
+        return False
+
     try:
-        # 先尝试直接解析为 IP；若失败则走 DNS 解析再做检查
-        try:
-            ip = ipaddress.ip_address(parsed.hostname)
-        except ValueError:
-            infos = socket.getaddrinfo(parsed.hostname, None, type=socket.SOCK_STREAM)
-            ip = ipaddress.ip_address(infos[0][4][0])
-        for net in _DEFAULT_BLOCKED_NETS:
-            if ip in net:
-                return False
-    except (socket.gaierror, OSError, ValueError):
+        ips = _resolve_all(parsed.hostname)
+        for ip in ips:
+            for net in _DEFAULT_BLOCKED_NETS:
+                if ip in net:
+                    return False
+    except ValueError:
         return False
 
     return True
 
 
-def assert_safe_http_url(url: str, *, allow_local: bool = False) -> None:
+def assert_safe_http_url(
+    url: str,
+    *,
+    allow_local: bool = False,
+    allowed_ports: frozenset[int] | None = None,
+) -> None:
     """不安全时抛出 :class:`UnsafeURLError`。"""
-    if not is_safe_http_url(url, allow_local=allow_local):
+    if not is_safe_http_url(url, allow_local=allow_local, allowed_ports=allowed_ports):
         raise UnsafeURLError(f"URL 被策略拒绝: {url!r}")
+
+
+def is_localhost_family(host: str) -> bool:
+    """判断主机（IP 字面量或域名解析后）是否位于私有网段（用于限流信任代理链）。"""
+    if not host:
+        return False
+    try:
+        ips = _resolve_all(host)
+    except ValueError:
+        return False
+    for ip in ips:
+        for net in _DEFAULT_BLOCKED_NETS:
+            if ip in net:
+                return True
+    return False
 
 
 # ── API Key 脱敏 ──────────────────────────────────
 
 
+# 各家厂商前缀集合
+_API_KEY_PREFIXES = (
+    "sk-",        # OpenAI / StepFun / 通用
+    "sk_",        # 部分国内供应商
+    "sk-ant-",    # Anthropic
+    "aiza",       # Google (AIza...)
+    "step-",      # StepFun
+)
+
+
+def _looks_like_api_key(v: str) -> bool:
+    lowered = v.lower()
+    if lowered.startswith("aiza"):
+        return True
+    if v.startswith("sk-ant-"):
+        return True
+    return v.startswith("sk-") or v.startswith("sk_")
+
+
+def _looks_like_secret(v: str) -> bool:
+    """启发式：判断字符串是否像秘密（API Key、token、UUID 等）。
+
+    启发规则：
+
+    - 长度需 ``>= 20``（一般 API Key 远长于此）；
+    - 至少有 ASCII 字母 / 数字出现；
+    - 同时包含字母与数字（避免普通短语被误判）；
+    - 不包含空格（避免截断错误）。
+    """
+    if len(v) < 20 or " " in v:
+        return False
+    has_letter = any(c.isalpha() for c in v)
+    has_digit = any(c.isdigit() for c in v)
+    return has_letter and has_digit
+
+
 def redact_api_key(value: str | None) -> str:
     """用于日志输出的 API Key 脱敏。
 
-    同时覆盖两种形态:
-    - 完整 Key(`sk-xxxx`、`sk-proj-xxxx` 等);
-    - ``Authorization: Bearer xxxx`` / ``authorization=xxxx`` 头形式。
+    同时覆盖:
+    - 各家 Key（OpenAI/Anthropic/Google/StepFun）；
+    - ``Authorization: Bearer xxxx`` / ``authorization=xxxx`` 头形式；
+    - 启发式认为"长度足够 + 字母数字混合 + 无空格"的 token。
 
-    日志过滤器通过本函数进行单一来源脱敏,避免两套正则漂移导致漏脱敏。
+    普通短语、日志模板（``HTTP/%s ...``）不会被误判。
     """
     if not value:
         return ""
     v = value.strip()
+    if len(v) <= 8:
+        # 短字符串默认不脱敏，避免误伤中文短语/路径/短 token 自身
+        return v
 
-    # Authorization / authorization=xxx 形式:只保留 scheme,后续 token 整体遮蔽
+    # Authorization / authorization=xxx 形式：只保留 scheme，后续 token 整体遮蔽
     lowered = v.lower()
     if lowered.startswith("authorization"):
-        # 形式: "Authorization: Bearer xxx" / "authorization=bearer xxx"
         scheme_idx = v.find(":") if ":" in v else v.find("=")
         if scheme_idx >= 0:
             head = v[: scheme_idx + 1]
@@ -167,13 +291,11 @@ def redact_api_key(value: str | None) -> str:
         if lowered.startswith(prefix):
             return f"{prefix[:1].upper()}{prefix[1:]}***"
 
-    # sk- / sk-proj- 等典型 API Key
-    if v.startswith("sk-") or v.startswith("sk_"):
-        if len(v) <= 8:
-            return "***"
+    if _looks_like_api_key(v):
         return f"{v[:4]}***{v[-4:]}"
 
-    # 默认:首尾各 4 字符脱敏
-    if len(v) <= 8:
-        return "***"
-    return f"{v[:4]}***{v[-4:]}"
+    # 启发式 secret（如不规则 token / UUID）才走"首尾 4 字符"脱敏
+    if _looks_like_secret(v):
+        return f"{v[:4]}***{v[-4:]}"
+
+    return v

@@ -2,9 +2,9 @@
 
 import json
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import TypeAdapter
 from sqlalchemy.orm import Session
 
 from app.core.constants import SessionStatus
@@ -22,6 +22,9 @@ from app.services.llm.client import LLMClient
 
 router = APIRouter()
 
+# 强类型 ChatMessage 列表校验（防御存储层历史脏数据）
+_CHAT_MSG_ADAPTER: TypeAdapter[list[ChatMessage]] = TypeAdapter(list[ChatMessage])
+
 
 async def _generate_and_persist_report(
     session: InterviewSession,
@@ -30,14 +33,10 @@ async def _generate_and_persist_report(
 ) -> None:
     """生成报告并写入 session / GrowthRecord。
 
-    集中 ``send_message`` 与 ``finish_interview`` 两处重复的报告生成+成长记录逻辑。
+    报告生成与成长记录在单一事务中完成；任意阶段失败整体回滚，
+    避免出现"session 已 completed 但 GrowthRecord 缺失"的不一致状态。
     """
     report = await generate_report(session, llm)
-    session.report = report.model_dump_json()
-    session.overall_score = report.overall_score
-    session.status = SessionStatus.COMPLETED.value
-    session.ended_at = datetime.now(timezone.utc)
-    db.commit()
 
     growth = GrowthRecord(
         profile_id=session.profile_id,
@@ -46,8 +45,17 @@ async def _generate_and_persist_report(
         common_mistakes=json.dumps(report.weaknesses[:3], ensure_ascii=False),
         training_plan=json.dumps(report.training_plan, ensure_ascii=False),
     )
-    db.add(growth)
-    db.commit()
+
+    try:
+        session.report = report.model_dump_json()
+        session.overall_score = report.overall_score
+        session.status = SessionStatus.COMPLETED.value
+        session.ended_at = datetime.now(timezone.utc)
+        db.add(growth)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.post("/sessions", response_model=InterviewSessionResponse)
@@ -166,16 +174,13 @@ def get_messages(session_id: int, db: Session = Depends(get_db)):
     if not session:
         raise HTTPException(status_code=404, detail="面试会话不存在")
     raw = json.loads(session.messages or "[]")
-    # 类型守卫:仅保留 dict 且 role 为合法字符串的 user/assistant 消息
-    out: list[dict[str, Any]] = []
-    for m in raw:
-        if not isinstance(m, dict):
-            continue
-        role = m.get("role")
-        if not isinstance(role, str) or role not in ("user", "assistant"):
-            continue
-        out.append(m)
-    return out
+    # 强校验：仅保留符合 ChatMessage 结构的合法项；坏数据降级为空列表
+    try:
+        validated = _CHAT_MSG_ADAPTER.validate_python(raw)
+        return [m.model_dump(mode="json") for m in validated]
+    except Exception:
+        # 历史脏数据：返回空，避免对外暴露内部异常
+        return []
 
 
 def _to_response(session: InterviewSession) -> InterviewSessionResponse:

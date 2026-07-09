@@ -3,6 +3,10 @@
 - :class:`SafeFormatter`: 默认 JSON 风格输出，包含 trace_id；
 - :class:`RedactFilter`: 自动替换日志中的 API Key / Authorization 头；
 - :func:`configure_logging`: 在 FastAPI lifespan 启动时一次性安装。
+
+脱敏覆盖 ``record.msg`` 与 ``record.args``，**仅脱敏其中字符串组件**，
+不破坏 `%s/%d` 等格式化占位符的数量与顺序——这是记录器格式化阶段
+需要的协议。
 """
 
 from __future__ import annotations
@@ -25,13 +29,22 @@ def new_trace_id() -> str:
     return uuid.uuid4().hex
 
 
-def set_trace_id(value: str | None = None) -> str:
-    token = _trace_id_var.set(value or new_trace_id())
-    return _trace_id_var.get()
+def set_trace_id(value: str | None = None) -> contextvars.Token:
+    """设置当前 trace_id 并返回 ``Token``（与 :func:`reset_trace_id` 配对使用）。
+
+    不传 ``value`` 时生成新 uuid4。返回 Token 而非 str，方便 middleware
+    在 finally 中 reset 避免跨请求污染。
+    """
+    return _trace_id_var.set(value or new_trace_id())
 
 
 def get_trace_id() -> str:
     return _trace_id_var.get()
+
+
+def reset_trace_id(token) -> None:
+    """恢复 ContextVar；与 :func:`set_trace_id` 配对使用（middleware 上下文）。"""
+    _trace_id_var.reset(token)
 
 
 # 日志中的 API Key / Bearer token 自动脱敏。
@@ -41,16 +54,33 @@ def get_trace_id() -> str:
 class RedactFilter(logging.Filter):
     """日志输出前脱敏敏感字段。
 
-    直接复用 :func:`app.core.security.redact_api_key` 覆盖常见形态
-    (``sk-xxx``、``Bearer xxx``、``Authorization: xxx`` 等);
-    若未来增加新的 Key 形态，只需在 :func:`redact_api_key` 中扩展。
+    策略：
+
+    - 仅对**字符串**类型的 ``record.msg``（模板）和 ``record.args``
+      （参数）调用 :func:`redact_api_key`；
+    - 保留非字符串参数（如数字、bytes、Exception 等）原样，不破坏
+      ``%s/%d`` 占位符的数量；
+    - 同步脱敏 ``record.exc_text``（异常格式化后的堆栈文本），避免
+      上游 LLM/SDK 抛出携带 Key 的字符串泄露。
+
+    新增 Key 形态只需在 :func:`redact_api_key` 中扩展。
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            msg = record.getMessage()
-            record.msg = _redact(msg)
-            record.args = ()
+            if isinstance(record.msg, str):
+                record.msg = _redact(record.msg)
+            if record.args:
+                new_args = []
+                for a in record.args:
+                    if isinstance(a, str):
+                        new_args.append(_redact(a))
+                    else:
+                        new_args.append(a)
+                record.args = tuple(new_args)
+            exc_text = getattr(record, "exc_text", None)
+            if isinstance(exc_text, str):
+                record.exc_text = _redact(exc_text)
         except Exception:  # pragma: no cover - fail open
             pass
         return True

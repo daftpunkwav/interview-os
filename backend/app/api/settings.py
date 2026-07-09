@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.constants import DEFAULT_LLM_PROTOCOL
 from app.core.security import UnsafeURLError, is_safe_http_url
 from app.core.secrets import encrypt_secret
@@ -23,9 +24,10 @@ from app.services.llm.client import LLMClient
 
 router = APIRouter()
 
-# 本地回环白名单：127.0.0.1 / localhost 仅在 debug / dev 下放行
-import os as _os
-_IS_DEV = _os.environ.get("INTERVIEWOS_ENV", "dev") != "prod"
+
+def _is_dev() -> bool:
+    """每次请求重新计算，避免模块级缓存的环境变量在测试中无法重写。"""
+    return not get_settings().is_prod
 
 
 def _get_or_create_settings(db: Session) -> LLMSettings:
@@ -61,7 +63,7 @@ def get_llm_settings(db: Session = Depends(get_db)):
 @router.put("/llm", response_model=LLMSettingsResponse)
 def update_llm_settings(body: LLMSettingsUpdate, db: Session = Depends(get_db)):
     # SSRF 防御：拒绝指向私网 / loopback 的 api_base（Dev 模式除外）
-    if not is_safe_http_url(body.api_base, allow_local=_IS_DEV):
+    if not is_safe_http_url(body.api_base, allow_local=_is_dev()):
         raise HTTPException(status_code=400, detail="LLM API 地址不安全，仅允许 https 公网地址")
 
     row = _get_or_create_settings(db)
@@ -105,7 +107,7 @@ async def test_llm_connection(db: Session = Depends(get_db)):
     if not llm.api_key:
         raise HTTPException(status_code=400, detail="请先配置 API Key")
     # 同样对 LLM URL 做一次 SSRF 校验
-    if not is_safe_http_url(llm.api_base, allow_local=_IS_DEV):
+    if not is_safe_http_url(llm.api_base, allow_local=_is_dev()):
         raise HTTPException(status_code=400, detail="LLM API 地址不安全")
     try:
         success, message = await llm.test_connection()

@@ -230,6 +230,7 @@ export type ServerEvent =
   | { type: "reference_hint"; content: string; question: string }
   | { type: "phase_changed"; phase: string }
   | { type: "interview_complete"; report_id?: number }
+  | { type: "server_ping"; t: number }
   | SSEErrorEvent;
 
 export type ClientEvent =
@@ -243,7 +244,8 @@ export type ClientEvent =
   | { type: "stt_text"; text: string }
   | { type: "silence_timeout" }
   | { type: "request_hint"; question: string }
-  | { type: "vision_update"; face_analysis: FaceAnalysis };
+  | { type: "vision_update"; face_analysis: FaceAnalysis }
+  | { type: "pong"; t: number };
 
 /* ====================================================================== */
 /* REST API 响应契约                                                       */

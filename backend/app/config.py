@@ -43,17 +43,36 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
+    env: str = Field(default="dev", description="dev / prod，决定 allow_local_llm 与 CORS 严格度")
 
     # 语音
     whisper_model: str = "base"
     tts_voice: str = "zh-CN-XiaoxiaoNeural"
     silence_nudge_seconds: int = Field(default=10, ge=1, le=600)
 
+    # LLM 调用：是否允许本机/私网 base_url。生产必须为 False。
+    allow_local_llm: bool = Field(default=False)
+
+    # 限流：可信任的反向代理 CIDR 列表（逗号分隔）；空表示仅 request.client.host。
+    trusted_proxy_cidrs: str = Field(default="")
+
     @field_validator("cors_origins")
     @classmethod
     def _strip_cors(cls, v: str) -> str:
         """清理每个 origin 两侧的空白，便于后续拆分。"""
         return ",".join(o.strip() for o in v.split(",") if o.strip())
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o for o in self.cors_origins.split(",") if o]
+
+    @property
+    def is_prod(self) -> bool:
+        return self.env.strip().lower() == "prod"
+
+    @property
+    def trusted_proxy_cidr_list(self) -> list[str]:
+        return [c.strip() for c in self.trusted_proxy_cidrs.split(",") if c.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:

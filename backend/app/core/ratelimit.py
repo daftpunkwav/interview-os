@@ -8,6 +8,15 @@
 
 内存治理：桶空闲超过 ``_BUCKET_TTL_SECONDS`` 会被后台清理线程回收，
 避免长跑服务下字典无界增长。
+
+.. warning::
+
+    多 worker 部署（``uvicorn --workers N``）时每个 worker 独立计数，限额
+    会被放大 N 倍；如需跨 worker 一致，请接入 Redis 等集中式存储。
+
+代理信任链：X-Forwarded-For 首段仅在 :func:`is_localhost_family` 命中
+时（即认为请求来自内网代理，如 Nginx / Traefik 反代）才采纳，避免伪造
+头绕过限流。公网直连时使用 ``request.client.host``。
 """
 
 from __future__ import annotations
@@ -18,6 +27,8 @@ from collections import deque
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request
+
+from app.core.security import is_localhost_family
 
 
 # 桶空闲回收时间窗。超过该时间无访问视为可回收。
@@ -40,11 +51,18 @@ _BUCKETS: dict[tuple[str, str], _Bucket] = {}
 _cleanup_started = False
 
 
-def _client_ip(request: Request) -> str:
+def _resolve_client_ip(request: Request) -> str:
+    """解析客户端 IP。
+
+    - 仅当 ``request.client.host`` 属于私有/loopback 网段（即可信代理链路）
+      时才采纳 ``X-Forwarded-For`` 首段；
+    - 公网直连总是使用 ``request.client.host``，防止伪造。
+    """
+    peer = request.client.host if request.client else None
     fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    if fwd and peer and is_localhost_family(peer):
+        return fwd.split(",")[0].strip() or peer
+    return peer or "unknown"
 
 
 def _ensure_cleanup_thread() -> None:
@@ -76,7 +94,7 @@ def check_rate_limit(
 ) -> None:
     """检查限流，越界抛 ``HTTPException(429)``。"""
     _ensure_cleanup_thread()
-    ip = _client_ip(request)
+    ip = _resolve_client_ip(request)
     bucket_key = (key, ip)
     now = time.monotonic()
     with _LOCK:

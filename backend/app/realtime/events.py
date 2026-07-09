@@ -1,4 +1,8 @@
-"""面试会话事件类型与快照。"""
+"""面试会话事件类型与快照。
+
+注意 ``SessionEvent.schema_version``：每次事件协议变更递增；前端可据此
+做兼容判断。
+"""
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -47,3 +51,5 @@ class SessionEvent:
     type: str
     payload: dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    # 事件协议版本，演进时 +1；ws_handler 在首个事件注入
+    schema_version: int = 1

@@ -41,7 +41,16 @@ WS 端点 `ws://.../api/v1/ws/interview/{id}` 当前按惯例"任意客户端连
 ### 4. 限流策略
 
 按 IP 滑窗（默认 60 req/min，无认证时按 IP）。
-见 `backend/app/core/ratelimit.py`；如需把窗口/上限做成环境变量控制，可作为下一步工作。
+仅在 `request.client.host` 落入 `INTERVIEWOS_TRUSTED_PROXY_CIDRS` 配置的代理 CIDR
+才读取 `X-Forwarded-For`，避免任意客户端伪造 IP 绕过限流。
+多 worker 部署需切 Redis（当前为进程内）。
+见 `backend/app/core/ratelimit.py`。
+
+### 5. INTERVIEWOS_ENV 决定 SSRF 与本机模式策略
+
+- `INTERVIEWOS_ENV=dev`（默认）允许 `api_base` 指向 loopback（127.0.0.1 / `::1`），便于接 ollama 等本地 LLM；私网 / metadata 仍拒。
+- `INTERVIEWOS_ENV=prod` 强制 https 公网 API key，loopback / 私网一律拒绝。
+- 仅当 `INTERVIEWOS_ENV=dev` 且 `INTERVIEWOS_ALLOW_LOCAL_LLM=1` 才允许本地 LLM。
 
 ## 缓解清单（已实现的）
 
@@ -52,9 +61,12 @@ WS 端点 `ws://.../api/v1/ws/interview/{id}` 当前按惯例"任意客户端连
 | 任意 SQL 注入 | SQLAlchemy 2.0 ORM 全部参数化；无原生字符串拼接 |
 | 任意代码注入 / 反序列化 | 未引入 `pickle`/`yaml.load`；Pydantic 强校验所有 LLM 返回 |
 | PII 泄漏到日志 | `RedactFilter` 自动遮蔽；`runner.py` 追问信号日志仅记长度 |
-| API Key at-rest 明文 | `app/core/secrets.py` HMAC+XOR 流加密；首推生产环境设置 `INTERVIEWOS_SECRET_KEY` |
-| Trace 串联 | `X-Trace-Id` 中间件 + 结构化 JSON 日志 |
-| CORS 滥用 | 仅 `GET/POST/PUT/DELETE/OPTIONS`；`*` 配置会启动 warn |
+| API Key at-rest 明文 | `app/core/secrets.py` AES-256-GCM（依赖 `cryptography`）；输出 `enc:v2:<salt>:<nonce>:<tag>:<ct>`；old `enc:v1:` 密文显式抛 `LegacySecretFormatError`，引导用户在设置页重设。生产环境必须设置 `INTERVIEWOS_SECRET_KEY`（≥32 字节） |
+| Trace 串联 | `X-Trace-Id` 中间件 + 结构化 JSON 日志；输入校验正则 `^[A-Za-z0-9_\-]{8,64}$`，不通过自动重生 |
+| WebSocket 拒绝服务 / 长会话僵尸连接 | 服务端每 30s 发 `server_ping`，客户端须回 `pong`，累计 3 次未回则 graceful close；audio_buffer 上限 5 MB 防止内存膨胀 |
+| CORS 滥用 | 仅 `GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS`；prod 通配 origin + credentials 启动即拒绝；`X-Request-Id` / `X-Trace-Id` 透传保留 |
+| 上下文窗口 token 溢出 | 30% 触发阈值早压缩；多模态 list content 正确估算 token；空 / None content 不抛异常 |
+| LLM 4xx/5xx 不当重试放大成本 | 4xx 直接 raise；5xx/429 指数退避最多 3 次 |
 | DoS 大量会话 | SQLite 单机 + 无鉴权下，OS 层做速率限制即可；多人部署需切 Postgres |
 
 ## 已知可改进项

@@ -318,6 +318,10 @@ class InterviewAgent:
         phase_complete = has_marker(reply, PHASE_COMPLETE_MARKER)
         max_reached = self.questions_in_phase >= self.current_phase().max_questions
         if phase_complete or max_reached:
+            # 防御：避免越界走到 workflow 末尾之后
+            if self.current_phase_idx >= len(self.workflow.phases) - 1:
+                self.questions_in_phase += 1
+                return False
             self._advance_phase()
             return True
         self.questions_in_phase += 1

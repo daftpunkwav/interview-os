@@ -17,10 +17,24 @@ def estimate_tokens(text: str) -> int:
 
 
 def estimate_messages_tokens(messages: list[dict[str, Any]]) -> int:
-    """估算消息列表总 token 数。"""
-    return sum(
-        estimate_tokens(str(m.get("content", ""))) for m in messages
-    )
+    """估算消息列表总 token 数。
+
+    支持多模态 ``content``:当 ``content`` 为 ``list`` 时,逐项累加文本片段。
+    """
+    total = 0
+    for m in messages:
+        content = m.get("content", "")
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict):
+                    total += estimate_tokens(str(item.get("text", "")))
+                else:
+                    total += estimate_tokens(str(item))
+        elif content is None:
+            continue
+        else:
+            total += estimate_tokens(str(content))
+    return total
 
 
 def compress_messages(
@@ -28,16 +42,18 @@ def compress_messages(
     max_tokens: int,
     *,
     keep_recent: int = 20,
+    threshold: float = 0.3,
 ) -> list[dict[str, Any]]:
     """超过预算时压缩为 system 消息 + 最近 N 条对话。
 
     策略：
     - 总是保留所有 ``system`` 消息（面试规则、追问引导等不可丢失）。
-    - 只在 ``total > max_tokens * 0.6`` 时触发，避免过度压缩。
+    - 只在 ``total > max_tokens * threshold`` 时触发，避免过度压缩；
+      阈值默认 0.3（30%）以让长会话尽快进入摘要流程，防止 token 堆叠爆窗。
     - 用户/助手对话仅保留最近 ``keep_recent`` 条。
     """
     total = estimate_messages_tokens(messages)
-    if total <= max_tokens * 0.6:
+    if total <= max_tokens * threshold:
         return messages
 
     system = [m for m in messages if m.get("role") == "system"]

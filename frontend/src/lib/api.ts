@@ -177,18 +177,18 @@ async function consumeSSE<TEvent extends { type: string }>(
 
 export const api = {
   /* LLM 设置 */
-  getLLMSettings: () => request<LLMSettings>("/settings/llm"),
+  getLLMSettings: () => request<LLMSettings>("/v1/settings/llm"),
   updateLLMSettings: (data: Partial<import("@/types").LLMSettingsWrite>) =>
-    request<LLMSettings>("/settings/llm", {
+    request<LLMSettings>("/v1/settings/llm", {
       method: "PUT",
       body: JSON.stringify(data),
     }),
-  testLLM: () => request<LLMTestResponse>("/settings/llm/test", { method: "POST" }),
+  testLLM: () => request<LLMTestResponse>("/v1/settings/llm/test", { method: "POST" }),
 
   /* 档案 */
-  getProfile: () => request<UserProfile>("/profile"),
+  getProfile: () => request<UserProfile>("/v1/profile"),
   updateProfile: (data: Partial<UserProfile>) =>
-    request<UserProfile>("/profile", { method: "PUT", body: JSON.stringify(data) }),
+    request<UserProfile>("/v1/profile", { method: "PUT", body: JSON.stringify(data) }),
 
   /* 简历 */
   uploadResume: async (file: File): Promise<Resume> => {
@@ -196,7 +196,7 @@ export const api = {
     try {
       const form = new FormData();
       form.append("file", file);
-      res = await fetch("/api/resume/upload", { method: "POST", body: form });
+      res = await fetch("/api/v1/resume/upload", { method: "POST", body: form });
     } catch {
       throw new ApiError("无法连接后端服务", 0);
     }
@@ -209,11 +209,11 @@ export const api = {
       throw new ApiError("服务器返回了无效的 JSON 响应", res.status);
     }
   },
-  listResumes: () => request<Resume[]>("/resume/list"),
+  listResumes: () => request<Resume[]>("/v1/resume/list"),
   activateResume: (id: number) =>
-    request<ResumeActivateResponse>(`/resume/${id}/activate`, { method: "POST" }),
+    request<ResumeActivateResponse>(`/v1/resume/${id}/activate`, { method: "POST" }),
   analyzeResume: (id: number) =>
-    request<ResumeAnalysis>(`/resume/${id}/analyze`, { method: "POST" }),
+    request<ResumeAnalysis>(`/v1/resume/${id}/analyze`, { method: "POST" }),
 
   /* 面试准备 */
   createPrepSession: (data: {
@@ -264,23 +264,23 @@ export const api = {
   },
 
   /* 选项 */
-  getOptions: () => request<Options>("/options"),
+  getOptions: () => request<Options>("/v1/options"),
 
   /* 面试 */
   createSession: (config: InterviewConfig) =>
-    request<InterviewSession>("/interview/sessions", {
+    request<InterviewSession>("/v1/interview/sessions", {
       method: "POST",
       body: JSON.stringify(config),
     }),
-  listSessions: () => request<InterviewSession[]>("/interview/sessions"),
+  listSessions: () => request<InterviewSession[]>("/v1/interview/sessions"),
   getSession: (id: number) =>
-    request<InterviewSession>(`/interview/sessions/${id}`),
+    request<InterviewSession>(`/v1/interview/sessions/${id}`),
   startInterview: (id: number) =>
-    request<StartInterviewResponse>(`/interview/sessions/${id}/start`, {
+    request<StartInterviewResponse>(`/v1/interview/sessions/${id}/start`, {
       method: "POST",
     }),
   sendMessage: (id: number, content: string, faceAnalysis?: FaceAnalysis, imageBase64?: string) =>
-    request<SendMessageResponse>(`/interview/sessions/${id}/message`, {
+    request<SendMessageResponse>(`/v1/interview/sessions/${id}/message`, {
       method: "POST",
       body: JSON.stringify({
         content,
@@ -288,27 +288,16 @@ export const api = {
         image_base64: imageBase64,
       }),
     }),
-  getMessages: (id: number) => request<ChatMessage[]>(`/interview/sessions/${id}/messages`),
+  getMessages: (id: number) =>
+    request<ChatMessage[]>(`/v1/interview/sessions/${id}/messages`),
   finishInterview: (id: number) =>
-    request<FinishInterviewResponse>(`/interview/sessions/${id}/finish`, {
+    request<FinishInterviewResponse>(`/v1/interview/sessions/${id}/finish`, {
       method: "POST",
     }),
 
   /* 报告 */
-  getReport: (id: number) => request<GetReportResponse>(`/reports/${id}`),
-  getGrowthHistory: () => request<GrowthRecord[]>("/reports/growth/history"),
-
-  /** 流式获取报告（备用入口；当前未在页面中使用，但保留以备扩展） */
-  streamReport: async (id: number, onToken: (t: string) => void) => {
-    const res = await fetch(`${getEnv().STREAM_API_BASE}/api/reports/${id}/stream`, {
-      headers: { Accept: "text/event-stream" },
-    });
-    if (!res.ok) throw new ApiError(await parseErrorResponse(res), res.status);
-    await consumeSSE<ReportSSEEvent>(res, (event) => {
-      if (event.type === "token" && typeof event.content === "string") onToken(event.content);
-    });
-    return {} satisfies Partial<Pick<InterviewReport, "overall_score">>;
-  },
+  getReport: (id: number) => request<GetReportResponse>(`/v1/reports/${id}`),
+  getGrowthHistory: () => request<GrowthRecord[]>("/v1/reports/growth/history"),
 };
 
 export { ApiError };
