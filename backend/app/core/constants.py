@@ -24,6 +24,28 @@ class LLMProtocol(StrEnum):
 DEFAULT_LLM_PROTOCOL = LLMProtocol.OPENAI_CHAT
 
 
+# ── RAG 后端 ────────────────────────────────────────
+
+
+class RAGBackendKind(StrEnum):
+    """企业知识库 RAG 的实现后端。
+
+    - ``local``:本地 Chroma + 调用 LLM 提供商的 ``/embeddings`` 端点。
+      适用于 OpenAI / DeepSeek / SiliconFlow / Moonshot / GLM 等所有暴露
+      OpenAI 兼容 embeddings 接口的 provider。
+    - ``stepfun``:StepFun 托管的 ``/vector_stores`` 检索,检索通过
+      ``tools[].type=retrieval`` 在 chat 调用时由 StepFun 服务端完成。
+    - ``none``:完全关闭企业知识库检索。
+    """
+
+    LOCAL = "local"
+    STEPFUN = "stepfun"
+    NONE = "none"
+
+
+DEFAULT_RAG_BACKEND = RAGBackendKind.LOCAL
+
+
 # ── 面试工作流 / 阶段 ────────────────────────────────────────
 
 
