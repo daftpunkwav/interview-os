@@ -9,7 +9,7 @@ import { Save, Zap, Loader2, CheckCircle, XCircle, Settings2 } from "lucide-reac
 import { LoadError } from "@/components/LoadError";
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<LLMSettings & { api_key?: string } | null>(null);
+  const [settings, setSettings] = useState<LLMSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);

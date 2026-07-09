@@ -18,6 +18,11 @@ export interface LLMSettings {
   tts_voice?: string;
   has_api_key: boolean;
   updated_at?: string;
+  /**
+   * 仅在 settings 编辑态下使用,后端 ``LLMSettingsResponse`` 不会返回真实 key。
+   * 写入时:留空或传 ``"keep"`` 表示不修改已有 key,新值会被后端 at-rest 加密。
+   */
+  api_key?: string;
 }
 
 /** 写 LLM 设置时携带 ``api_key`` placeholder (``"keep"`` 表示不修改)。 */
