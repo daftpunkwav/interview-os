@@ -1,5 +1,17 @@
-"""数据库连接与会话管理。"""
+"""数据库连接与会话管理。
 
+引擎 / SessionLocal 工厂使用线程安全双检锁懒创建，避免：
+
+- 测试在 ``setenv`` 之前意外触发首次实例化；
+- 多线程同时 reset_engine 时把仍在使用的引擎 dispose 掉。
+
+.. note::
+
+    切换到 Postgres/MySQL 时请补 ``pool_recycle`` / ``pool_pre_ping``
+    设置；当前 SQLite 不需要。
+"""
+
+import threading
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
@@ -15,6 +27,7 @@ class Base(DeclarativeBase):
 
 _engine: Engine | None = None
 _SessionLocal: sessionmaker[Session] | None = None
+_engine_lock = threading.Lock()
 
 
 def get_engine() -> Engine:
@@ -23,7 +36,11 @@ def get_engine() -> Engine:
     对于内存 SQLite 使用 StaticPool，确保 :memory: 在多个连接间共享同一份库。
     """
     global _engine
-    if _engine is None:
+    if _engine is not None:
+        return _engine
+    with _engine_lock:
+        if _engine is not None:
+            return _engine
         from sqlalchemy.pool import StaticPool
 
         settings = get_settings()
@@ -41,18 +58,26 @@ def get_engine() -> Engine:
 def get_session_factory() -> sessionmaker[Session]:
     """惰性创建 SessionLocal。"""
     global _SessionLocal
-    if _SessionLocal is None:
+    if _SessionLocal is not None:
+        return _SessionLocal
+    with _engine_lock:
+        if _SessionLocal is not None:
+            return _SessionLocal
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=get_engine())
     return _SessionLocal
 
 
 def reset_engine() -> None:
-    """测试用：清除缓存的 engine/SessionLocal，强制重新创建。"""
+    """测试用：清除缓存的 engine/SessionLocal，强制重新创建。
+
+    加锁保证正在进行的请求不会读到 disposed 引擎。
+    """
     global _engine, _SessionLocal
-    if _engine is not None:
-        _engine.dispose()
-    _engine = None
-    _SessionLocal = None
+    with _engine_lock:
+        if _engine is not None:
+            _engine.dispose()
+        _engine = None
+        _SessionLocal = None
 
 
 # 向后兼容：模块级别名。首次访问时调用工厂，确保总是最新的实例。

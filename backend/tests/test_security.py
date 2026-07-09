@@ -34,20 +34,49 @@ class TestRedactApiKey:
         [
             ("", ""),
             (None, ""),
+            # 正常 Key
             ("sk-12345678abcdefgh", "sk-1***efgh"),
             ("sk-proj-abc123def456ghi789", "sk-p***i789"),
             ("sk-verylongapikeywithmanychars", "sk-v***hars"),
+            # Authorization / Bearer / Token 形式
             ("authorization: Bearer abc123def456", "authorization: ***"),
             ("Authorization: Bearer abc123def456", "Authorization: ***"),
             ("authorization=abc123def456", "authorization= ***"),
             ("bearer abc123def456", "Bearer ***"),
             ("token abc123def456", "Token ***"),
             ("basic dXNlcjpwYXNz", "Basic ***"),
-            ("short", "***"),  # <= 8 chars
+            # 各家厂商前缀
+            ("sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234", "sk-a***1234"),
+            ("AIzaSyAbcDefGhiJklMnoPqrStuVwxYz1234567", "AIza***4567"),
+            ("step-3.7-flash-abcdefghijklmnop", "step***mnop"),
+            # 短字符串与日常短语不再被误判为 ***
+            ("short", "short"),
+            ("RAG settings", "RAG settings"),
+            ("HTTP/1.1", "HTTP/1.1"),
+            # 启发式 secret（>=20 + 字母数字混合）才脱敏
+            ("abcdef1234567890abcdef1234567890abcd", "abcd***abcd"),
+            # 长句（>8 字符 + 含空格）不被脱敏，避免日志行误伤
+            ("this is a long log message", "this is a long log message"),
         ],
     )
     def test_redact_variants(self, raw: str | None, expected: str) -> None:
         assert redact_api_key(raw) == expected
+
+    def test_short_strings_not_overredacted(self) -> None:
+        """短字符串（≤8 字符）应原样返回，避免误伤 RAG / hh:mm 等短语。"""
+        assert redact_api_key("RAG") == "RAG"
+        assert redact_api_key("RAG settings") == "RAG settings"
+        assert redact_api_key("main.py") == "main.py"
+
+    def test_secret_shaped_strings(self) -> None:
+        """长字符串 + 字母数字混合 + 无空格 走"首尾 4 字符"脱敏。"""
+        token = "abcdef1234567890abcdef1234567890abcd"
+        assert redact_api_key(token) == "abcd***abcd"
+
+    def test_url_with_credentials(self) -> None:
+        """URL 中的 user:password 段不应被错认成 API Key（不脱敏）。"""
+        url = "https://user:pass@example.com/api"
+        assert redact_api_key(url) == url  # URL 不在内置 Key 形态里
 
 
 # ---------------------------------------------------------------------------
@@ -141,3 +170,19 @@ class TestIsSafeHttpUrl:
     def test_assert_raises_unsafe(self) -> None:
         with pytest.raises(UnsafeURLError):
             assert_safe_http_url("http://127.0.0.1:8000")
+
+    def test_non_standard_port_default_rejected(self) -> None:
+        """严格模式下非 80/443 端口拒绝。"""
+        assert is_safe_http_url("https://api.example.com:8443", allow_local=False) is False
+        assert is_safe_http_url("https://api.example.com:443", allow_local=False) is True
+
+    def test_port_whitelist_override(self) -> None:
+        allowed = frozenset({80, 443, 8443})
+        assert is_safe_http_url(
+            "https://api.example.com:8443", allow_local=False, allowed_ports=allowed
+        ) is True
+
+    def test_ipv6_literal_loopback_rejected(self) -> None:
+        """IPv6 字面量 [::1] 也走严格拒绝。"""
+        assert is_safe_http_url("http://[::1]", allow_local=False) is False
+        assert is_safe_http_url("http://[::ffff:127.0.0.1]", allow_local=False) is False
