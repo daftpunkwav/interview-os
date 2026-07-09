@@ -1,7 +1,16 @@
-"""OpenAI 兼容 LLM 客户端（BYOK）。"""
+"""OpenAI 兼容 LLM 客户端（BYOK）。
+
+变更点：
+
+- ``from_db`` 自动解密数据库中加密的 ``api_key``；
+- 每次请求校验 ``api_base`` 是否安全（SSRF 防御）；
+- 默认超时收紧到 60 s；
+- 错误日志脱敏 API Key。
+"""
 
 import json
 import logging
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -9,9 +18,12 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.security import UnsafeURLError, is_safe_http_url, redact_api_key
+from app.core.secrets import decrypt_secret
 from app.models import LLMSettings
 
 logger = logging.getLogger(__name__)
+_IS_DEV = os.environ.get("INTERVIEWOS_ENV", "dev") != "prod"
 
 
 class LLMClient:
@@ -40,7 +52,13 @@ class LLMClient:
         row = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
 
         api_base = (row.api_base if row and row.api_base else None) or settings.llm_api_base
-        api_key = (row.api_key if row and row.api_key else None) or settings.llm_api_key
+        raw_api_key = (row.api_key if row and row.api_key else None) or settings.llm_api_key
+        # 自动解密加密的 API Key；解密失败回退空串
+        try:
+            api_key = decrypt_secret(raw_api_key) or ""
+        except ValueError as e:
+            logger.error("API Key 解密失败: %s", e)
+            api_key = ""
         model = (row.model if row and row.model else None) or settings.llm_model
         max_tokens = (row.max_tokens if row else None) or settings.llm_max_tokens
         protocol = (row.protocol if row and hasattr(row, "protocol") and row.protocol else None) or "openai_chat"
@@ -89,12 +107,23 @@ class LLMClient:
     ) -> str:
         """发送 Chat Completions 请求并返回文本内容。"""
         url = f"{self.api_base}/chat/completions"
+        if not is_safe_http_url(self.api_base, allow_local=_IS_DEV):
+            raise UnsafeURLError(f"LLM api_base 不安全: {self.api_base}")
         payload = self._build_payload(messages, temperature, response_format=response_format)
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(url, headers=self._headers(), json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            try:
+                resp = await client.post(url, headers=self._headers(), json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+            except httpx.HTTPStatusError as e:
+                logger.warning(
+                    "LLM chat 失败: model=%s status=%s key=%s",
+                    self.model,
+                    e.response.status_code,
+                    redact_api_key(self.api_key),
+                )
+                raise
 
         return data["choices"][0]["message"]["content"]
 

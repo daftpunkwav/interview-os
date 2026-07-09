@@ -4,6 +4,7 @@
 
 - 更新 ``api_base`` 时校验 URL 协议 + 是否命中私网/loopback（防 SSRF）；
 - 仅在本地开发模式下允许非 https 主机，便于调试；
+- ``api_key`` 入库前用 AES-256-GCM 加密（at-rest）；
 - 错误信息脱敏返回，避免泄露上游服务细节。
 """
 
@@ -13,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.security import UnsafeURLError, is_safe_http_url
+from app.core.secrets import encrypt_secret
 from app.database import get_db
 from app.models import LLMSettings
 from app.schemas import LLMSettingsResponse, LLMSettingsUpdate, LLMTestResponse
@@ -64,7 +66,8 @@ def update_llm_settings(body: LLMSettingsUpdate, db: Session = Depends(get_db)):
     row = _get_or_create_settings(db)
     row.api_base = body.api_base
     if body.api_key and body.api_key != "keep":
-        row.api_key = body.api_key
+        # 入库前加密，避免明文落盘
+        row.api_key = encrypt_secret(body.api_key) or ""
     row.model = body.model
     row.max_tokens = body.max_tokens
     row.context_window = body.context_window
