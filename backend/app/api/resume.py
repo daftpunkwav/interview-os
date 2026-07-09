@@ -2,7 +2,7 @@
 
 安全要点（已加固）：
 
-- 上传大小上限 ``MAX_UPLOAD_BYTES``（默认 10 MB）；
+- 上传大小上限 :data:`app.core.constants.RESUME_MAX_UPLOAD_BYTES`（默认 10 MB）；
 - 文件名走 :func:`app.core.security.sanitize_filename` 清洗，落盘后
   :func:`app.core.security.assert_within_dir` 再做越界校验；
 - 通过魔数嗅探真实 MIME，不依赖客户端 ``content_type``；
@@ -19,6 +19,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.constants import (
+    RESUME_ALLOWED_EXTENSIONS,
+    RESUME_MAX_UPLOAD_BYTES,
+)
 from app.core.security import (
     assert_within_dir,
     sanitize_filename,
@@ -33,10 +37,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-ALLOWED_EXTENSIONS = {"pdf", "docx", "doc", "md", "txt"}
-
-# 单次上传硬上限 10 MB，避免 OOM 与磁盘爆炸
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+ALLOWED_EXTENSIONS = RESUME_ALLOWED_EXTENSIONS  # 兼容旧引用
 
 # 扩展名 ↔ 魔数（仅做基础嗅探）
 _MAGIC_BYTES: dict[str, list[bytes]] = {
@@ -87,8 +88,11 @@ async def upload_resume(
     chunks: list[bytes] = []
     while chunk := await file.read(64 * 1024):
         total += len(chunk)
-        if total > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail="文件超过 10MB 上限")
+        if total > RESUME_MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"文件超过 {RESUME_MAX_UPLOAD_BYTES // (1024 * 1024)}MB 上限",
+            )
         chunks.append(chunk)
     content = b"".join(chunks)
 
