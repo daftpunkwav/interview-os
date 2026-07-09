@@ -19,6 +19,13 @@
 - 报告 SSE 错误信息脱敏
 - LLMClient.chat 默认超时收紧到 60 秒；错误日志脱敏 API Key
 - 启动器新增 trace_id 中间件
+- **RAG 层多后端抽象**：新增 `RAGBackend` Protocol + `build_rag_backend` 工厂
+  - `LocalEmbeddingRAG`：本地 Chroma + OpenAI 兼容 `/embeddings`（默认，向后兼容）
+  - `StepFunRetrievalRAG`：StepFun 托管 `vector_stores`，检索通过 `tools[].type=retrieval` 在 chat 时由服务端完成
+  - `RAGBackendKind.NONE`：关闭 RAG
+  - `CompanyKnowledgeRAG` 退化为向后兼容包装器，公共 API 不变
+- `LLMClient.embed()` 支持独立的 `LLM_EMBEDDINGS_BASE/KEY/MODEL`（未设置时回退 `LLM_*`）
+- `LLMClient.chat/chat_stream` 新增可选 `tools` 参数，供 StepFun retrieval tool 注入
 
 ### 前端（Frontend）
 - `src/types/index.ts`：新增 ServerEvent/ClientEvent/PREP/Report SSE discriminated union 与 REST 响应契约
