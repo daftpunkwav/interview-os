@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.constants import DEFAULT_LLM_PROTOCOL
 from app.database import Base
 
 
@@ -59,7 +60,7 @@ class LLMSettings(Base):
     max_tokens: Mapped[int] = mapped_column(Integer, default=4096)
     context_window: Mapped[int] = mapped_column(Integer, default=128000)
     provider: Mapped[str] = mapped_column(String(50), default="openai")
-    protocol: Mapped[str] = mapped_column(String(50), default="openai_chat")
+    protocol: Mapped[str] = mapped_column(String(50), default=DEFAULT_LLM_PROTOCOL)
     reasoning_effort: Mapped[str] = mapped_column(String(20), default="medium")
     supports_vision: Mapped[bool] = mapped_column(Boolean, default=True)
     supports_audio: Mapped[bool] = mapped_column(Boolean, default=False)

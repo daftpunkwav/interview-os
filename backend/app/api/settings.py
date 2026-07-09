@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.constants import DEFAULT_LLM_PROTOCOL
 from app.core.security import UnsafeURLError, is_safe_http_url
 from app.core.secrets import encrypt_secret
 from app.database import get_db
@@ -46,7 +47,7 @@ def get_llm_settings(db: Session = Depends(get_db)):
         max_tokens=row.max_tokens,
         context_window=row.context_window,
         provider=row.provider,
-        protocol=getattr(row, "protocol", "openai_chat") or "openai_chat",
+        protocol=getattr(row, "protocol", DEFAULT_LLM_PROTOCOL) or DEFAULT_LLM_PROTOCOL,
         reasoning_effort=getattr(row, "reasoning_effort", "medium") or "medium",
         supports_vision=bool(getattr(row, "supports_vision", True)),
         supports_audio=bool(getattr(row, "supports_audio", False)),
@@ -87,7 +88,7 @@ def update_llm_settings(body: LLMSettingsUpdate, db: Session = Depends(get_db)):
         max_tokens=row.max_tokens,
         context_window=row.context_window,
         provider=row.provider,
-        protocol=getattr(row, "protocol", "openai_chat") or "openai_chat",
+        protocol=getattr(row, "protocol", DEFAULT_LLM_PROTOCOL) or DEFAULT_LLM_PROTOCOL,
         reasoning_effort=getattr(row, "reasoning_effort", "medium") or "medium",
         supports_vision=bool(getattr(row, "supports_vision", True)),
         supports_audio=bool(getattr(row, "supports_audio", False)),
