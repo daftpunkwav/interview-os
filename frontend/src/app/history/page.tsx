@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
@@ -16,19 +16,33 @@ import {
   FileText,
   TrendingUp,
 } from "lucide-react";
+import { LoadError } from "@/components/LoadError";
 
 export default function HistoryPage() {
   const [sessions, setSessions] = useState<InterviewSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  useEffect(() => {
-    api.listSessions().then((list) => {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const list = await api.listSessions();
       setSessions(list);
       const firstCompleted = list.find((s) => s.status === "completed");
-      setSelectedId(firstCompleted?.id ?? list[0]?.id ?? null);
-    }).finally(() => setLoading(false));
+      const fallback = list[0];
+      setSelectedId(firstCompleted?.id ?? fallback?.id ?? null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "加载失败");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const selected = useMemo(
     () => sessions.find((s) => s.id === selectedId) ?? null,
@@ -62,6 +76,8 @@ export default function HistoryPage() {
         <div className="flex items-center gap-2 text-[var(--muted)]">
           <Loader2 className="animate-spin" size={18} /> 加载中...
         </div>
+      ) : loadError ? (
+        <LoadError message={loadError} onRetry={load} />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
           {/* 左侧列表 */}

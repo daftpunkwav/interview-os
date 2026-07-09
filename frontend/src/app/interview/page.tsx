@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
+import { toast } from "@/components/Toast";
 import type { Options, Resume, InterviewConfig } from "@/types";
 import {
   Play,
@@ -46,8 +47,8 @@ export default function InterviewSetupPage() {
         setOptions(opts);
         setResumes(res);
         if (res.length > 0) {
-          const active = res.find((r) => r.is_active) || res[0];
-          setConfig((c) => ({ ...c, resume_id: active.id }));
+          const active = res.find((r) => r.is_active) ?? res[0];
+          if (active) setConfig((c) => ({ ...c, resume_id: active.id }));
         }
       })
       .catch((e) => setLoadError(e instanceof Error ? e.message : "加载失败"))
@@ -102,7 +103,7 @@ export default function InterviewSetupPage() {
       const session = await api.createSession(config);
       router.push(`/interview/${session.id}`);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "创建失败");
+      toast.error(e instanceof Error ? e.message : "创建失败");
     } finally {
       setCreating(false);
     }

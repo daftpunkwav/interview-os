@@ -1,55 +1,103 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ClientEvent, ServerEvent, TurnState } from "@/types";
+import { getEnv } from "@/lib/env";
 
-export type TurnState = "IDLE" | "AI_SPEAKING" | "USER_SPEAKING" | "PROCESSING";
+type ServerHandler<K extends ServerEvent["type"]> = (
+  msg: Extract<ServerEvent, { type: K }>,
+) => void;
 
-export interface WSMessage {
-  type: string;
-  [key: string]: unknown;
-}
+export type WSHandlers = {
+  [K in ServerEvent["type"]]?: ServerHandler<K>;
+};
 
-const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
-
-export function useInterviewWS(sessionId: number) {
+/**
+ * 与后端 ``/api/v1/ws/interview/{id}`` 双向通信的强类型 Hook。
+ *
+ * - 回调参数基于 ``Extract<ServerEvent, { type: K }>`` 推导，新增/重命名字段
+ *   会触发 TS 编译错误，避免前端静默吞没协议变更。
+ * - 同时保留``on(type, handler)``风格的命令式注册，向后兼容已有页面。
+ * - 自动指数退避重连（最多 5 次）。
+ */
+export function useInterviewWS(
+  sessionId: number,
+  handlersOrInitial?: WSHandlers,
+) {
   const wsRef = useRef<WebSocket | null>(null);
+  const handlersRef = useRef<Record<string, (msg: ServerEvent) => void>>({});
   const [connected, setConnected] = useState(false);
   const [turnState, setTurnState] = useState<TurnState>("IDLE");
-  const handlersRef = useRef<Record<string, (msg: WSMessage) => void>>({});
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
 
-  const on = useCallback((type: string, handler: (msg: WSMessage) => void) => {
-    handlersRef.current[type] = handler;
+  useEffect(() => {
+    if (handlersOrInitial) {
+      for (const [type, handler] of Object.entries(handlersOrInitial)) {
+        if (handler) handlersRef.current[type] = handler as (msg: ServerEvent) => void;
+      }
+    }
+  }, [handlersOrInitial]);
+
+  const on = useCallback(<K extends ServerEvent["type"]>(type: K, handler: ServerHandler<K>) => {
+    handlersRef.current[type] = handler as (msg: ServerEvent) => void;
   }, []);
 
-  const send = useCallback((payload: Record<string, unknown>) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(payload));
+  const send = useCallback((payload: ClientEvent) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(payload));
+      return true;
     }
+    return false;
   }, []);
 
   useEffect(() => {
-    const url = `${WS_BASE}/api/v1/ws/interview/${sessionId}`;
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
+    let closedByUser = false;
+    let retryCount = 0;
+    const MAX_RETRY = 5;
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data) as WSMessage;
-        if (msg.type === "turn_state" && msg.state) {
-          setTurnState(msg.state as TurnState);
+    const connect = () => {
+      const wsBase = getEnv().WS_BASE;
+      const url = `${wsBase}/api/v1/ws/interview/${sessionId}`;
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        retryCount = 0;
+        setReconnectAttempt(0);
+        setConnected(true);
+      };
+      ws.onclose = () => {
+        setConnected(false);
+        if (closedByUser || retryCount >= MAX_RETRY) return;
+        retryCount += 1;
+        setReconnectAttempt(retryCount);
+        const delay = Math.min(1000 * 2 ** (retryCount - 1), 8000);
+        window.setTimeout(connect, delay);
+      };
+      ws.onerror = () => {
+        ws.close();
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data) as ServerEvent;
+          if (msg.type === "turn_state") {
+            setTurnState(msg.state);
+          }
+          const handler = handlersRef.current[msg.type];
+          if (handler) handler(msg);
+        } catch {
+          /* ignore malformed frame */
         }
-        handlersRef.current[msg.type]?.(msg);
-      } catch {
-        /* ignore */
-      }
+      };
     };
 
+    connect();
     return () => {
-      ws.close();
+      closedByUser = true;
+      wsRef.current?.close();
     };
   }, [sessionId]);
 
-  return { connected, turnState, send, on };
+  return { connected, turnState, reconnectAttempt, send, on };
 }
