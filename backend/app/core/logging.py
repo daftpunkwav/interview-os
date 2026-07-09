@@ -29,9 +29,13 @@ def new_trace_id() -> str:
     return uuid.uuid4().hex
 
 
-def set_trace_id(value: str | None = None) -> str:
-    token = _trace_id_var.set(value or new_trace_id())
-    return _trace_id_var.get()
+def set_trace_id(value: str | None = None) -> contextvars.Token:
+    """设置当前 trace_id 并返回 ``Token``（与 :func:`reset_trace_id` 配对使用）。
+
+    不传 ``value`` 时生成新 uuid4。返回 Token 而非 str，方便 middleware
+    在 finally 中 reset 避免跨请求污染。
+    """
+    return _trace_id_var.set(value or new_trace_id())
 
 
 def get_trace_id() -> str:
