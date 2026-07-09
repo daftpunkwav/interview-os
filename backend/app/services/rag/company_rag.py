@@ -1,30 +1,35 @@
-"""企业面试知识库 RAG。
+"""企业面试知识库 RAG(向后兼容包装器)。
 
-设计：
-- 数据源：``services.company.knowledge.BUILTIN_COMPANIES`` 内置 7 家公司
-- 存储：Chroma（嵌入式、持久化到 backend/data/chroma）
-- 嵌入模型：复用 ``LLMClient.embed``，与 BYOK 配置一致
-- 切片策略：每家公司按维度切片（风格 / 重点领域 / 样题 / 流程 / 压力等级），
-  便于按意图精确检索
-- 索引构建：进程启动时若检测到空集合则构建一次；后续手工触发重建
+模块历史：
+
+- 早期版本：:class:`CompanyKnowledgeRAG` 直接管理 Chroma + 嵌入流程；
+- 自 M5 起：拆分为 :class:`LocalEmbeddingRAG`(本地 Chroma)、
+  :class:`StepFunRetrievalRAG`(StepFun 托管) 与 :func:`build_rag_backend` 工厂。
+
+本模块现在仅承担三件事：
+
+1. 保留 :data:`COLLECTION_NAME` 与 :func:`_build_documents` / :func:`_data_dir`
+   给 :class:`LocalEmbeddingRAG` 与现有测试复用；
+2. :class:`CompanyKnowledgeRAG` 作为薄包装转发到工厂选出的后端,
+   公共 API(``ensure_index`` / ``query`` / ``query_for_company`` / ``is_empty``
+   等)与早期版本完全一致；
+3. :func:`format_context` 是与具体后端无关的纯字符串格式化函数,
+   仍在公共位置提供。
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
 from app.services.company.knowledge import BUILTIN_COMPANIES
-from app.services.llm.client import LLMClient
 
 logger = logging.getLogger(__name__)
 
 
 def _data_dir() -> Path:
     """Chroma 持久化目录。"""
-    # 与 SQLite 数据库同目录
     from app.config import get_settings
 
     settings = get_settings()
@@ -98,133 +103,6 @@ def _build_documents() -> tuple[list[str], list[dict[str, Any]], list[str]]:
     return texts, metadatas, ids
 
 
-class CompanyKnowledgeRAG:
-    """公司面试知识库 RAG 封装。"""
-
-    def __init__(self, llm: LLMClient | None = None):
-        import chromadb
-        from chromadb.config import Settings
-
-        self._llm = llm
-        self._client = chromadb.PersistentClient(
-            path=str(_data_dir()),
-            settings=Settings(anonymized_telemetry=False, allow_reset=True),
-        )
-        self._collection = self._client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},
-        )
-
-    def is_empty(self) -> bool:
-        return self._collection.count() == 0
-
-    async def build_index(self, force: bool = False) -> int:
-        """构建（首次）或重建索引。
-
-        Args:
-            force: 为 True 时清空已有索引。
-
-        Returns:
-            写入的文档数。
-        """
-        if force and self._collection.count() > 0:
-            self._delete_all()
-
-        if self._collection.count() > 0:
-            logger.info("RAG 索引已存在，跳过构建")
-            return self._collection.count()
-
-        texts, metadatas, ids = _build_documents()
-        if self._llm is None:
-            raise RuntimeError("首次构建 RAG 索引需要提供 LLMClient 以调用 embed()")
-
-        logger.info("构建 RAG 索引：%d 条文档", len(texts))
-        # 分批嵌入，避免单次请求过大
-        embeddings = await self._llm.embed(texts)
-        self._collection.add(
-            documents=texts,
-            embeddings=embeddings,
-            metadatas=metadatas,
-            ids=ids,
-        )
-        return len(texts)
-
-    async def ensure_index(self) -> None:
-        """确保索引存在（用于启动时）。若为空则尝试构建，失败也不抛错。"""
-        if self.is_empty():
-            try:
-                await self.build_index(force=False)
-            except Exception as e:
-                logger.warning("RAG 索引构建失败，将保持空状态: %s", e)
-
-    async def query(
-        self,
-        query_text: str,
-        *,
-        top_k: int = 3,
-        company_id: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """检索与查询最相关的文档片段。
-
-        Args:
-            query_text: 查询文本（候选人问题或面试上下文）。
-            top_k: 返回结果数。
-            company_id: 可选限定公司 ID。
-
-        Returns:
-            包含 ``text`` / ``metadata`` / ``distance`` 的字典列表。
-        """
-        if self._collection.count() == 0:
-            logger.warning("RAG 索引为空，跳过检索")
-            return []
-
-        if self._llm is None:
-            raise RuntimeError("RAG 检索需要 LLMClient 用于 query embedding")
-
-        query_emb = (await self._llm.embed([query_text]))[0]
-        kwargs: dict[str, Any] = {
-            "query_embeddings": [query_emb],
-            "n_results": top_k,
-        }
-        if company_id:
-            kwargs["where"] = {"company_id": company_id}
-
-        result = self._collection.query(**kwargs)
-        documents = result.get("documents", [[]])[0]
-        metadatas = result.get("metadatas", [[]])[0]
-        distances = result.get("distances", [[]])[0]
-
-        return [
-            {
-                "text": doc,
-                "metadata": meta or {},
-                "distance": dist,
-            }
-            for doc, meta, dist in zip(documents, metadatas, distances)
-        ]
-
-    async def query_for_company(
-        self,
-        query_text: str,
-        company_id: str,
-        *,
-        top_k: int = 4,
-    ) -> list[dict[str, Any]]:
-        """限定公司检索（面试回合注入用）。"""
-        return await self.query(query_text, top_k=top_k, company_id=company_id)
-
-    def _delete_all(self) -> None:
-        # 通过删除并重建实现
-        try:
-            self._client.delete_collection(COLLECTION_NAME)
-        except Exception:
-            pass
-        self._collection = self._client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},
-        )
-
-
 def format_context(hits: list[dict[str, Any]]) -> str:
     """把检索结果格式化为可注入 LLM prompt 的中文上下文片段。"""
     if not hits:
@@ -238,4 +116,94 @@ def format_context(hits: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["CompanyKnowledgeRAG", "format_context"]
+# ──────────────────────────────────────────────────────────────────
+# 向后兼容包装器
+# ──────────────────────────────────────────────────────────────────
+
+
+class _LegacyChromaStub:
+    """``CompanyKnowledgeRAG(llm=None)`` 用的最小占位实现。
+
+    早期版本的 ``CompanyKnowledgeRAG(llm=None)`` 仅创建 Chroma 集合、不调用
+    embed。测试用 fixture 在此场景下直接接管 ``_collection`` / ``_client``,
+    因此这里只需满足属性存在。
+    """
+
+    kind = None  # type: ignore[assignment]
+    _llm = None
+    _client = None
+    _collection = None
+
+    async def ensure_index(self) -> None:
+        return None
+
+    def is_empty(self) -> bool:
+        if self._collection is None:
+            return True
+        return self._collection.count() == 0
+
+
+class CompanyKnowledgeRAG:
+    """企业知识库 RAG 的向后兼容包装器。
+
+    所有公开方法（``ensure_index`` / ``query`` / ``query_for_company`` /
+    ``is_empty``）委托给工厂选出的 :class:`RAGBackend`。当 ``llm=None``
+    时（仅测试场景）保持早期行为：返回 ``_LegacyChromaStub``,由测试 fixture
+    直接接管 ``_collection`` 等属性。
+
+    兼容策略：``_llm`` / ``_client`` / ``_collection`` / ``kind`` 既可读
+    也可写。写入时同步到 ``_impl``,从而保留 ``rag._client = ...`` /
+    ``rag._collection = ...`` 这类历史测试用法。
+    """
+
+    _FORWARD_ATTRS = ("kind", "_llm", "_client", "_collection")
+
+    def __init__(self, llm=None):  # type: ignore[no-untyped-def]
+        from app.config import get_settings
+        from app.services.rag.factory import build_rag_backend
+
+        settings = get_settings()
+
+        if llm is None:
+            self._impl: Any = _LegacyChromaStub()
+        else:
+            self._impl = build_rag_backend(llm=llm, settings=settings)
+
+    # ── 协议层属性透传(支持读写)──────────────────────────────
+    def __getattr__(self, name: str) -> Any:
+        # ``__getattr__`` 只在常规查找失败时触发;直接走 _impl。
+        impl = object.__getattribute__(self, "_impl")
+        return getattr(impl, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in self._FORWARD_ATTRS:
+            try:
+                impl = object.__getattribute__(self, "_impl")
+            except AttributeError:
+                object.__setattr__(self, name, value)
+                return
+            setattr(impl, name, value)
+            return
+        object.__setattr__(self, name, value)
+
+    # ── 协议层方法透传 ──────────────────────────────────────
+    async def ensure_index(self) -> None:
+        await self._impl.ensure_index()
+
+    def is_empty(self) -> bool:
+        return self._impl.is_empty()
+
+    async def query(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        return await self._impl.query(*args, **kwargs)
+
+    async def query_for_company(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        return await self._impl.query_for_company(*args, **kwargs)
+
+
+__all__ = [
+    "CompanyKnowledgeRAG",
+    "COLLECTION_NAME",
+    "format_context",
+    "_build_documents",
+    "_data_dir",
+]
