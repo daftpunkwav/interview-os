@@ -1,17 +1,19 @@
-"""API 路由聚合。"""
+"""API 路由聚合。
+
+新路径标准：所有 endpoint 挂在 ``/api/v1`` 前缀下。
+兼容别名（3 个月弃用期）：同一组 router 同样挂在 ``/api`` 下。
+
+各业务 router 集中在 :data:`app.api.v1.router.v1_router`，
+这里再 include 一次到 legacy 前缀。
+"""
 
 from fastapi import APIRouter
 
-from app.api import interview, options, profile, reports, resume, settings
 from app.api.v1.router import v1_router
 
-api_router = APIRouter(prefix="/api")
+# /api/v1/*
+api_router = APIRouter()
+api_router.include_router(v1_router, prefix="/api/v1")
 
-api_router.include_router(v1_router)
-
-api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
-api_router.include_router(profile.router, prefix="/profile", tags=["profile"])
-api_router.include_router(resume.router, prefix="/resume", tags=["resume"])
-api_router.include_router(interview.router, prefix="/interview", tags=["interview"])
-api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
-api_router.include_router(options.router, prefix="/options", tags=["options"])
+# /api/* —— 3 个月兼容别名；前端请迁移到 /api/v1
+api_router.include_router(v1_router, prefix="/api")
