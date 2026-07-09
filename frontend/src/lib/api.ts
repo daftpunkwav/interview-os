@@ -49,7 +49,13 @@ async function parseErrorResponse(res: Response): Promise<string> {
   if (!text) return `请求失败: ${res.status}`;
 
   try {
-    const data = JSON.parse(text) as { detail?: unknown; message?: string };
+    const data = JSON.parse(text) as {
+      detail?: unknown;
+      message?: string;
+      error?: { code?: string; message?: string; trace_id?: string };
+    };
+    // 优先读取统一 envelope (main.py 的 _envelope)
+    if (data.error?.message) return data.error.message;
     if (typeof data.detail === "string") return data.detail;
     if (Array.isArray(data.detail)) {
       return data.detail

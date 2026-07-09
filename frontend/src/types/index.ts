@@ -287,3 +287,20 @@ export interface LLMTestResponse {
   message: string;
   model?: string | null;
 }
+
+/* ====================================================================== */
+/* 错误响应统一 envelope（与后端 ``app.schemas.APIError`` 一一对齐）        */
+/* ====================================================================== */
+
+export interface ApiErrorBody {
+  code: string;
+  message: string;
+  trace_id?: string;
+}
+
+export interface ApiErrorEnvelope {
+  /** 旧字段，向后兼容 */
+  detail?: string;
+  /** 新统一字段 */
+  error?: ApiErrorBody;
+}

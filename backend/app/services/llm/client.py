@@ -18,6 +18,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.constants import DEFAULT_LLM_PROTOCOL
 from app.core.security import UnsafeURLError, is_safe_http_url, redact_api_key
 from app.core.secrets import decrypt_secret
 from app.models import LLMSettings
@@ -35,7 +36,7 @@ class LLMClient:
         api_key: str,
         model: str,
         max_tokens: int = 4096,
-        protocol: str = "openai_chat",
+        protocol: str = DEFAULT_LLM_PROTOCOL,
         reasoning_effort: str | None = None,
     ):
         self.api_base = api_base.rstrip("/")
@@ -61,7 +62,7 @@ class LLMClient:
             api_key = ""
         model = (row.model if row and row.model else None) or settings.llm_model
         max_tokens = (row.max_tokens if row else None) or settings.llm_max_tokens
-        protocol = (row.protocol if row and hasattr(row, "protocol") and row.protocol else None) or "openai_chat"
+        protocol = (row.protocol if row and hasattr(row, "protocol") and row.protocol else None) or DEFAULT_LLM_PROTOCOL
         reasoning = getattr(row, "reasoning_effort", None) if row else None
 
         return cls(
@@ -69,7 +70,7 @@ class LLMClient:
             api_key=api_key,
             model=model,
             max_tokens=max_tokens,
-            protocol=protocol or "openai_chat",
+            protocol=protocol or DEFAULT_LLM_PROTOCOL,
             reasoning_effort=reasoning,
         )
 
