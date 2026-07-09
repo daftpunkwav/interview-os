@@ -40,7 +40,7 @@ export default function InterviewRoomPage() {
   const showOutlineRef = useRef(showOutline);
   const sendRef = useRef<(p: ClientEvent) => boolean>(() => false);
 
-  const { connected, turnState, send, on } = useInterviewWS(sessionId);
+  const { connected, turnState, connectionState, send, on, retryNow } = useInterviewWS(sessionId);
   const { playBase64Mp3, setOnSpeakingChange } = useTTSPlayer();
 
 
@@ -201,10 +201,32 @@ export default function InterviewRoomPage() {
       : "正在聆听，停顿 1.2 秒自动发送";
 
   if (!connected) {
+    if (connectionState === "failed") {
+      return (
+        <div className="h-screen flex flex-col items-center justify-center gap-3 text-gray-300">
+          <p className="text-base">无法连接到面试服务</p>
+          <p className="text-sm text-gray-500">已尝试 5 次仍失败，请检查后端服务或网络</p>
+          <button
+            type="button"
+            onClick={() => retryNow()}
+            className="mt-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm hover:bg-brand-700"
+          >
+            重新连接
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push("/interview")}
+            className="text-sm text-gray-400 hover:text-gray-200 underline"
+          >
+            返回面试配置
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="h-screen flex items-center justify-center gap-2 text-gray-500">
         <Loader2 className="animate-spin" size={20} />
-        连接面试服务...
+        {connectionState === "reconnecting" ? "重新连接中…" : "连接面试服务..."}
       </div>
     );
   }

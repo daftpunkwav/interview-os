@@ -2,6 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+/** 30 MB:长会话下录音 chunks 上限,超过时丢弃最早的 chunk 防止内存泄漏。 */
+const MAX_CHUNKS_BYTES = 30 * 1024 * 1024;
+/** 静音触发最少需要累积的 chunk 数,防止首字节就被切。 */
+const MIN_CHUNKS_BEFORE_SILENCE = 2;
+/** 静音触发时长（毫秒）。 */
+const SILENCE_TRIGGER_MS = 1200;
+/** RMS 阈值,低于此视为静音。 */
+const SILENCE_RMS_THRESHOLD = 0.008;
+
 /** 安全关闭 AudioContext，避免重复 close 抛 InvalidStateError。 */
 function safeCloseAudioContext(ctx: AudioContext | null) {
   if (ctx && ctx.state !== "closed") {
@@ -9,7 +18,7 @@ function safeCloseAudioContext(ctx: AudioContext | null) {
   }
 }
 
-/** 基于能量的简易 VAD + PCM 录制，静音 1.2s 触发回调。 */
+/** 基于能量的简易 VAD + PCM 录制，静默触发回调。 */
 export function useAudioRecorder(
   enabled: boolean,
   onSilence: (pcmBase64: string, partialText: string) => void,
@@ -20,6 +29,7 @@ export function useAudioRecorder(
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Int16Array[]>([]);
+  const chunksBytesRef = useRef(0);
   const silenceStartRef = useRef<number | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const sessionRef = useRef(0);
@@ -66,6 +76,7 @@ export function useAudioRecorder(
     const b64 = encodeBase64(chunksRef.current);
     const text = partialRef.current;
     chunksRef.current = [];
+    chunksBytesRef.current = 0;
     silenceStartRef.current = null;
     if (b64 || text) {
       onSilenceRef.current(b64, text);
@@ -96,6 +107,7 @@ export function useAudioRecorder(
     recognitionRef.current = null;
 
     chunksRef.current = [];
+    chunksBytesRef.current = 0;
     silenceStartRef.current = null;
   }, []);
 
@@ -148,11 +160,24 @@ export function useAudioRecorder(
           for (let i = 0; i < input.length; i++) sum += (input[i] ?? 0) * (input[i] ?? 0);
           const rms = Math.sqrt(sum / input.length);
           const pcm = floatTo16BitPCM(input);
-          chunksRef.current.push(pcm);
 
-          if (rms < 0.008) {
+          // 上限保护:超过 MAX_CHUNKS_BYTES 时丢弃最早的 chunk,防止长会话内存泄漏。
+          chunksRef.current.push(pcm);
+          chunksBytesRef.current += pcm.byteLength;
+          while (
+            chunksRef.current.length > 1 &&
+            chunksBytesRef.current > MAX_CHUNKS_BYTES
+          ) {
+            const dropped = chunksRef.current.shift();
+            if (dropped) chunksBytesRef.current -= dropped.byteLength;
+          }
+
+          if (rms < SILENCE_RMS_THRESHOLD) {
             if (!silenceStartRef.current) silenceStartRef.current = Date.now();
-            else if (Date.now() - silenceStartRef.current > 1200 && chunksRef.current.length > 2) {
+            else if (
+              Date.now() - silenceStartRef.current > SILENCE_TRIGGER_MS &&
+              chunksRef.current.length > MIN_CHUNKS_BEFORE_SILENCE
+            ) {
               emitSilenceRef.current();
             }
           } else {
