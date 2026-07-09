@@ -45,6 +45,9 @@ out/
 .DS_Store
 Thumbs.db
 
+# 临时 .git 备份（避免误提交）
+.git.backup-*/
+
 # Uploads
 uploads/
 backend/uploads/
