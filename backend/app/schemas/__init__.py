@@ -1,9 +1,15 @@
 """Pydantic 请求/响应模型。"""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+from app.core.constants import (
+    DEFAULT_LLM_PROTOCOL,
+    DEFAULT_PERSONALITY,
+    DEFAULT_INTERVIEW_STYLE,
+)
 
 
 # ── LLM 设置 ──────────────────────────────────────────
@@ -15,7 +21,7 @@ class LLMSettingsUpdate(BaseModel):
     max_tokens: int = 4096
     context_window: int = 128000
     provider: str = "openai"
-    protocol: str = "openai_chat"
+    protocol: str = DEFAULT_LLM_PROTOCOL
     reasoning_effort: str = "medium"
     supports_vision: bool = True
     supports_audio: bool = False
@@ -29,7 +35,7 @@ class LLMSettingsResponse(BaseModel):
     max_tokens: int
     context_window: int
     provider: str
-    protocol: str = "openai_chat"
+    protocol: str = DEFAULT_LLM_PROTOCOL
     reasoning_effort: str = "medium"
     supports_vision: bool = True
     supports_audio: bool = False
@@ -119,10 +125,10 @@ class InterviewConfig(BaseModel):
     role: str
     level: str
     company: str
-    workflow_type: str = "technical"  # technical | hr | management
-    personality: str = "professional"  # gentle | professional | pressure | hr | expert
+    workflow_type: Literal["technical", "hr", "management"] = "technical"
+    personality: Literal["gentle", "professional", "pressure", "hr", "expert"] = DEFAULT_PERSONALITY
     strictness: int = Field(default=3, ge=1, le=10)
-    interview_style: str = "deep_dive"
+    interview_style: Literal["deep_dive", "concise"] = DEFAULT_INTERVIEW_STYLE
     resume_id: int | None = None
     avatar_id: str = "professional_male"
     scene_id: str = "meeting_room"
@@ -148,9 +154,27 @@ class InterviewSessionResponse(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    role: str  # user | assistant | system
+    role: Literal["user", "assistant", "system"]
     content: str
     timestamp: datetime | None = None
+
+
+# ── 错误响应统一 envelope ────────────────────────────────────────
+
+
+class ErrorBody(BaseModel):
+    code: str
+    message: str
+    trace_id: str = ""
+
+
+class APIError(BaseModel):
+    """统一错误响应形状，与 ``app/main.py:_envelope`` 一一对齐。"""
+
+    model_config = {"extra": "forbid"}
+
+    detail: str | None = None
+    error: ErrorBody | None = None
 
 
 class InterviewMessageRequest(BaseModel):
