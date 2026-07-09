@@ -27,6 +27,7 @@ from app.services.interview.events import EventKind, StreamEvent
 from app.services.interview.followup import analyze as analyze_followup
 from app.services.llm.client import LLMClient
 from app.services.rag.company_rag import CompanyKnowledgeRAG, format_context as format_rag_context
+from app.core.constants import RAGBackendKind
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +146,10 @@ class InterviewRunner:
         """
         if self.rag is None or not query:
             return None
+        # StepFun 后端不返回本地命中片段（真实检索在 chat 时由 StepFun 服务端完成），
+        # 此处直接返回 None，让 :meth:`_collect_chat_tools` 负责注入 retrieval tool。
+        if getattr(self.rag, "kind", None) == RAGBackendKind.STEPFUN:
+            return None
         try:
             company_id = self.session.company or None
             hits = await self.rag.query_for_company(
@@ -171,6 +176,20 @@ class InterviewRunner:
             "content": format_rag_context(hits),
         }
 
+    def _collect_chat_tools(self) -> list[dict[str, Any]] | None:
+        """收集当前 LLM 调用应注入的 tools。
+
+        目前唯一来源是 :class:`StepFunRetrievalRAG` 的 retrieval tool。
+        其他 RAG 后端走本地注入路径,无需在此处拼装。
+        """
+        if self.rag is None:
+            return None
+        builder = getattr(self.rag, "build_retrieval_tool", None)
+        if builder is None:
+            return None
+        tool = builder()
+        return [tool] if tool else None
+
     # ------------------------------------------------------------------
     # 开场
     # ------------------------------------------------------------------
@@ -192,7 +211,9 @@ class InterviewRunner:
             ]
 
             content_buf = ""
-            async for token in self.llm.chat_stream(opening_messages, temperature=0.8):
+            async for token in self.llm.chat_stream(
+                opening_messages, temperature=0.8, tools=self._collect_chat_tools()
+            ):
                 content_buf += token
                 yield StreamEvent.make_token(token)
 
@@ -296,7 +317,7 @@ class InterviewRunner:
             # 流式生成
             content_buf = ""
             async for token in self.llm.chat_stream(
-                api_messages, temperature=0.75
+                api_messages, temperature=0.75, tools=self._collect_chat_tools()
             ):
                 content_buf += token
                 yield StreamEvent.make_token(token)
