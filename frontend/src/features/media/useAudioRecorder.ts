@@ -219,6 +219,14 @@ export function useAudioRecorder(
         const msg = e instanceof Error ? e.message : "麦克风不可用";
         setMicError(msg);
         console.warn("麦克风不可用", e);
+        // getUserMedia 失败：释放可能已被部分分配的 audio 资源
+        // 防止麦克风被占用却 UI 显示"已就绪"
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((t) => t.stop());
+          streamRef.current = null;
+        }
+        safeCloseAudioContext(ctxRef.current);
+        ctxRef.current = null;
       }
     })();
 

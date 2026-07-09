@@ -17,33 +17,39 @@ export type WSConnectionState = "connecting" | "open" | "reconnecting" | "failed
 /**
  * 与后端 ``/api/v1/ws/interview/{id}`` 双向通信的强类型 Hook。
  *
- * - 回调参数基于 ``Extract<ServerEvent, { type: K }>`` 推导，新增/重命名字段
- *   会触发 TS 编译错误，避免前端静默吞没协议变更。
- * - 同时保留``on(type, handler)``风格的命令式注册，向后兼容已有页面。
- * - 自动指数退避重连（最多 5 次）。
- * - 暴露 ``connectionState``:超过最大重连次数后变为 ``failed``，
- *   前端可据此提示用户或显示"重新连接"按钮。
+ * - 回调参数基于 ``Extract<ServerEvent, { type: K }>`` 推导，协议变更会
+ *   触发 TS 编译错误，避免前端静默吞没字段。
+ * - handler 通过 props 传入，effect 内通过 ref 同步最新闭包，避免
+ *   handler 引用变化时频繁重连 WS。
+ * - 自动指数退避重连（最多 5 次），并暴露 ``connectionState`` /
+ *   ``cancel()`` 便于页面主动断开。
  */
 export function useInterviewWS(
   sessionId: number,
-  handlersOrInitial?: WSHandlers,
+  handlers?: WSHandlers,
   options?: { maxRetries?: number },
 ) {
   const wsRef = useRef<WebSocket | null>(null);
   const handlersRef = useRef<Record<string, (msg: ServerEvent) => void>>({});
+  const retryTimerRef = useRef<number | null>(null);
+  const retryCountRef = useRef(0);
+  const cancelledRef = useRef(false);
   const [connected, setConnected] = useState(false);
   const [turnState, setTurnState] = useState<TurnState>("IDLE");
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [connectionState, setConnectionState] = useState<WSConnectionState>("connecting");
   const maxRetries = options?.maxRetries ?? 5;
 
+  // 通过 ref 同步 handlers，避免每次 render 重建导致 effect 触发重连
   useEffect(() => {
-    if (handlersOrInitial) {
-      for (const [type, handler] of Object.entries(handlersOrInitial)) {
-        if (handler) handlersRef.current[type] = handler as (msg: ServerEvent) => void;
+    if (handlers) {
+      const next: Record<string, (msg: ServerEvent) => void> = {};
+      for (const [type, handler] of Object.entries(handlers)) {
+        if (handler) next[type] = handler as (msg: ServerEvent) => void;
       }
+      handlersRef.current = next;
     }
-  }, [handlersOrInitial]);
+  }, [handlers]);
 
   const on = useCallback(<K extends ServerEvent["type"]>(type: K, handler: ServerHandler<K>) => {
     handlersRef.current[type] = handler as (msg: ServerEvent) => void;
@@ -58,39 +64,63 @@ export function useInterviewWS(
     return false;
   }, []);
 
+  const cancel = useCallback(() => {
+    cancelledRef.current = true;
+    if (retryTimerRef.current !== null) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    if (wsRef.current) {
+      try {
+        wsRef.current.close();
+      } catch {
+        /* noop */
+      }
+      wsRef.current = null;
+    }
+    setConnected(false);
+    setConnectionState("connecting");
+  }, []);
+
   const retryNow = useCallback(() => {
+    retryCountRef.current = 0;
     setReconnectAttempt(0);
     setConnectionState("connecting");
   }, []);
 
   useEffect(() => {
-    let closedByUser = false;
-    let retryCount = 0;
+    cancelledRef.current = false;
+    retryCountRef.current = 0;
 
     const connect = () => {
+      if (cancelledRef.current) return;
       const wsBase = getEnv().WS_BASE;
       const url = `${wsBase}/api/v1/ws/interview/${sessionId}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        retryCount = 0;
+        if (cancelledRef.current) {
+          ws.close();
+          return;
+        }
+        retryCountRef.current = 0;
         setReconnectAttempt(0);
         setConnected(true);
         setConnectionState("open");
       };
       ws.onclose = () => {
+        if (cancelledRef.current) return;
         setConnected(false);
-        if (closedByUser) return;
-        if (retryCount >= maxRetries) {
+        retryCountRef.current += 1;
+        if (retryCountRef.current > maxRetries) {
           setConnectionState("failed");
           return;
         }
-        retryCount += 1;
-        setReconnectAttempt(retryCount);
+        setReconnectAttempt(retryCountRef.current);
         setConnectionState("reconnecting");
-        const delay = Math.min(1000 * 2 ** (retryCount - 1), 8000);
-        window.setTimeout(connect, delay);
+        const delay = Math.min(1000 * 2 ** (retryCountRef.current - 1), 8000);
+        retryTimerRef.current = window.setTimeout(connect, delay);
       };
       ws.onerror = () => {
         ws.close();
@@ -110,11 +140,34 @@ export function useInterviewWS(
     };
 
     connect();
+
     return () => {
-      closedByUser = true;
-      wsRef.current?.close();
+      cancelledRef.current = true;
+      if (retryTimerRef.current !== null) {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch {
+          /* noop */
+        }
+        wsRef.current = null;
+      }
     };
+    // handlers 通过 ref 间接引用，effect 仅依赖 sessionId / maxRetries
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, maxRetries]);
 
-  return { connected, turnState, reconnectAttempt, connectionState, send, on, retryNow };
+  return {
+    connected,
+    turnState,
+    reconnectAttempt,
+    connectionState,
+    send,
+    on,
+    cancel,
+    retryNow,
+  };
 }
