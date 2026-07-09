@@ -9,11 +9,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.config import get_settings
+from app.core.logging import configure_logging, get_trace_id, set_trace_id
 from app.database import init_db, SessionLocal, engine
 from app.core.migrate import run_migrations
 from app.services.seed import seed_llm_settings
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+configure_logging()
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
@@ -67,11 +68,25 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+@app.middleware("http")
+async def trace_middleware(request, call_next):
+    """为每个 HTTP 请求注入 trace_id，便于日志串联。"""
+    set_trace_id(request.headers.get("x-request-id"))
+    response = await call_next(request)
+    response.headers["X-Trace-Id"] = get_trace_id()
+    return response
+
+
+# CORS 配置：禁止与 credentials=True 同时使用通配 origins
+_allow_origins = settings.cors_origin_list
+if "*" in _allow_origins:
+    logger.warning("CORS 允许 * 通配，建议在生产环境收紧")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
+    allow_origins=_allow_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -80,4 +95,4 @@ app.include_router(api_router)
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "interviewos-backend"}
+    return {"status": "ok", "service": "interviewos-backend", "version": "1.0.0"}
