@@ -86,6 +86,7 @@ class LLMClient:
         temperature: float,
         stream: bool = False,
         response_format: dict[str, str] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -96,6 +97,8 @@ class LLMClient:
         }
         if response_format:
             payload["response_format"] = response_format
+        if tools:
+            payload["tools"] = tools
         if self.reasoning_effort:
             payload["reasoning_effort"] = self.reasoning_effort
         return payload
@@ -105,12 +108,15 @@ class LLMClient:
         messages: list[dict[str, Any]],
         temperature: float = 0.7,
         response_format: dict[str, str] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> str:
         """发送 Chat Completions 请求并返回文本内容。"""
         url = f"{self.api_base}/chat/completions"
         if not is_safe_http_url(self.api_base, allow_local=_IS_DEV):
             raise UnsafeURLError(f"LLM api_base 不安全: {self.api_base}")
-        payload = self._build_payload(messages, temperature, response_format=response_format)
+        payload = self._build_payload(
+            messages, temperature, response_format=response_format, tools=tools
+        )
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
@@ -132,10 +138,15 @@ class LLMClient:
         self,
         messages: list[dict[str, Any]],
         temperature: float = 0.75,
+        tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[str]:
-        """流式返回 token。"""
+        """流式返回 token。
+
+        可选 ``tools`` 用于注入 OpenAI 兼容的 tools 数组,例如 StepFun 的
+        ``tools[].type=retrieval`` —— 检索由服务端在 chat 调用时执行。
+        """
         url = f"{self.api_base}/chat/completions"
-        payload = self._build_payload(messages, temperature, stream=True)
+        payload = self._build_payload(messages, temperature, stream=True, tools=tools)
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream("POST", url, headers=self._headers(), json=payload) as resp:

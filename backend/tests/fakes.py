@@ -61,7 +61,16 @@ class FakeLLMClient:
             return json.dumps(self.json_payload, ensure_ascii=False)
         return "".join(self.tokens)
 
-    async def chat_stream(self, messages, temperature: float = 0.75) -> AsyncIterator[str]:
+    async def chat_stream(
+        self,
+        messages,
+        temperature: float = 0.75,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncIterator[str]:
+        """兼容生产 ``LLMClient.chat_stream`` 的 ``tools`` 参数。
+
+        测试不消费 ``tools``,仅按需记入 ``stream_calls`` 便于断言。
+        """
         self.stream_calls.append(messages)
         for t in self.tokens:
             yield t
