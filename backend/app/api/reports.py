@@ -55,8 +55,9 @@ async def get_report_stream(session_id: int, db: Session = Depends(get_db)):
             report_payload = json.loads(report.model_dump_json())
             yield f"data: {json.dumps({'type': 'done', 'report': report_payload}, ensure_ascii=False)}\n\n"
         except Exception as e:
+            # 仅返回脱敏后的错误类型，不泄露上游异常细节
             logger.exception("流式报告失败: %s", e)
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': '报告生成失败，请稍后重试'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(),

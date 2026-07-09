@@ -12,7 +12,11 @@ def test_health_returns_ok() -> None:
     with TestClient(app) as client:
         resp = client.get("/health")
         assert resp.status_code == 200
-        assert resp.json() == {"status": "ok", "service": "interviewos-backend"}
+        assert resp.json() == {
+            "status": "ok",
+            "service": "interviewos-backend",
+            "version": "1.0.0",
+        }
 
 
 def test_options_endpoint_returns_companies() -> None:
