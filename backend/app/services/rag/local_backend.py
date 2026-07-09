@@ -22,7 +22,7 @@ from app.config import Settings
 from app.core.constants import RAGBackendKind
 from app.services.llm.client import LLMClient
 
-from .company_rag import COLLECTION_NAME, _build_documents, _data_dir
+from . import company_rag
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +40,13 @@ class LocalEmbeddingRAG:
         self._llm = llm
         self._settings = settings
         self._client = chromadb.PersistentClient(
-            path=str(_data_dir()),
+            # 通过模块属性访问 _data_dir，便于测试 monkeypatch（直接 import
+            # 函数名会把引用 freeze 在本模块命名空间，patch 不会生效）。
+            path=str(company_rag._data_dir()),
             settings=ChromaSettings(anonymized_telemetry=False, allow_reset=True),
         )
         self._collection = self._client.get_or_create_collection(
-            name=COLLECTION_NAME,
+            name=company_rag.COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},
         )
 
@@ -61,7 +63,7 @@ class LocalEmbeddingRAG:
         if self._llm is None:
             raise RuntimeError("首次构建 Local RAG 索引需要提供 LLMClient 用于 embed()")
 
-        texts, metadatas, ids = _build_documents()
+        texts, metadatas, ids = company_rag._build_documents()
         logger.info("构建 Local RAG 索引：%d 条文档", len(texts))
         embeddings = await self._llm.embed(texts)
         self._collection.add(
@@ -124,11 +126,11 @@ class LocalEmbeddingRAG:
 
     def _delete_all(self) -> None:
         try:
-            self._client.delete_collection(COLLECTION_NAME)
+            self._client.delete_collection(company_rag.COLLECTION_NAME)
         except Exception:
             pass
         self._collection = self._client.get_or_create_collection(
-            name=COLLECTION_NAME,
+            name=company_rag.COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},
         )
 
