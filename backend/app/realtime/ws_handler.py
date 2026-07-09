@@ -34,12 +34,20 @@ settings = get_settings()
 
 
 class _SentenceTTSQueue:
-    """串行 TTS 队列：保证句子按到达顺序逐个合成并播放，不与 LLM 流相互阻塞。"""
+    """串行 TTS 队列：保证句子按到达顺序逐个合成并播放，不与 LLM 流相互阻塞。
+
+    内存治理：队列长度超过 :data:`_MAX_QUEUE_SIZE` 时丢弃最早的句子，
+    防止 TTS 慢、网络抖动时内存无界增长。
+    """
+
+    # 上限：约 3-5 分钟的连续面试内容。超出时优先丢弃已入队的旧句以保证实时性。
+    _MAX_QUEUE_SIZE = 50
 
     def __init__(self) -> None:
         self._queue: asyncio.Queue[str | None] = asyncio.Queue()
         self._worker_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
+        self._dropped_count = 0
 
     async def start(self, send_callback) -> None:
         """启动后台 worker；每个 WS 连接初始化时调用一次。"""
@@ -52,15 +60,25 @@ class _SentenceTTSQueue:
         if self._worker_task is not None and not self._worker_task.done():
             await self._queue.put(None)
             await self._worker_task
+        if self._dropped_count:
+            logger.info("TTS 队列丢弃 %d 句(超过上限)", self._dropped_count)
 
     async def enqueue(self, sentence: str) -> None:
-        if sentence.strip():
-            await self._queue.put(sentence.strip())
+        if not sentence.strip():
+            return
+        # 队列过长时丢弃最早的旧句，避免内存膨胀
+        if self._queue.qsize() >= self._MAX_QUEUE_SIZE:
+            try:
+                self._queue.get_nowait()
+                self._dropped_count += 1
+            except asyncio.QueueEmpty:
+                pass
+        await self._queue.put(sentence.strip())
 
     async def flush_remainder(self, sentence: str) -> None:
         """回合结束时把残留 buffer 入队，并等待队列清空。"""
         if sentence.strip():
-            await self._queue.put(sentence.strip())
+            await self.enqueue(sentence)
         # 等待当前任务完成
         async with self._lock:
             pass
@@ -218,16 +236,21 @@ class InterviewWSHandler:
 
         text = data.get("text", "").strip()
         pcm_b64 = data.get("pcm") or data.get("data") or ""
+        stt_failed = False  # 标记服务端 STT 是否失败,避免静默回退
         if not text and pcm_b64:
             text = await transcribe_pcm_base64_async(pcm_b64, model_size=self._whisper_model)
             if text:
                 await self.send("stt_final", text=text)
+            else:
+                stt_failed = True
         elif not text and self.audio_buffer:
             pcm = "".join(self.audio_buffer)
             self.audio_buffer = []
             text = await transcribe_pcm_base64_async(pcm, model_size=self._whisper_model)
             if text:
                 await self.send("stt_final", text=text)
+            else:
+                stt_failed = True
 
         # Whisper 失败时回退到浏览器 STT 文本
         if not text:
@@ -236,6 +259,9 @@ class InterviewWSHandler:
                 await self.send("stt_final", text=text)
 
         if not text:
+            # 同时存在服务端 STT 失败 + 浏览器未传 text 才视为完全无内容,显式告警前端
+            if stt_failed:
+                await self.send("error", message="未能识别语音内容，请重新说话或手动输入")
             await self.set_turn(TurnState.USER_SPEAKING)
             return
 

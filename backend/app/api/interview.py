@@ -2,10 +2,12 @@
 
 import json
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.constants import SessionStatus
 from app.database import get_db
 from app.models import GrowthRecord, InterviewSession
 from app.schemas import (
@@ -21,6 +23,33 @@ from app.services.llm.client import LLMClient
 router = APIRouter()
 
 
+async def _generate_and_persist_report(
+    session: InterviewSession,
+    llm: LLMClient,
+    db: Session,
+) -> None:
+    """生成报告并写入 session / GrowthRecord。
+
+    集中 ``send_message`` 与 ``finish_interview`` 两处重复的报告生成+成长记录逻辑。
+    """
+    report = await generate_report(session, llm)
+    session.report = report.model_dump_json()
+    session.overall_score = report.overall_score
+    session.status = SessionStatus.COMPLETED.value
+    session.ended_at = datetime.now(timezone.utc)
+    db.commit()
+
+    growth = GrowthRecord(
+        profile_id=session.profile_id,
+        session_id=session.id,
+        weak_skills=json.dumps(report.weaknesses, ensure_ascii=False),
+        common_mistakes=json.dumps(report.weaknesses[:3], ensure_ascii=False),
+        training_plan=json.dumps(report.training_plan, ensure_ascii=False),
+    )
+    db.add(growth)
+    db.commit()
+
+
 @router.post("/sessions", response_model=InterviewSessionResponse)
 def create_session(config: InterviewConfig, db: Session = Depends(get_db)):
     session = InterviewSession(
@@ -34,7 +63,7 @@ def create_session(config: InterviewConfig, db: Session = Depends(get_db)):
         resume_id=config.resume_id,
         avatar_id=config.avatar_id,
         scene_id=config.scene_id,
-        status="pending",
+        status=SessionStatus.PENDING.value,
         current_phase="identity_check",
     )
     db.add(session)
@@ -62,7 +91,7 @@ async def start_interview(session_id: int, db: Session = Depends(get_db)):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="面试会话不存在")
-    if session.status not in ("pending", "active"):
+    if session.status not in (SessionStatus.PENDING.value, SessionStatus.ACTIVE.value):
         raise HTTPException(status_code=400, detail="面试已结束")
 
     llm = LLMClient.from_db(db)
@@ -88,7 +117,7 @@ async def send_message(
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="面试会话不存在")
-    if session.status == "completed":
+    if session.status == SessionStatus.COMPLETED.value:
         raise HTTPException(status_code=400, detail="面试已结束")
 
     llm = LLMClient.from_db(db)
@@ -97,23 +126,8 @@ async def send_message(
         body.content, db, body.face_analysis, body.image_base64
     )
 
-    # 面试结束时自动生成报告
     if is_complete:
-        report = await generate_report(session, llm)
-        session.report = report.model_dump_json()
-        session.overall_score = report.overall_score
-        db.commit()
-
-        # 保存成长记录
-        growth = GrowthRecord(
-            profile_id=session.profile_id,
-            session_id=session.id,
-            weak_skills=json.dumps(report.weaknesses, ensure_ascii=False),
-            common_mistakes=json.dumps(report.weaknesses[:3], ensure_ascii=False),
-            training_plan=json.dumps(report.training_plan, ensure_ascii=False),
-        )
-        db.add(growth)
-        db.commit()
+        await _generate_and_persist_report(session, llm, db)
 
     return InterviewMessageResponse(
         session_id=session_id,
@@ -130,30 +144,20 @@ async def finish_interview(session_id: int, db: Session = Depends(get_db)):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="面试会话不存在")
-    if session.status == "completed" and session.report and session.report != "{}":
+    if (
+        session.status == SessionStatus.COMPLETED.value
+        and session.report
+        and session.report != "{}"
+    ):
         return {"session_id": session_id, "status": "already_completed"}
 
     llm = LLMClient.from_db(db)
-    session.status = "completed"
-    session.ended_at = datetime.now(timezone.utc)
-    db.commit()
-
-    report = await generate_report(session, llm)
-    session.report = report.model_dump_json()
-    session.overall_score = report.overall_score
-    db.commit()
-
-    growth = GrowthRecord(
-        profile_id=session.profile_id,
-        session_id=session.id,
-        weak_skills=json.dumps(report.weaknesses, ensure_ascii=False),
-        common_mistakes=json.dumps(report.weaknesses[:3], ensure_ascii=False),
-        training_plan=json.dumps(report.training_plan, ensure_ascii=False),
-    )
-    db.add(growth)
-    db.commit()
-
-    return {"session_id": session_id, "status": "completed", "overall_score": report.overall_score}
+    await _generate_and_persist_report(session, llm, db)
+    return {
+        "session_id": session_id,
+        "status": SessionStatus.COMPLETED.value,
+        "overall_score": session.overall_score,
+    }
 
 
 @router.get("/sessions/{session_id}/messages")
@@ -161,8 +165,17 @@ def get_messages(session_id: int, db: Session = Depends(get_db)):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="面试会话不存在")
-    messages = json.loads(session.messages or "[]")
-    return [m for m in messages if m["role"] in ("user", "assistant")]
+    raw = json.loads(session.messages or "[]")
+    # 类型守卫:仅保留 dict 且 role 为合法字符串的 user/assistant 消息
+    out: list[dict[str, Any]] = []
+    for m in raw:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role")
+        if not isinstance(role, str) or role not in ("user", "assistant"):
+            continue
+        out.append(m)
+    return out
 
 
 def _to_response(session: InterviewSession) -> InterviewSessionResponse:

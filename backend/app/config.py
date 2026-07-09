@@ -3,6 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.constants import DEFAULT_RAG_BACKEND, RAGBackendKind
@@ -41,16 +42,22 @@ class Settings(BaseSettings):
     upload_dir: str = str(BACKEND_ROOT / "uploads")
     cors_origins: str = "http://localhost:3000"
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = Field(default=8000, ge=1, le=65535)
 
     # 语音
     whisper_model: str = "base"
     tts_voice: str = "zh-CN-XiaoxiaoNeural"
-    silence_nudge_seconds: int = 10
+    silence_nudge_seconds: int = Field(default=10, ge=1, le=600)
+
+    @field_validator("cors_origins")
+    @classmethod
+    def _strip_cors(cls, v: str) -> str:
+        """清理每个 origin 两侧的空白，便于后续拆分。"""
+        return ",".join(o.strip() for o in v.split(",") if o.strip())
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        return [o for o in self.cors_origins.split(",") if o]
 
     @property
     def effective_embeddings_base(self) -> str:
