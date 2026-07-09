@@ -3,17 +3,10 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
+import { LLM_PROVIDERS } from "@/config/providers";
 import type { LLMSettings } from "@/types";
 import { Save, Zap, Loader2, CheckCircle, XCircle, Settings2 } from "lucide-react";
 import { LoadError } from "@/components/LoadError";
-
-const PROVIDERS = [
-  { id: "openai", name: "OpenAI", base: "https://api.openai.com/v1" },
-  { id: "stepfun", name: "StepFun", base: "https://api.stepfun.com/step_plan/v1" },
-  { id: "deepseek", name: "DeepSeek", base: "https://api.deepseek.com/v1" },
-  { id: "openrouter", name: "OpenRouter", base: "https://openrouter.ai/api/v1" },
-  { id: "custom", name: "自定义", base: "" },
-];
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<LLMSettings & { api_key?: string } | null>(null);
@@ -39,7 +32,7 @@ export default function SettingsPage() {
 
   const handleProviderChange = (providerId: string) => {
     if (!settings) return;
-    const p = PROVIDERS.find((x) => x.id === providerId);
+    const p = LLM_PROVIDERS.find((x) => x.id === providerId);
     setSettings({
       ...settings,
       provider: providerId,
@@ -115,7 +108,7 @@ export default function SettingsPage() {
         <div>
             <label className="block text-sm font-medium mb-2">服务商</label>
             <div className="flex flex-wrap gap-2">
-              {PROVIDERS.map((p) => (
+              {LLM_PROVIDERS.map((p) => (
                 <motion.button
                   key={p.id}
                   onClick={() => handleProviderChange(p.id)}
