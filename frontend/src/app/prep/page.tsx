@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
+import { PREP_QUICK_PROMPTS } from "@/config/prepPrompts";
 import type { Resume } from "@/types";
 import { StreamingReveal } from "@/components/StreamingReveal";
 import {
@@ -18,12 +19,7 @@ import {
   Zap,
 } from "lucide-react";
 
-const QUICK_PROMPTS = [
-  "帮我分析简历的亮点与不足",
-  "针对目标岗位出 5 道技术面试题",
-  "模拟一场行为面试并点评我的回答",
-  "搜索近期面经并总结高频考点",
-];
+const QUICK_PROMPTS = PREP_QUICK_PROMPTS;
 
 interface ChatMessage {
   id: string;

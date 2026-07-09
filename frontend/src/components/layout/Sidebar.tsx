@@ -4,30 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Home,
-  User,
-  FileText,
-  Settings,
-  Mic,
-  BarChart3,
-  TrendingUp,
-  BookOpen,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { NAV_ITEMS } from "@/config/nav";
 import { cn } from "@/lib/utils";
-
-const NAV = [
-  { href: "/", label: "首页", icon: Home },
-  { href: "/profile", label: "个人档案", icon: User },
-  { href: "/resume", label: "简历管理", icon: FileText },
-  { href: "/prep", label: "面试准备", icon: BookOpen },
-  { href: "/interview", label: "模拟面试", icon: Mic },
-  { href: "/history", label: "面试记录", icon: BarChart3 },
-  { href: "/growth", label: "成长追踪", icon: TrendingUp },
-  { href: "/settings", label: "BYOK 设置", icon: Settings },
-];
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -72,7 +51,7 @@ export function Sidebar() {
 
       {/* 导航 */}
       <nav className="flex-1 p-2 space-y-1">
-        {NAV.map(({ href, label, icon: Icon }) => {
+        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const isActive = pathname === href;
           return (
             <Link key={href} href={href} className="block">

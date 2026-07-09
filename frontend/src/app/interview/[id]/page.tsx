@@ -9,19 +9,8 @@ import { useInterviewWS } from "@/features/media/useInterviewWS";
 import { useAudioRecorder } from "@/features/media/useAudioRecorder";
 import { useTTSPlayer } from "@/features/media/useTTSPlayer";
 import { api } from "@/lib/api";
+import { PHASE_LABELS } from "@/config/phases";
 import { Flag, Loader2, Send } from "lucide-react";
-
-const PHASE_LABELS: Record<string, string> = {
-  identity_check: "身份确认",
-  self_intro: "自我介绍",
-  basic_knowledge: "基础知识",
-  project_deep_dive: "项目深挖",
-  technical_deep: "技术深挖",
-  system_design: "系统设计",
-  scenario: "情景问题",
-  reverse_qa: "反问环节",
-  summary: "总结评价",
-};
 
 export default function InterviewRoomPage() {
   const params = useParams();
