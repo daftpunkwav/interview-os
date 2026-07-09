@@ -4,8 +4,10 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
 from app.config import get_settings
@@ -13,6 +15,8 @@ from app.core.logging import configure_logging, get_trace_id, set_trace_id
 from app.database import init_db, SessionLocal, engine
 from app.core.migrate import run_migrations
 from app.services.seed import seed_llm_settings
+from app.core.security import UnsafeURLError
+from app.core.constants import TRACE_ID_HEADER
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -91,6 +95,61 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+
+
+# ── 统一错误响应形状 ────────────────────────────────────────
+# {"error": {"code": str, "message": str, "trace_id": str}}
+# 详情依然在顶层 ``detail`` 字段保留向前兼容（前端 ``ApiError.parse`` 兼容）。
+
+def _envelope(*, code: str, message: str, status: int, request: Request) -> JSONResponse:
+    payload = {
+        "detail": message,  # legacy 兼容
+        "error": {
+            "code": code,
+            "message": message,
+            "trace_id": get_trace_id() or "",
+        },
+    }
+    return JSONResponse(status_code=status, content=payload, headers={
+        TRACE_ID_HEADER: get_trace_id() or "",
+    })
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """422 校验错误统一包装。"""
+    logger.info("请求校验失败: %s path=%s", exc.errors(), request.url.path)
+    return _envelope(
+        code="validation_error",
+        message="请求参数校验失败",
+        status=422,
+        request=request,
+    )
+
+
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """所有 ``raise HTTPException(...)`` 走这里统一封装，保持 envelope 一致。"""
+    code = f"http_{exc.status_code}"
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    return _envelope(
+        code=code,
+        message=detail,
+        status=exc.status_code,
+        request=request,
+    )
+
+
+@app.exception_handler(UnsafeURLError)
+async def _unsafe_url_handler(request: Request, exc: UnsafeURLError) -> JSONResponse:
+    """统一处理 SSRF / URL 校验失败。"""
+    logger.warning("URL 校验失败: %s path=%s", exc, request.url.path)
+    return _envelope(
+        code="unsafe_url",
+        message=str(exc) or "URL 不合法",
+        status=400,
+        request=request,
+    )
 
 
 @app.get("/health")
