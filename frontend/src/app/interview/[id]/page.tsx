@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import type { ChatMessage } from "@/types";
-import { VideoPanel, type VideoPanelHandle, type FaceAnalysis } from "@/components/interview/VideoPanel";
+import type { ChatMessage, ClientEvent, FaceAnalysis } from "@/types";
+import { VideoPanel, type VideoPanelHandle } from "@/components/interview/VideoPanel";
 import { InterviewerAvatar } from "@/features/avatar/InterviewerAvatar";
 import { useInterviewWS } from "@/features/media/useInterviewWS";
 import { useAudioRecorder } from "@/features/media/useAudioRecorder";
@@ -44,20 +44,20 @@ export default function InterviewRoomPage() {
     workflow_type: "technical",
   });
   const videoRef = useRef<VideoPanelHandle>(null);
-  const faceRef = useRef<FaceAnalysis | Record<string, unknown>>({});
+  const faceRef = useRef<FaceAnalysis>({});
   const partialTextRef = useRef("");
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const showOutlineRef = useRef(showOutline);
-  const sendRef = useRef<(p: Record<string, unknown>) => void>(() => {});
+  const sendRef = useRef<(p: ClientEvent) => boolean>(() => false);
 
   const { connected, turnState, send, on } = useInterviewWS(sessionId);
   const { playBase64Mp3, setOnSpeakingChange } = useTTSPlayer();
 
+
   useEffect(() => {
     showOutlineRef.current = showOutline;
   }, [showOutline]);
-
   useEffect(() => {
     sendRef.current = send;
   }, [send]);
@@ -88,7 +88,7 @@ export default function InterviewRoomPage() {
       image_base64: imageBase64,
     };
     if (pcmBase64) {
-      send({ type: "user_turn_end", pcm: pcmBase64, ...payload });
+      send({ type: "user_turn_end", pcm: pcmBase64, sample_rate: 16000, ...payload });
     } else {
       send({ type: "user_text", ...payload });
     }
@@ -145,48 +145,40 @@ export default function InterviewRoomPage() {
   }, [turnState]);
 
   useEffect(() => {
-    on("assistant_token", (msg) => {
-      setStreamingText((prev) => prev + (msg.token as string));
-    });
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, streamingText]);
+
+  /* 服务端事件的强类型订阅（on() 风格，handler 中 ``msg`` 已按 ``type`` 收窄）。 */
+  useEffect(() => {
+    on("assistant_token", (msg) => setStreamingText((prev) => prev + msg.token));
     on("assistant_done", (msg) => {
-      const content = msg.content as string;
-      setMessages((prev) => [...prev, { role: "assistant", content }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: msg.content }]);
       setStreamingText("");
-      setCurrentPhase(msg.phase as string);
-      setEmotion((msg.emotion as string) || "neutral");
-      setTokenUsage((t) => t + content.length);
-      requestHint(content);
+      setCurrentPhase(msg.phase);
+      setEmotion(msg.emotion || "neutral");
+      setTokenUsage((t) => t + msg.content.length);
+      requestHint(msg.content);
       if (msg.is_complete) {
         setTimeout(() => router.push(`/report/${sessionId}`), 2000);
       }
     });
     on("stt_final", (msg) => {
-      const text = msg.text as string;
-      if (text) {
-        setMessages((prev) => [...prev, { role: "user", content: text }]);
-      }
+      if (msg.text) setMessages((prev) => [...prev, { role: "user", content: msg.text }]);
     });
-    on("tts_audio", (msg) => {
-      playBase64Mp3(msg.data as string);
-    });
+    on("tts_audio", (msg) => playBase64Mp3(msg.data));
     on("silence_nudge", (msg) => {
-      const content = msg.content as string;
-      setMessages((prev) => [...prev, { role: "assistant", content: `[追问] ${content}` }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: `[追问] ${msg.content}` }]);
     });
     on("reference_hint_loading", () => setHintLoading(true));
     on("reference_hint", (msg) => {
-      setReferenceHint(msg.content as string);
-      setLastQuestion((msg.question as string) || "");
+      setReferenceHint(msg.content);
+      setLastQuestion(msg.question || "");
       setHintLoading(false);
     });
     on("error", (msg) => {
       setMessages((prev) => [...prev, { role: "assistant", content: `⚠️ ${msg.message}` }]);
     });
   }, [on, playBase64Mp3, router, sessionId, requestHint]);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingText]);
 
   const handleFaceAnalysis = useCallback((analysis: FaceAnalysis) => {
     faceRef.current = analysis;

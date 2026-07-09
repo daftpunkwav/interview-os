@@ -1,5 +1,9 @@
 /** InterviewOS 前端类型定义 */
 
+/* ====================================================================== */
+/* 静态资源（GET /options 等）                                            */
+/* ====================================================================== */
+
 export interface LLMSettings {
   api_base: string;
   model: string;
@@ -15,6 +19,11 @@ export interface LLMSettings {
   has_api_key: boolean;
   updated_at?: string;
 }
+
+/** 写 LLM 设置时携带 ``api_key`` placeholder (``"keep"`` 表示不修改)。 */
+export type LLMSettingsWrite = Omit<LLMSettings, "has_api_key" | "updated_at"> & {
+  api_key?: string;
+};
 
 export interface UserProfile {
   id: number;
@@ -151,4 +160,130 @@ export interface GrowthRecord {
   weak_skills: string[];
   training_plan: string[];
   created_at: string;
+}
+
+/* ====================================================================== */
+/* 多模态输入                                                              */
+/* ====================================================================== */
+
+export interface FaceAnalysis {
+  dominant_emotion?: string;
+  emotion_scores?: Record<string, number>;
+  eye_contact?: boolean;
+  smile?: boolean;
+  confidence?: number;
+  /** 时间戳相对值（毫秒，距录像开始） */
+  timestamp_ms?: number;
+  [extra: string]: unknown;
+}
+
+/* ====================================================================== */
+/* SSE 事件（面试准备 / 报告生成）                                          */
+/* ====================================================================== */
+
+export interface SSEErrorEvent {
+  type: "error";
+  message: string;
+}
+
+/** 通用 SSE envelope，使用 discriminated union 保留强类型。 */
+export type PrepSSEEvent =
+  | { type: "token"; content: string }
+  | { type: "done"; token_usage: number }
+  | SSEErrorEvent;
+
+export type ReportSSEEvent =
+  | { type: "token"; content: string }
+  | { type: "done"; report: InterviewReport; token_usage: number }
+  | SSEErrorEvent;
+
+/* ====================================================================== */
+/* WebSocket 事件（实时面试）                                              */
+/* ====================================================================== */
+
+export type TurnState = "IDLE" | "AI_SPEAKING" | "USER_SPEAKING" | "PROCESSING";
+
+export type ServerEvent =
+  | { type: "turn_state"; state: TurnState }
+  | { type: "assistant_token"; token: string; phase?: string }
+  | {
+      type: "assistant_done";
+      content: string;
+      phase: string;
+      emotion?: string;
+      is_complete: boolean;
+      audio_b64?: string;
+    }
+  | { type: "assistant_audio_start" }
+  | { type: "assistant_audio_chunk"; data: string; idx?: number }
+  | { type: "assistant_audio_end" }
+  | { type: "stt_partial"; text: string }
+  | { type: "stt_final"; text: string }
+  | { type: "tts_audio"; data: string; mime?: string }
+  | { type: "silence_nudge"; content: string }
+  | { type: "reference_hint_loading"; question: string }
+  | { type: "reference_hint"; content: string; question: string }
+  | { type: "phase_changed"; phase: string }
+  | { type: "interview_complete"; report_id?: number }
+  | SSEErrorEvent;
+
+export type ClientEvent =
+  | {
+      type: "user_text";
+      text: string;
+      face_analysis?: FaceAnalysis;
+      image_base64?: string;
+    }
+  | { type: "user_turn_end"; pcm: string; sample_rate: number }
+  | { type: "stt_text"; text: string }
+  | { type: "silence_timeout" }
+  | { type: "request_hint"; question: string }
+  | { type: "vision_update"; face_analysis: FaceAnalysis };
+
+/* ====================================================================== */
+/* REST API 响应契约                                                       */
+/* ====================================================================== */
+
+export interface StartInterviewResponse {
+  message?: ChatMessage;
+  current_phase: string;
+}
+
+export interface SendMessageResponse {
+  message: ChatMessage;
+  current_phase: string;
+  is_complete: boolean;
+  phases_remaining: number;
+}
+
+export interface FinishInterviewResponse {
+  session_id: number;
+  status: string;
+  overall_score?: number;
+}
+
+export interface ResumeActivateResponse {
+  id: number;
+  is_active: boolean;
+}
+
+export interface GetReportResponse {
+  session_id: number;
+  report: InterviewReport;
+  duration_minutes?: number;
+}
+
+export interface PrepSessionCreateResponse {
+  id: number;
+}
+
+export interface PrepMessageResponse {
+  reply: string;
+  token_usage: number;
+}
+
+export interface LLMTestResponse {
+  success: boolean;
+  message: string;
+  model?: string | null;
 }

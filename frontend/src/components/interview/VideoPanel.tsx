@@ -2,8 +2,10 @@
 
 import { useEffect, useState, useRef, forwardRef, useImperativeHandle, useCallback } from "react";
 import { Video, VideoOff } from "lucide-react";
+import type { FaceAnalysis as BaseFaceAnalysis } from "@/types";
 
-export interface FaceAnalysis {
+/** VideoPanel 内部使用的扩展版人脸分析字段，保持向后兼容。 */
+export interface FaceAnalysis extends BaseFaceAnalysis {
   face_detected: boolean;
   looking_away: boolean;
   nervousness: number;
