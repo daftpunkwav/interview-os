@@ -47,7 +47,7 @@ export function ParticleField() {
           vy: (Math.random() - 0.5) * 0.8,
           radius: Math.random() * 2 + 1,
           opacity: Math.random() * 0.5 + 0.2,
-          color: colors[Math.floor(Math.random() * colors.length)],
+          color: colors[Math.floor(Math.random() * colors.length)] ?? "#fff",
         });
       }
       return particles;
@@ -77,6 +77,7 @@ export function ParticleField() {
       // 更新和绘制粒子
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
+        if (!p) continue;
 
         // 鼠标交互 - 粒子被鼠标吸引
         const dx = mouse.x - p.x;
@@ -109,6 +110,7 @@ export function ParticleField() {
         // 绘制连线
         for (let j = i + 1; j < particles.length; j++) {
           const p2 = particles[j];
+          if (!p2) continue;
           const ddx = p.x - p2.x;
           const ddy = p.y - p2.y;
           const distance = Math.sqrt(ddx * ddx + ddy * ddy);

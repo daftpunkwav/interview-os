@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
+import { toast } from "@/components/Toast";
 import type { Resume } from "@/types";
 import {
   Upload,
@@ -205,9 +206,12 @@ export default function ResumePage() {
                               try {
                                 const data = await api.analyzeResume(r.id);
                                 await load();
-                                alert(`评分：${data.score}\n预测问题：\n${data.predicted_questions?.join("\n") || "—"}`);
+                                toast.success(
+                                  `评分：${data.score}\n预测问题：\n${data.predicted_questions?.join("\n") || "—"}`,
+                                  { persist: true },
+                                );
                               } catch (err) {
-                                setError(err instanceof Error ? err.message : "分析失败");
+                                toast.error(err instanceof Error ? err.message : "分析失败");
                               }
                             }}
                             className="text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white flex items-center gap-1"

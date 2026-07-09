@@ -109,26 +109,29 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
           analysis.face_detected = faces.length > 0;
 
           if (faces.length > 0) {
-            const face = faces[0].boundingBox;
-            const cx = face.x + face.width / 2;
-            const cy = face.y + face.height / 2;
-            const vcx = video.videoWidth / 2;
-            const vcy = video.videoHeight / 2;
-            const offset = Math.hypot(cx - vcx, cy - vcy) / Math.hypot(vcx, vcy);
-            analysis.looking_away = offset > 0.35;
-
-            // 通过面部框中心抖动估计紧张度
-            jitterHistory.current.push(offset);
-            if (jitterHistory.current.length > 8) jitterHistory.current.shift();
-            if (jitterHistory.current.length >= 3) {
-              const avg =
-                jitterHistory.current.reduce((a, b) => a + b, 0) / jitterHistory.current.length;
-              const variance =
-                jitterHistory.current.reduce((s, v) => s + (v - avg) ** 2, 0) /
-                jitterHistory.current.length;
-              analysis.nervousness = Math.min(1, variance * 20);
+            const face = faces[0]?.boundingBox;
+            if (face) {
+              const cx = face.x + face.width / 2;
+              const cy = face.y + face.height / 2;
+              const vcx = video.videoWidth / 2;
+              const vcy = video.videoHeight / 2;
+              const offset = Math.hypot(cx - vcx, cy - vcy) / Math.hypot(vcx, vcy);
+              analysis.looking_away = offset > 0.35;
+              jitterHistory.current.push(offset);
+              if (jitterHistory.current.length > 8) jitterHistory.current.shift();
+              if (jitterHistory.current.length >= 3) {
+                const avg =
+                  jitterHistory.current.reduce((a, b) => a + b, 0) /
+                  jitterHistory.current.length;
+                const variance =
+                  jitterHistory.current.reduce((s, v) => s + (v - avg) ** 2, 0) /
+                  jitterHistory.current.length;
+                analysis.nervousness = Math.min(1, variance * 20);
+              }
+            } else {
+              jitterHistory.current.push(0);
+              if (jitterHistory.current.length > 8) jitterHistory.current.shift();
             }
-
             setFaceStatus(
               analysis.looking_away
                 ? "已检测人脸 · 未看镜头"

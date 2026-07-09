@@ -41,7 +41,7 @@ export function useAudioRecorder(
   const floatTo16BitPCM = (float32: Float32Array): Int16Array => {
     const out = new Int16Array(float32.length);
     for (let i = 0; i < float32.length; i++) {
-      const s = Math.max(-1, Math.min(1, float32[i]));
+      const s = Math.max(-1, Math.min(1, float32[i] ?? 0));
       out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
     }
     return out;
@@ -58,7 +58,7 @@ export function useAudioRecorder(
     }
     const bytes = new Uint8Array(merged.buffer);
     let binary = "";
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i] ?? 0);
     return btoa(binary);
   };
 
@@ -145,7 +145,7 @@ export function useAudioRecorder(
 
           const input = e.inputBuffer.getChannelData(0);
           let sum = 0;
-          for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
+          for (let i = 0; i < input.length; i++) sum += (input[i] ?? 0) * (input[i] ?? 0);
           const rms = Math.sqrt(sum / input.length);
           const pcm = floatTo16BitPCM(input);
           chunksRef.current.push(pcm);
@@ -175,7 +175,9 @@ export function useAudioRecorder(
           rec.onresult = (event) => {
             let text = "";
             for (let i = event.resultIndex; i < event.results.length; i++) {
-              text += event.results[i][0].transcript;
+              const r = event.results[i];
+              if (!r) continue;
+              text += r[0]?.transcript ?? "";
             }
             partialRef.current = text;
             setPartialText(text);

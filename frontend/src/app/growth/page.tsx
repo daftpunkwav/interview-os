@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { GrowthRecord } from "@/types";
@@ -16,18 +16,32 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { AnimatedCounter } from "@/components/effects";
+import { LoadError } from "@/components/LoadError";
 
 export default function GrowthPage() {
   const [records, setRecords] = useState<GrowthRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  useEffect(() => {
-    api.getGrowthHistory().then((list) => {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const list = await api.getGrowthHistory();
       setRecords(list);
-      setSelectedId(list[0]?.id ?? null);
-    }).finally(() => setLoading(false));
+      const fallback = list[0];
+      setSelectedId(fallback?.id ?? null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "加载失败");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const allWeaknesses = records.flatMap((r) => r.weak_skills);
   const weaknessCount: Record<string, number> = {};
@@ -67,6 +81,8 @@ export default function GrowthPage() {
         <div className="flex items-center gap-2 text-[var(--muted)]">
           <Loader2 className="animate-spin" size={18} /> 加载中...
         </div>
+      ) : loadError ? (
+        <LoadError message={loadError} onRetry={load} />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
           {/* 左侧主内容 */}

@@ -122,7 +122,7 @@ function RadarChart({ scores }: { scores: import("@/types").ScoreBreakdown }) {
   const values = dims.map((d) => (scores[d.key] ?? scores.communication) / 100);
   const points = dims.map((_, i) => {
     const angle = (Math.PI * 2 * i) / dims.length - Math.PI / 2;
-    const v = values[i];
+    const v = values[i] ?? 0;
     return `${cx + Math.cos(angle) * r * v},${cy + Math.sin(angle) * r * v}`;
   }).join(" ");
   const rings = [0.25, 0.5, 0.75, 1];
