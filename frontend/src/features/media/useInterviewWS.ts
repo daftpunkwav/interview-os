@@ -131,6 +131,11 @@ export function useInterviewWS(
           if (msg.type === "turn_state") {
             setTurnState(msg.state);
           }
+          // 心跳响应：服务端发 server_ping，5s 内必须回 pong，否则累计失败。
+          if (msg.type === "server_ping") {
+            ws.send(JSON.stringify({ type: "pong", t: msg.t }));
+            return;
+          }
           const handler = handlersRef.current[msg.type];
           if (handler) handler(msg);
         } catch {

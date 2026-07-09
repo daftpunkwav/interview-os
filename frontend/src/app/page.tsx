@@ -197,19 +197,23 @@ export default function HomePage() {
             transition={{ duration: 0.6, delay: 0.3 }}
           >
             <MagneticButton
+              renderAs="a"
+              href="/interview"
               className="px-8 py-3 bg-brand-600 text-white rounded-xl font-medium shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 transition-shadow"
               strength={0.2}
             >
-              <Link href="/interview" className="flex items-center gap-2">
+              <span className="flex items-center gap-2">
                 立即开始
                 <ArrowRight size={18} />
-              </Link>
+              </span>
             </MagneticButton>
             <MagneticButton
+              renderAs="a"
+              href="/resume"
               className="px-8 py-3 border border-[var(--border)] bg-[var(--card)] rounded-xl font-medium hover:border-brand-300 transition-colors"
               strength={0.15}
             >
-              <Link href="/resume">上传简历</Link>
+              上传简历
             </MagneticButton>
           </motion.div>
         </FadeInView>
@@ -330,13 +334,15 @@ export default function HomePage() {
             <h3 className="text-2xl font-bold mb-3">准备好迎接下一场面试了吗？</h3>
             <p className="text-brand-100 mb-6">每一次练习，都是向 offer 更近一步</p>
             <MagneticButton
+              renderAs="a"
+              href="/interview"
               className="px-8 py-3 bg-white text-brand-600 rounded-xl font-medium shadow-lg"
               strength={0.2}
             >
-              <Link href="/interview" className="flex items-center gap-2">
+              <span className="flex items-center gap-2">
                 开始模拟面试
                 <ArrowRight size={18} />
-              </Link>
+              </span>
             </MagneticButton>
           </motion.div>
         </FadeInView>
