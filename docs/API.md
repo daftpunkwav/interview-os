@@ -16,38 +16,59 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 | 方法 | 路径 | 入参 | 返回 | 备注 |
 |---|---|---|---|---|
 | GET | `/health` | — | `{status,service,version}` | 健康探针 |
-| GET | `/api/options` | — | `Options` | 启动初始化：岗位/职级/公司/工作流/AVATAR/SCENE |
-| GET | `/api/settings/llm` | — | `LLMSettings` | 仅 1 行，id=1 |
-| PUT | `/api/settings/llm` | `LLMSettingsUpdate` | `LLMSettings` | 同时设 api_key（"keep" 表示不变） |
-| POST | `/api/settings/llm/test` | — | `LLMTestResponse` | SSRF 防御 + 真实连通 |
-| GET | `/api/profile` | — | `UserProfile` | 自动创建 id=1 |
-| PUT | `/api/profile` | `UserProfileUpdate` | `UserProfile` | |
-| POST | `/api/resume/upload` | multipart `file` | `Resume` | **10MB 上限 + MIME 嗅探 + 路径越界防御** |
-| GET | `/api/resume/list` | — | `Resume[]` | |
-| GET | `/api/resume/{id}` | — | `Resume` | |
-| POST | `/api/resume/{id}/activate` | — | `{id,is_active}` | |
-| POST | `/api/resume/{id}/analyze` | — | `ResumeAnalysis` | LLM 返回经 Pydantic 强校验 |
-| POST | `/api/interview/sessions` | `InterviewConfig` | `InterviewSession` | |
-| GET | `/api/interview/sessions` | — | `InterviewSession[]` | |
-| GET | `/api/interview/sessions/{id}` | — | `InterviewSession` | |
-| POST | `/api/interview/sessions/{id}/start` | — | `{message?,current_phase}` | |
-| POST | `/api/interview/sessions/{id}/message` | `{content,face_analysis?,image_base64?}` | `{message,current_phase,is_complete,phases_remaining}` | |
-| GET | `/api/interview/sessions/{id}/messages` | — | `ChatMessage[]` | 历史消息 |
-| POST | `/api/interview/sessions/{id}/finish` | — | `{session_id,status,overall_score?}` | |
-| GET | `/api/reports/{id}` | — | `{session_id,report,duration_minutes?}` | |
-| GET | `/api/reports/{id}/stream` | — | SSE | 流式生成报告 |
-| GET | `/api/reports/growth/history` | — | `GrowthRecord[]` | |
+| GET | `/api/v1/options` | — | `Options` | 启动初始化：岗位/职级/公司/工作流/AVATAR/SCENE |
+| GET | `/api/v1/settings/llm` | — | `LLMSettings` | 仅 1 行，id=1 |
+| PUT | `/api/v1/settings/llm` | `LLMSettingsUpdate` | `LLMSettings` | 同时设 api_key（"keep" 表示不变） |
+| POST | `/api/v1/settings/llm/test` | — | `LLMTestResponse` | SSRF 防御 + 真实连通 |
+| GET | `/api/v1/profile` | — | `UserProfile` | 自动创建 id=1 |
+| PUT | `/api/v1/profile` | `UserProfileUpdate` | `UserProfile` | |
+| POST | `/api/v1/resume/upload` | multipart `file` | `Resume` | **10MB 上限 + MIME 嗅探 + 路径越界防御** |
+| GET | `/api/v1/resume/list` | — | `Resume[]` | |
+| GET | `/api/v1/resume/{id}` | — | `Resume` | |
+| POST | `/api/v1/resume/{id}/activate` | — | `{id,is_active}` | |
+| POST | `/api/v1/resume/{id}/analyze` | — | `ResumeAnalysis` | LLM 返回经 Pydantic 强校验 |
+| POST | `/api/v1/interview/sessions` | `InterviewConfig` | `InterviewSession` | |
+| GET | `/api/v1/interview/sessions` | — | `InterviewSession[]` | |
+| GET | `/api/v1/interview/sessions/{id}` | — | `InterviewSession` | |
+| POST | `/api/v1/interview/sessions/{id}/start` | — | `{message?,current_phase}` | |
+| POST | `/api/v1/interview/sessions/{id}/message` | `{content,face_analysis?,image_base64?}` | `{message,current_phase,is_complete,phases_remaining}` | |
+| GET | `/api/v1/interview/sessions/{id}/messages` | — | `ChatMessage[]` | 历史消息 |
+| POST | `/api/v1/interview/sessions/{id}/finish` | — | `{session_id,status,overall_score?}` | |
+| GET | `/api/v1/reports/{id}` | — | `{session_id,report,duration_minutes?}` | |
+| GET | `/api/v1/reports/{id}/stream` | — | SSE | 流式生成报告 |
+| GET | `/api/v1/reports/growth/history` | — | `GrowthRecord[]` | |
 | POST | `/api/v1/prep/sessions` | `{resume_id?,target_role?,target_company?}` | `{id}` | |
 | POST | `/api/v1/prep/sessions/{id}/message` | `{content}` | `{reply,token_usage}` | |
 | POST | `/api/v1/prep/sessions/{id}/message/stream` | `{content}` | SSE | 流式辅导 |
 
 ### 1.1 错误约定
 
-- FastAPI 默认 `{detail: "..."}`；
-- 全局结构化日志 `X-Trace-Id` 透出；
+- 统一 envelope：`{error: {code, message, trace_id}}`，兼容保留旧 `{detail: ...}` 字段；
+- 全局结构化日志 `X-Trace-Id` 透出；入参 `X-Request-Id` 会被校验正则 `^[A-Za-z0-9_\-]{8,64}$`，不通过则服务端重生成；
 - 429 限流 `Retry-After` 头；
-- 413 上传超限 `{detail:"文件超过 10MB 上限"}`；
-- 任何 `api_base` 命中策略 → 400 `{detail:"LLM API 地址不安全，仅允许 https 公网地址"}`。
+- 413 上传超限 `{error.message:"文件超过 10MB 上限"}`；
+- 任何 `api_base` 命中策略 → 400 `{error.message:"LLM API 地址不安全，仅允许 https 公网地址"}`；
+- Starlette 抛出的 404（如 `/health POST`）也走同一 envelope，由 `StarletteHTTPException` handler 接管。
+
+### 1.2 迁移指南 v1.0 → v2.0
+
+`v2.0` 起，所有路径统一前缀 `/api/v1/*`；原 `/api/*` 在 3 个月内保留兼容别名（同一份 endpoint 在两条路径都暴露，测试覆盖 `tests/test_api_v1_paths.py`）。
+
+```diff
+- GET  https://host/api/profile
++ GET  https://host/api/v1/profile
+
+- POST https://host/api/settings/llm
++ POST https://host/api/v1/settings/llm   # PUT 更新 + POST /key 轮换
+
+- WS   ws://host/api/ws/interview/123
++ WS   ws://host/api/v1/ws/interview/123
+
+- GET  https://host/api/reports/1/stream
++ GET  https://host/api/v1/reports/1/stream
+```
+
+`/api/v1/*` 是未来的唯一路径；`/api/*` 将在 2026-10-01 后逐步移除。先迁移前端 `src/lib/api.ts`，后端删除 alias 路由。
 
 ---
 
@@ -104,7 +125,7 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 ## 3. SSE 协议
 
 **端点 1（准备）**：`POST /api/v1/prep/sessions/{id}/message/stream`
-**端点 2（报告）**：`GET /api/reports/{id}/stream`
+**端点 2（报告）**：`GET /api/v1/reports/{id}/stream`
 
 帧格式（与 WS `assistant_token` 同源）：
 

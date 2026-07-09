@@ -95,17 +95,19 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
 
 | 风险点 | 当前实现 | 后续可扩展 |
 |---|---|---|
-| API Key 在 DB 明文 | `app/core/secrets.py` AES-兼容（HMAC+XOR，`enc:v1:` 前缀） | 切回 `cryptography.AESGCM` 仅需替换实现 |
-| SSRF `api_base` | `is_safe_http_url` 拒绝私网/loopback；dev 模式可放行 | IP 黑名单、白名单 |
+| API Key 在 DB 明文 | `app/core/secrets.py` AES-256-GCM（依赖 `cryptography`），`enc:v2:<salt>:<nonce>:<tag>:<ct>`；AEAD 篡改拒绝；旧 `enc:v1:` 显式抛 `LegacySecretFormatError` | KMS 托管 master |
+| SSRF `api_base` | `is_safe_http_url` 多 A 记录遍历 + IPv6 字面量 + 端口白名单（80/443）；dev 模式允许 loopback | IP 黑/白名单；httpx transport 层强制 resolved IP 防 DNS rebinding |
 | 文件上传 | 10MB 流式上限 + 魔数嗅探 + `assert_within_dir` | 走对象存储（MVP 单机保留本地） |
-| 限流 | `app/core/ratelimit.py` 滑动窗口 | 替换 Redis；按用户/IP 区分 |
-| 日志脱敏 | `RedactFilter` 自动遮蔽 `Authorization`/API Key | 全文加密（KMS） |
-| WebSocket | 当前无鉴权（demo 范围）；后续应注入 JWT | `Sec-WebSocket-Protocol` 携 token |
+| 限流 | `app/core/ratelimit.py` 滑动窗口；`INTERVIEWOS_TRUSTED_PROXY_CIDRS` 控制 X-Forwarded-For 信任 | 替换 Redis；按用户/IP 区分 |
+| 日志脱敏 | `RedactFilter` 覆盖 `record.msg/args/exc_text` 三路径 | 全文加密（KMS） |
+| WebSocket 拒绝服务 | 服务端 30s 心跳发 `server_ping`，客户端 5s 内须回 `pong`，3 次未回 graceful close；audio_buffer 5MB 上限 | JWT 鉴权 / token 续签 |
 | 路径穿越 | `sanitize_filename` + `assert_within_dir` 双保险 | — |
+| CORS 滥用 | `allow_origins=['*']` + `allow_credentials=True` 启动即拒绝；`PATCH/HEAD` 显式放行；X-Request-Id 输入校验正则 | — |
+| 错误响应不一致 | 统一 envelope `{error: {code, message, trace_id}}`；StarletteHTTPException / HTTPException 共用 handler | — |
 
 ## 6. 测试策略
 
-- `backend/tests/` 7 个文件，48 通过；领域核心（Runner / Followup / RAG / Context / TTS Queue）单测覆盖；
+- `backend/tests/` 14 个文件，180+ 通过；领域核心（Runner / Followup / RAG / Context / TTS Queue / Migrate / Secrets）单测覆盖；
 - 新代码要求至少补 1 个单测；与 LLM 交互必须通过 `FakeLLMClient`；
 - 测速脚本 `pytest -q`。
 
