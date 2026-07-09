@@ -189,22 +189,52 @@ class LLMClient:
     ) -> list[list[float]]:
         """调用 OpenAI 兼容 /embeddings 端点，返回每段文本的向量。
 
+        URL / Key / Model 读取顺序：
+
+        - 优先使用 ``LLM_EMBEDDINGS_BASE`` / ``LLM_EMBEDDINGS_KEY`` /
+          ``LLM_EMBEDDINGS_MODEL``(对应 :class:`app.config.Settings`
+          的 ``llm_embeddings_*`` 字段)；
+        - 任一字段未配置则回退到 ``LLM_API_BASE`` / ``LLM_API_KEY`` / ``LLM_MODEL``,
+          行为与重构前完全一致。
+
         Args:
             texts: 待嵌入的文本列表。
-            model: 可选覆盖默认模型；不传则用 ``self.model``。
+            model: 可选覆盖默认模型；不传则用 ``effective_embeddings_model``。
 
         Returns:
             与输入等长的向量列表。
         """
-        url = f"{self.api_base}/embeddings"
+        from app.config import get_settings
+
+        settings = get_settings()
+        base = settings.effective_embeddings_base
+        if not is_safe_http_url(base, allow_local=_IS_DEV):
+            raise UnsafeURLError(f"Embeddings api_base 不安全: {base}")
+
+        url = f"{base}/embeddings"
         payload: dict[str, Any] = {
-            "model": model or self.model,
+            "model": model or settings.effective_embeddings_model,
             "input": texts,
         }
+        # embeddings 使用专用 key（如有），否则回退 chat key。
+        embed_key = settings.effective_embeddings_key or self.api_key
+        headers = {
+            "Authorization": f"Bearer {embed_key}",
+            "Content-Type": "application/json",
+        }
         async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(url, headers=self._headers(), json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+            try:
+                resp = await client.post(url, headers=headers, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+            except httpx.HTTPStatusError as e:
+                logger.warning(
+                    "LLM embed 失败: model=%s status=%s key=%s",
+                    payload["model"],
+                    e.response.status_code,
+                    redact_api_key(embed_key),
+                )
+                raise
 
         # OpenAI 标准：{"data": [{"embedding": [...]}, ...]}
         return [item["embedding"] for item in data["data"]]
