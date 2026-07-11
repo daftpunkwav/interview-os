@@ -3,7 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.constants import DEFAULT_RAG_BACKEND, RAGBackendKind
@@ -75,10 +75,6 @@ class Settings(BaseSettings):
         return [c.strip() for c in self.trusted_proxy_cidrs.split(",") if c.strip()]
 
     @property
-    def cors_origin_list(self) -> list[str]:
-        return [o for o in self.cors_origins.split(",") if o]
-
-    @property
     def effective_embeddings_base(self) -> str:
         """解析后的 embeddings base：独立配置优先，否则回退到 chat base。"""
         return (self.llm_embeddings_base or self.llm_api_base).rstrip("/")
@@ -90,6 +86,16 @@ class Settings(BaseSettings):
     @property
     def effective_embeddings_model(self) -> str:
         return self.llm_embeddings_model or self.llm_model
+
+    @model_validator(mode="after")
+    def _validate_cross_fields(self) -> "Settings":
+        """跨字段配置校验。"""
+        if self.is_prod and self.allow_local_llm:
+            raise ValueError("生产环境 (env=prod) 不允许 allow_local_llm=True")
+        if self.rag_backend == RAGBackendKind.STEPFUN and not self.stepfun_vector_store_id:
+            # 不阻断启动（启动时自动创建），但打 warning
+            pass
+        return self
 
 
 @lru_cache

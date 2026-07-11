@@ -181,7 +181,8 @@ class InterviewMessageRequest(BaseModel):
     content: str
     face_analysis: dict[str, Any] | None = None
     # 当前视频帧 JPEG base64，供多模态 LLM 分析表情与状态
-    image_base64: str | None = None
+    # 上限约 200KB 原始数据（base64 编码后约 267KB），防止大图消耗过多 token
+    image_base64: str | None = Field(default=None, max_length=300_000)
 
 
 class InterviewMessageResponse(BaseModel):

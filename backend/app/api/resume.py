@@ -186,17 +186,29 @@ def get_resume(resume_id: int, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/{resume_id}/activate")
+@router.post("/{resume_id}/activate", response_model=ResumeResponse)
 def activate_resume(resume_id: int, db: Session = Depends(get_db)):
-    r = db.query(Resume).filter(Resume.id == resume_id).first()
+    # 使用行锁防止并发竞态
+    r = db.query(Resume).filter(Resume.id == resume_id).with_for_update().first()
     if not r:
         raise HTTPException(status_code=404, detail="简历不存在")
-    # 单条 UPDATE 等价于"先全置 False，再设当前为 True"，避免 ORM
-    # 实例 mutation 与全表 update 之间的状态漂移。
-    db.query(Resume).update({Resume.is_active: Resume.id == resume_id})
+    # 先取消其他活跃简历
+    db.query(Resume).filter(Resume.id != resume_id, Resume.is_active == True).update(
+        {Resume.is_active: False}, synchronize_session=False
+    )
+    r.is_active = True
     db.commit()
     db.refresh(r)
-    return {"id": resume_id, "is_active": bool(r.is_active)}
+    return ResumeResponse(
+        id=r.id,
+        filename=r.filename,
+        file_type=r.file_type,
+        parsed_profile=CandidateProfile(**json.loads(r.parsed_profile)),
+        is_active=bool(r.is_active),
+        score=r.score,
+        analysis=json.loads(r.analysis or "{}"),
+        created_at=r.created_at,
+    )
 
 
 @router.post("/{resume_id}/analyze")
