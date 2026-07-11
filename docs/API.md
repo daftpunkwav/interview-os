@@ -40,6 +40,7 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 | POST | `/api/v1/prep/sessions` | `{resume_id?,target_role?,target_company?}` | `{id}` | |
 | POST | `/api/v1/prep/sessions/{id}/message` | `{content}` | `{reply,token_usage}` | |
 | POST | `/api/v1/prep/sessions/{id}/message/stream` | `{content}` | SSE | 流式辅导 |
+| GET | `/api/v1/prep/sessions/{id}/messages` | — | 历史消息 JSON 数组 | 准备会话历史回溯 |
 
 ### 1.1 错误约定
 

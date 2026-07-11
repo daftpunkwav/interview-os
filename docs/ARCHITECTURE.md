@@ -47,7 +47,13 @@
 | `app/realtime/` | WS 协议 | `events.py` 定义客户端/服务端事件；`ws_handler.py` 仅做编排，不存业务规则 |
 | `app/services/llm/` | BYOK LLM 客户端 | 入参 api_key 必须从 `decrypt_secret` 出来；超时 ≤ 60 s |
 | `app/services/interview/` | 业务编排 | `runner.py` 是回合执行器；`agent.py` 是会话状态机；`followup.py` 是追问信号器 |
-| `app/services/rag/` | Chroma RAG | `RAGProvider`-style 接口（扩展点）；启动期 `ensure_index()` |
+| `app/services/rag/` | RAG 多后端 | `base.py` 定义 `RAGBackend` 协议；`factory.build_rag_backend` 按 `RAGBackendKind` 选型（local/stepfun/none）；`_kb_data.py` 为纯数据层（`COLLECTION_NAME` / `_build_documents` / `format_context`），被 `company_rag` / `local_backend` / 测试共用，无业务依赖，避免循环导入 |
+| `app/services/rag/_kb_data.py` | RAG 纯数据层 | 集中持有 Chroma collection 名称、KB 文档构建、Chroma 目录解析、命中片段格式化；无业务依赖可被任一 RAG 后端与测试自由 import |
+| `app/services/rag/local_backend.py` | 本地 Chroma RAG | 调用 LLM 提供商的 OpenAI 兼容 `/embeddings`；默认后端，向后兼容 |
+| `app/services/rag/stepfun_backend.py` | StepFun 托管 RAG | 上传 KB 到 `vector_stores`，检索通过 chat 时 `tools[].type=retrieval` 由服务端完成 |
+| `app/services/rag/company_rag.py` | 向后兼容包装器 | `CompanyKnowledgeRAG` 委托工厂选出的后端；保留旧 API 以兼容已有测试 |
+| `app/agents/` | Agent 编排 | `orchestrator.py` 合并多源快照（视觉/追问信号）；`vision/agent.py` 面部状态；`prep/agent.py` 面试准备 Agent |
+| `app/core/constants.py` | 全局协议常量 | 所有 `StrEnum`（`RAGBackendKind` / `SessionStatus` / `InterviewPhase` / `Personality` 等）+ 阈值（`RESUME_MAX_UPLOAD_BYTES` / `HEARTBEAT_TIMEOUT_SEC` / `TTS_QUEUE_MAX_SIZE`）；改名前后端须原子同步 |
 | `app/services/seed.py` | 启动种子 | 仅写一次；幂等 |
 | `app/core/` | 基础设施 | `security.py` / `secrets.py` / `logging.py` / `ratelimit.py` / `migrate.py` |
 | `frontend/src/types/` | 强类型契约 | REST / SSE / WS 的所有事件和响应都必须在这里定义 |
@@ -96,7 +102,7 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
 | 风险点 | 当前实现 | 后续可扩展 |
 |---|---|---|
 | API Key 在 DB 明文 | `app/core/secrets.py` AES-256-GCM（依赖 `cryptography`），`enc:v2:<salt>:<nonce>:<tag>:<ct>`；AEAD 篡改拒绝；旧 `enc:v1:` 显式抛 `LegacySecretFormatError` | KMS 托管 master |
-| SSRF `api_base` | `is_safe_http_url` 多 A 记录遍历 + IPv6 字面量 + 端口白名单（80/443）；dev 模式允许 loopback | IP 黑/白名单；httpx transport 层强制 resolved IP 防 DNS rebinding |
+| SSRF `api_base` | `is_safe_http_url` 多 A 记录遍历 + IPv6 字面量 + 端口白名单（80/443）；dev 模式允许 loopback；本地 LLM 需额外 `INTERVIEWOS_ALLOW_LOCAL_LLM=1` 双重放行 | IP 黑/白名单；httpx transport 层强制 resolved IP 防 DNS rebinding |
 | 文件上传 | 10MB 流式上限 + 魔数嗅探 + `assert_within_dir` | 走对象存储（MVP 单机保留本地） |
 | 限流 | `app/core/ratelimit.py` 滑动窗口；`INTERVIEWOS_TRUSTED_PROXY_CIDRS` 控制 X-Forwarded-For 信任 | 替换 Redis；按用户/IP 区分 |
 | 日志脱敏 | `RedactFilter` 覆盖 `record.msg/args/exc_text` 三路径 | 全文加密（KMS） |
@@ -107,7 +113,7 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
 
 ## 6. 测试策略
 
-- `backend/tests/` 14 个文件，180+ 通过；领域核心（Runner / Followup / RAG / Context / TTS Queue / Migrate / Secrets）单测覆盖；
+- `backend/tests/` 16 个 `test_*.py`（含 `conftest.py` / `fakes.py` 共 18 文件），核心覆盖 Runner / Followup / RAG（含多后端）/ Context 压缩 / TTS Queue / WS handler / Migrate / Secrets / Security / v1 路径；
 - 新代码要求至少补 1 个单测；与 LLM 交互必须通过 `FakeLLMClient`；
 - 测速脚本 `pytest -q`。
 
@@ -118,7 +124,7 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
 | 加一种 LLM Provider（Claude / Gemini / Ollama） | `app/services/llm/` 加新 Provider；`from_db` 选用 |
 | 加一种面试工作流（System Design Round / Coding Round） | `app/services/interview/workflows.py` 注册即可；`options.workflow_types` 自动暴露 |
 | 加一种追问信号维度 | `app/services/interview/followup.py` 新增分类 + 正则 |
-| 加一种企业知识库 / KB 源 | `app/services/company/knowledge.py` 增加元数据；`company_rag.py` 重新索引 |
+| 加一种企业知识库 / KB 源 | `app/services/company/knowledge.py` 增加元数据；如需新 RAG 后端，实现 `RAGBackend` 协议 + 在 `app/services/rag/factory.py` 注册即可；`_kb_data.py` 持有与后端无关的纯数据/工具函数 |
 | 加前端页面 | `frontend/src/app/<route>/page.tsx` + `src/lib/api.ts` 新方法 + `Sidebar.tsx` nav 数组 |
 | 加前端事件类型 | 仅在 `src/types/index.ts` 增加 discriminated union 成员；所有 on() 回调自动收紧 |
 | 加全局 Toast 类型 | 已在 `src/components/Toast.tsx` 注册；按需调用 `toast.success/error/...` |
