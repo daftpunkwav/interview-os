@@ -5,6 +5,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.secrets import encrypt_secret
 from app.models import LLMSettings
 
 logger = logging.getLogger(__name__)
@@ -26,10 +27,11 @@ def seed_llm_settings(db: Session) -> None:
         db.add(row)
 
     row.api_base = settings.llm_api_base
-    row.api_key = settings.llm_api_key
+    # 环境变量注入的 Key 同样需要加密入库
+    row.api_key = encrypt_secret(settings.llm_api_key) or ""
     row.model = settings.llm_model
     row.max_tokens = settings.llm_max_tokens
     row.context_window = settings.llm_context_window
     row.provider = "stepfun" if "stepfun" in settings.llm_api_base else "openai"
     db.commit()
-    logger.info("已从环境变量初始化 LLM 配置")
+    logger.info("已从环境变量初始化 LLM 配置（api_key 已加密入库）")

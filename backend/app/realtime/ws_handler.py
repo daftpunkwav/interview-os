@@ -39,21 +39,21 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 # 心跳与超时配置
-_HEARTBEAT_TIMEOUT_SEC = 30.0
-_HEARTBEAT_MAX_MISSES = 3
+_HEARTBEAT_TIMEOUT_SEC: float = 30.0
+_HEARTBEAT_MAX_MISSES: int = 3
 # audio_buffer 字节上限（按 base64 后的 raw pcm 估算）；超过强制刷 turn_end
-_AUDIO_BUFFER_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+_AUDIO_BUFFER_MAX_BYTES: int = 5 * 1024 * 1024  # 5 MB
 
 
 class _SentenceTTSQueue:
     """串行 TTS 队列：保证句子按到达顺序逐个合成并播放，不与 LLM 流相互阻塞。
 
-    内存治理：队列长度超过 :data:`_MAX_QUEUE_SIZE` 时丢弃最早的句子，
+    内存治理：队列长度超过 ``_MAX_QUEUE_SIZE`` 时丢弃最早的句子，
     防止 TTS 慢、网络抖动时内存无界增长。
     """
 
     # 上限：约 3-5 分钟的连续面试内容。超出时优先丢弃已入队的旧句以保证实时性。
-    _MAX_QUEUE_SIZE = 50
+    _MAX_QUEUE_SIZE: int = 50
 
     def __init__(self) -> None:
         self._queue: asyncio.Queue[str | None] = asyncio.Queue()

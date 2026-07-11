@@ -47,12 +47,23 @@ async def _retry_request(
         try:
             resp = await coro
         except httpx.HTTPStatusError as e:
-            status = e.response.status_code
-            if status == 429 or status >= 500:
+            status_code = e.response.status_code if e.response else 0
+            if status_code == 429 or status_code >= 500:
                 last_exc = e
                 if attempt < max_retries:
+                    if is_stream:
+                        try:
+                            await e.response.aclose()
+                        except Exception:
+                            pass
                     await asyncio.sleep(backoff * (2 ** attempt))
                     continue
+            raise
+        except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteError, httpx.RemoteProtocolError) as e:
+            last_exc = e
+            if attempt < max_retries:
+                await asyncio.sleep(backoff * (2 ** attempt))
+                continue
             raise
         if resp.status_code == 429 or resp.status_code >= 500:
             last_exc = httpx.HTTPStatusError(

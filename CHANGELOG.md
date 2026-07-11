@@ -33,6 +33,8 @@
   - `CompanyKnowledgeRAG` 退化为向后兼容包装器，公共 API 不变
 - `LLMClient.embed()` 支持独立的 `LLM_EMBEDDINGS_BASE/KEY/MODEL`（未设置时回退 `LLM_*`）
 - `LLMClient.chat/chat_stream` 新增可选 `tools` 参数，供 StepFun retrieval tool 注入
+- **RAG 模块拆分纯数据层**：新增 `app/services/rag/_kb_data.py`，把 `COLLECTION_NAME` / `_build_documents` / `_data_dir` / `format_context` 等无业务依赖的函数从 `company_rag.py` 抽出，避免上层模块相互导入
+- **消除 RAG 循环导入**：`company_rag.py` / `local_backend.py` 改为直接从 `_kb_data` 导入所需函数，打破 `local_backend → company_rag → factory → local_backend` 循环链
 
 ### 前端（Frontend）
 - `src/types/index.ts`：新增 ServerEvent/ClientEvent/PREP/Report SSE discriminated union 与 REST 响应契约

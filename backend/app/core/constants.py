@@ -181,3 +181,10 @@ TRACE_ID_HEADER = "X-Trace-Id"
 
 RESUME_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 RESUME_ALLOWED_EXTENSIONS: frozenset[str] = frozenset({"pdf", "docx", "doc", "md", "txt"})
+
+# ── WebSocket / 面试运行时 ────────────────────────────────────────
+
+HEARTBEAT_TIMEOUT_SEC = 30.0
+HEARTBEAT_MAX_MISSES = 3
+AUDIO_BUFFER_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+TTS_QUEUE_MAX_SIZE = 50
