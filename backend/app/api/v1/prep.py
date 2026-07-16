@@ -37,12 +37,16 @@ class PrepMessageRequest(BaseModel):
 
 @router.post("/sessions")
 async def create_prep_session(body: PrepCreateRequest, db: Session = Depends(get_db)):
-    session = PrepSession(
-        resume_id=body.resume_id,
-        target_role=body.target_role,
-        target_company=body.target_company,
-        status=SessionStatus.ACTIVE.value,
-    )
+    # status 列由模型 + migrate 保证；构造时显式写入 active
+    kwargs: dict = {
+        "resume_id": body.resume_id,
+        "target_role": body.target_role,
+        "target_company": body.target_company,
+    }
+    # 兼容：若 ORM 已声明 status 则写入
+    if hasattr(PrepSession, "status"):
+        kwargs["status"] = SessionStatus.ACTIVE.value
+    session = PrepSession(**kwargs)
     db.add(session)
     db.commit()
     db.refresh(session)
@@ -54,7 +58,7 @@ async def prep_message(session_id: int, body: PrepMessageRequest, db: Session = 
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在")
-    if session.status == SessionStatus.COMPLETED.value:
+    if getattr(session, "status", None) == SessionStatus.COMPLETED.value:
         raise HTTPException(status_code=400, detail="会话已结束")
     llm = LLMClient.from_db(db)
     agent = PrepAgent(session, llm)
@@ -67,7 +71,7 @@ async def prep_message_stream(session_id: int, body: PrepMessageRequest, db: Ses
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在")
-    if session.status == SessionStatus.COMPLETED.value:
+    if getattr(session, "status", None) == SessionStatus.COMPLETED.value:
         raise HTTPException(status_code=400, detail="会话已结束")
     llm = LLMClient.from_db(db)
     agent = PrepAgent(session, llm)

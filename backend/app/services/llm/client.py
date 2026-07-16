@@ -29,6 +29,36 @@ from app.models import LLMSettings
 logger = logging.getLogger(__name__)
 
 
+def _extract_message_text(msg: dict[str, Any] | None) -> str:
+    """从 Chat Completions message 中提取可读文本。
+
+    兼容：
+    - 标准 ``content`` 字符串
+    - 部分厂商把正文放在 ``reasoning_content`` / ``reasoning``
+    - content 为 list（多段 text）
+    """
+    if not msg or not isinstance(msg, dict):
+        return ""
+    content = msg.get("content")
+    if isinstance(content, str) and content.strip():
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for p in content:
+            if isinstance(p, dict) and p.get("type") == "text":
+                parts.append(str(p.get("text") or ""))
+            elif isinstance(p, str):
+                parts.append(p)
+        joined = "".join(parts).strip()
+        if joined:
+            return joined
+    for key in ("reasoning_content", "reasoning", "output_text"):
+        val = msg.get(key)
+        if isinstance(val, str) and val.strip():
+            return val
+    return content if isinstance(content, str) else ""
+
+
 async def _retry_request(
     coro_factory,
     *,
@@ -203,8 +233,8 @@ class LLMClient:
                 )
                 raise
 
-        content = data["choices"][0]["message"].get("content")
-        return content if content is not None else ""
+        msg = data["choices"][0]["message"]
+        return _extract_message_text(msg)
 
     async def chat_message(
         self,
@@ -309,13 +339,60 @@ class LLMClient:
         messages: list[dict[str, Any]],
         temperature: float = 0.3,
     ) -> dict[str, Any]:
-        """请求 JSON 格式响应并解析。"""
+        """请求 JSON 格式响应并解析。
+
+        部分兼容接口（如部分中转 / MiniMax）可能：
+        - 忽略 ``response_format``；
+        - 返回带 Markdown 代码块的 JSON；
+        - content 为空。
+
+        此处做容错提取，仍失败则抛出带上下文的 ValueError。
+        """
         content = await self.chat(
             messages,
             temperature=temperature,
             response_format={"type": "json_object"},
         )
-        return json.loads(content)
+        # 部分厂商不支持 response_format，会返回空 content；回退为无 format 再请求一次
+        if not (isinstance(content, str) and content.strip()):
+            logger.warning("chat_json 首次返回空，回退无 response_format 重试")
+            retry_messages = list(messages)
+            # 强化：在 user 末尾要求纯 JSON
+            retry_messages.append({
+                "role": "user",
+                "content": "请只输出一个合法 JSON 对象，不要 Markdown，不要解释。",
+            })
+            content = await self.chat(retry_messages, temperature=temperature)
+        if content is None or (isinstance(content, str) and not content.strip()):
+            raise ValueError(
+                "LLM 返回空内容，无法解析 JSON。"
+                "请确认模型支持 Chat Completions 文本输出（当前可能使用了仅推理/空 content 的模型）。"
+            )
+        text = content if isinstance(content, str) else str(content)
+        text = text.strip()
+        # 剥离 ```json ... ``` 围栏
+        if text.startswith("```"):
+            lines = text.split("\n")
+            # 去掉首行 ```xxx 与末行 ```
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+        # 截取首个 { ... } 对象
+        if not text.startswith("{"):
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                text = text[start : end + 1]
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            preview = text[:200].replace("\n", " ")
+            raise ValueError(f"LLM 返回非 JSON（预览: {preview!r}）: {e}") from e
+        if not isinstance(data, dict):
+            raise ValueError("LLM JSON 根类型必须是 object")
+        return data
 
     async def test_connection(self) -> tuple[bool, str]:
         """测试 API 连通性。"""

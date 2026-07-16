@@ -72,7 +72,7 @@ async function parseErrorResponse(res: Response): Promise<string> {
     // 非 JSON
   }
   if (/internal server error/i.test(text)) {
-    return "后端服务不可用，请确认 backend 已在 localhost:8000 启动";
+    return "后端处理失败（500）。请查看 backend 终端日志，常见原因：LLM 返回异常、数据库字段未迁移。";
   }
   return text.length > 300 ? `${text.slice(0, 300)}…` : text;
 }

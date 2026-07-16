@@ -135,6 +135,8 @@ class PrepSession(Base):
     target_company: Mapped[str] = mapped_column(String(100), default="")
     messages: Mapped[str] = mapped_column(Text, default="[]")
     token_usage: Mapped[int] = mapped_column(Integer, default=0)
+    # 与 migrate.py 中 prep_sessions.status 一致；缺列时启动迁移会补齐
+    status: Mapped[str] = mapped_column(String(20), default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 

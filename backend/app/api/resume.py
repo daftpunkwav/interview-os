@@ -320,9 +320,28 @@ async def analyze_resume(resume_id: int, db: Session = Depends(get_db)):
         {"role": "system", "content": _RESUME_ANALYZE_PROMPT},
         {"role": "user", "content": user_blob or "（空简历）"},
     ]
-    data = await llm.chat_json(messages)
-    # 强校验，防 LLM 注入污染数据库
-    analysis = ResumeAnalysis.model_validate(_normalize_resume_analysis_payload(data))
+    try:
+        data = await llm.chat_json(messages)
+    except ValueError as e:
+        logger.warning("简历评价 LLM JSON 失败: %s", e)
+        raise HTTPException(
+            status_code=502,
+            detail=f"模型未返回有效评价结果：{e}",
+        ) from e
+    except Exception as e:
+        logger.exception("简历评价调用失败")
+        raise HTTPException(
+            status_code=502,
+            detail=f"评价请求失败：{type(e).__name__}",
+        ) from e
+    try:
+        analysis = ResumeAnalysis.model_validate(_normalize_resume_analysis_payload(data))
+    except Exception as e:
+        logger.warning("简历评价结构校验失败: %s", e)
+        raise HTTPException(
+            status_code=502,
+            detail="模型返回结构不符合评价 schema，请重试或更换模型",
+        ) from e
     r.score = analysis.score
     r.analysis = analysis.model_dump_json()
     db.commit()
