@@ -26,7 +26,8 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 | GET | `/api/v1/resume/list` | — | `Resume[]` | |
 | GET | `/api/v1/resume/{id}` | — | `Resume` | |
 | POST | `/api/v1/resume/{id}/activate` | — | `{id,is_active}` | |
-| POST | `/api/v1/resume/{id}/analyze` | — | `ResumeAnalysis` | LLM 返回经 Pydantic 强校验 |
+| DELETE | `/api/v1/resume/{id}` | — | `{ok,id}` | 删除简历与尝试清理上传文件 |
+| POST | `/api/v1/resume/{id}/analyze` | — | `ResumeAnalysis` | 多维度 Agent 评价（强校验 + 容错规范化） |
 | POST | `/api/v1/interview/sessions` | `InterviewConfig` | `InterviewSession` | |
 | GET | `/api/v1/interview/sessions` | — | `InterviewSession[]` | |
 | GET | `/api/v1/interview/sessions/{id}` | — | `InterviewSession` | |
@@ -37,6 +38,7 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 | GET | `/api/v1/reports/{id}` | — | `{session_id,report,duration_minutes?}` | |
 | GET | `/api/v1/reports/{id}/stream` | — | SSE | 流式生成报告 |
 | GET | `/api/v1/reports/growth/history` | — | `GrowthRecord[]` | |
+| GET | `/api/v1/reports/growth/system-insights` | — | 系统学习洞察 | 跨面试聚合 tool/公司/薄弱线索 |
 | POST | `/api/v1/prep/sessions` | `{resume_id?,target_role?,target_company?}` | `{id}` | |
 | POST | `/api/v1/prep/sessions/{id}/message` | `{content}` | `{reply,token_usage}` | |
 | POST | `/api/v1/prep/sessions/{id}/message/stream` | `{content}` | SSE | 流式辅导 |

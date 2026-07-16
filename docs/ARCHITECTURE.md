@@ -46,7 +46,9 @@
 | `app/api/v1/` | API v1（实时面试/准备） | 走 WS；不允许同步业务阻塞超过 5 秒 |
 | `app/realtime/` | WS 协议 | `events.py` 定义客户端/服务端事件；`ws_handler.py` 仅做编排，不存业务规则 |
 | `app/services/llm/` | BYOK LLM 客户端 | 入参 api_key 必须从 `decrypt_secret` 出来；超时 ≤ 60 s |
-| `app/services/interview/` | 业务编排 | `runner.py` 是回合执行器；`agent.py` 是会话状态机；`followup.py` 是追问信号器 |
+| `app/services/interview/` | 业务编排 | `runner.py` 是回合执行器；`agent.py` 是会话状态机；`followup.py` 是追问信号器；`tools.py` 注册 GitHub/公司/简历 function tools |
+| `app/services/github/` | GitHub 核验 | REST 客户端 + OpenAI tools 定义；语义对齐 MCP，面试/准备 Agent 共用 |
+| `app/services/growth/` | 自我成长 | 候选人 GrowthRecord（报告路径）+ 系统 `system_learning.json` 聚合 |
 | `app/services/rag/` | RAG 多后端 | `base.py` 定义 `RAGBackend` 协议；`factory.build_rag_backend` 按 `RAGBackendKind` 选型（local/stepfun/none）；`_kb_data.py` 为纯数据层（`COLLECTION_NAME` / `_build_documents` / `format_context`），被 `company_rag` / `local_backend` / 测试共用，无业务依赖，避免循环导入 |
 | `app/services/rag/_kb_data.py` | RAG 纯数据层 | 集中持有 Chroma collection 名称、KB 文档构建、Chroma 目录解析、命中片段格式化；无业务依赖可被任一 RAG 后端与测试自由 import |
 | `app/services/rag/local_backend.py` | 本地 Chroma RAG | 调用 LLM 提供商的 OpenAI 兼容 `/embeddings`；默认后端，向后兼容 |
@@ -86,15 +88,17 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
   ▼
 [InterviewRunner.stream_turn]
   │ 1) 追问信号分析 (followup.py)
-  │ 2) RAG 检索 (company_rag.py)
+  │ 2) RAG 检索 (company_rag.py / StepFun retrieval)
   │ 3) 上下文压缩 (context/manager.py)  超阈值时触发
-  │ 4) 组装 system prompt + 历史 + 当前问题 → LLM
-  │ 5) 流式增量 → assistant_token
-  │ 6) assistant_done（含情绪、可播放 TTS b64）
+  │ 4) Function calling 工具循环（GitHub / 公司 / 简历 / 面经搜索，最多 N 轮）
+  │ 5) 组装 system prompt + 结构化记忆 + 历史 → LLM 流式
+  │ 6) assistant_token / assistant_done（含情绪）
   ▼
 [TTS Queue → Edge TTS]  ──► tts_audio 帧
   ▼
 [静默计时]  10s 内无新 partial → silence_timeout → 触发追问
+  ▼
+[结束] generate_report → GrowthRecord + system_learning.json
 ```
 
 ## 5. 安全边界（已实现）
@@ -125,6 +129,8 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
 | 加一种面试工作流（System Design Round / Coding Round） | `app/services/interview/workflows.py` 注册即可；`options.workflow_types` 自动暴露 |
 | 加一种追问信号维度 | `app/services/interview/followup.py` 新增分类 + 正则 |
 | 加一种企业知识库 / KB 源 | `app/services/company/knowledge.py` 增加元数据；如需新 RAG 后端，实现 `RAGBackend` 协议 + 在 `app/services/rag/factory.py` 注册即可；`_kb_data.py` 持有与后端无关的纯数据/工具函数 |
+| 加 GitHub / 外部核验工具 | `app/services/github/tools.py` 增加 tool definition + `execute_github_tool` 分支；面试侧自动暴露 |
+| 加系统学习信号 | `app/services/growth/learning.py` 扩展 `record_interview_learning` 字段 |
 | 加前端页面 | `frontend/src/app/<route>/page.tsx` + `src/lib/api.ts` 新方法 + `Sidebar.tsx` nav 数组 |
 | 加前端事件类型 | 仅在 `src/types/index.ts` 增加 discriminated union 成员；所有 on() 回调自动收紧 |
 | 加全局 Toast 类型 | 已在 `src/components/Toast.tsx` 注册；按需调用 `toast.success/error/...` |

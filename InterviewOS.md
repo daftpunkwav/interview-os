@@ -52,6 +52,42 @@ agent需要最少40分钟的面试时长.需要有优秀的上下文管理和工
 
 **关于 MVP：** 你在 RepoPilot 上已经踩过"文档写太多、backend 没开工"的坑。这个项目比 RepoPilot 更庞大——语音实时管线本身就是一个子系统级工程量。建议第一版先砍掉摄像头/语音，纯文字面试打通 Interviewer Agent + GitHub MCP + 上下文管理这条核心链路，验证"追问是否像真人"这个最难的点，再往外扩语音和公司模拟。 
 
+---
+
+## 产品决策（已确认，2026-07）
+
+> 以下为项目所有者对 Claude / GPT 开放问题的落地决策，覆盖权威设想。
+
+### 自我成长：两者都要
+
+1. **候选人成长**：`GrowthRecord` + 成长页弱项聚合 / 训练计划 / 历史报告。
+2. **系统迭代**：`backend/data/system_learning.json` 记录工具命中、公司场次、薄弱线索；成长页「系统自我成长」区块展示。
+
+### GitHub 接入方式
+
+- 采用 **GitHub REST 工具层**（语义对齐常见 GitHub MCP：`github_get_user` / `list_repos` / `get_readme` / `list_commits` / `list_pulls` / `get_file` / `languages`）。
+- 可选 `GITHUB_TOKEN` 提高配额；未配置仍可访问公开数据。
+- 面试 Runner 通过 OpenAI function calling 循环调用，结果写入 `agent_state.github_findings`。
+
+### RAG 边界（采纳 Claude 建议）
+
+- 简历 / GitHub：全文或工具 fetch，不走向量检索。
+- 公司面经 / 风格：Chroma 或 StepFun retrieval RAG。
+
+### 上下文（40 分钟）
+
+- 结构化 `agent_state`：`asked_questions` / `weak_points` / `github_findings` / `tool_trace`。
+- `compress_messages` 在 context window 30% 阈值触发摘要压缩。
+
+### 面经数据
+
+- 内置种子公司知识 + 用户/Agent 检索；不实施大规模爬虫（合规）。
+
+### 人像与语音
+
+- 面试官：CSS 拟真半身像 + 口型/眨眼/情绪（可替换 Live2D）。
+- 语音：Edge TTS 串行队列 + faster-whisper STT + 摄像头多模态。
+
 
 
 # gpt的建议

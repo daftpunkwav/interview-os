@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### 功能（Features）
+- **GitHub 工具层** `app/services/github/`：REST 客户端 + OpenAI function tools（用户/仓库/README/commit/PR/Issue/文件/语言）
+- **面试 Agent 工具循环**：`InterviewRunner._run_tool_rounds` 支持 GitHub / 公司知识 / 简历项目 / 面经搜索；无 tool_calls 时短路避免二次 LLM
+- **富简历评价**：多维度 `ResumeAnalysis`（8 维分数、ATS、风险点、改写示例、预测题、overall_narrative）；前端深度展示
+- **简历删除** `DELETE /api/v1/resume/{id}`
+- **档案扩展**：github_username / portfolio / linkedin / city / languages / career_highlights / remote / notice_period
+- **拟真人像**：`InterviewerAvatar` CSS 半身像 + 口型/眨眼/情绪
+- **系统自我成长**：`system_learning.json` + `GET /api/v1/reports/growth/system-insights`
+- **结构化会话记忆**：asked_questions / weak_points / github_findings / tool_trace
+- Prep Agent 支持 GitHub 工具标记调用
+
 ### 安全（Security）
 - `app/core/security.py`：新增 sanitize_filename / assert_within_dir / is_safe_http_url / redact_api_key
 - `app/core/secrets.py`：API Key at-rest 加密（HMAC + XOR 流；PBKDF2 派生密钥）

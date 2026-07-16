@@ -71,9 +71,11 @@ def test_factory_returns_null_rag_when_disabled() -> None:
 
 def test_local_embedding_rag_satisfies_protocol(tmp_path, monkeypatch) -> None:
     """使用 tmp_path 隔离 Chroma 目录,验证 LocalEmbeddingRAG 满足 RAGBackend 协议。"""
-    from app.services.rag import company_rag
+    from app.services.rag import _kb_data, local_backend
 
-    monkeypatch.setattr(company_rag, "_data_dir", lambda: tmp_path / "chroma")
+    # local_backend 从 _kb_data 绑定 _data_dir，两处都需 patch
+    monkeypatch.setattr(_kb_data, "_data_dir", lambda: tmp_path / "chroma")
+    monkeypatch.setattr(local_backend, "_data_dir", lambda: tmp_path / "chroma")
     rag = LocalEmbeddingRAG(llm=FakeLLMClient(), settings=_make_settings())
     assert isinstance(rag, RAGBackend)
     assert rag.is_empty() is True
@@ -353,7 +355,7 @@ def _make_session(db) -> Any:
 
 
 def test_interview_runner_collects_stepfun_tools(db) -> None:
-    """当 rag 为 StepFunRetrievalRAG 且就绪时,_collect_chat_tools 应返回单元素列表。"""
+    """StepFun 就绪时 tools 应包含 retrieval + 面试 function tools。"""
     from app.services.interview.runner import InterviewRunner
 
     session = _make_session(db)
@@ -364,23 +366,48 @@ def test_interview_runner_collects_stepfun_tools(db) -> None:
     runner = InterviewRunner(session=session, llm=FakeLLMClient(), rag=rag)
     tools = runner._collect_chat_tools()
     assert tools is not None
-    assert len(tools) == 1
-    assert tools[0]["type"] == "retrieval"
+    assert any(t.get("type") == "retrieval" for t in tools)
+    # 同时包含 GitHub 等 function tools
+    assert any(
+        t.get("type") == "function" and (t.get("function") or {}).get("name", "").startswith("github_")
+        for t in tools
+    )
 
 
-def test_interview_runner_no_tools_when_rag_unready(db) -> None:
+def test_interview_runner_stream_tools_skip_functions(db) -> None:
+    """流式阶段 include_function_tools=False 时仅保留 retrieval。"""
     from app.services.interview.runner import InterviewRunner
 
     session = _make_session(db)
     rag = StepFunRetrievalRAG(llm=FakeLLMClient(api_key="sk-test"), settings=_make_settings())
-    # _ready=False(默认)
+    rag._vector_store_id = "1712"
+    rag._ready = True
     runner = InterviewRunner(session=session, llm=FakeLLMClient(), rag=rag)
-    assert runner._collect_chat_tools() is None
+    tools = runner._collect_chat_tools(include_function_tools=False)
+    assert tools is not None
+    assert len(tools) == 1
+    assert tools[0]["type"] == "retrieval"
 
 
-def test_interview_runner_no_tools_when_no_rag(db) -> None:
+def test_interview_runner_no_retrieval_when_rag_unready(db) -> None:
+    """RAG 未就绪时仍可有 function tools（GitHub 等）。"""
+    from app.services.interview.runner import InterviewRunner
+
+    session = _make_session(db)
+    rag = StepFunRetrievalRAG(llm=FakeLLMClient(api_key="sk-test"), settings=_make_settings())
+    runner = InterviewRunner(session=session, llm=FakeLLMClient(), rag=rag)
+    tools = runner._collect_chat_tools()
+    assert tools is not None
+    assert all(t.get("type") != "retrieval" for t in tools)
+    assert any((t.get("function") or {}).get("name", "").startswith("github_") for t in tools)
+
+
+def test_interview_runner_function_tools_without_rag(db) -> None:
+    """无 RAG 时仍暴露面试 function tools。"""
     from app.services.interview.runner import InterviewRunner
 
     session = _make_session(db)
     runner = InterviewRunner(session=session, llm=FakeLLMClient(), rag=None)
-    assert runner._collect_chat_tools() is None
+    tools = runner._collect_chat_tools()
+    assert tools is not None
+    assert any((t.get("function") or {}).get("name") == "lookup_resume_projects" for t in tools)
