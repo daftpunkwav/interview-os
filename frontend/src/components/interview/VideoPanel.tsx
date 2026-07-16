@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef, forwardRef, useImperativeHandle, useCallback } from "react";
-import { Video, VideoOff } from "lucide-react";
+import { Video, VideoOff, Mic, MicOff } from "lucide-react";
 import type { FaceAnalysis as BaseFaceAnalysis } from "@/types";
+import { cn } from "@/lib/utils";
 
 /** VideoPanel 内部使用的扩展版人脸分析字段，保持向后兼容。 */
 export interface FaceAnalysis extends BaseFaceAnalysis {
@@ -22,10 +23,23 @@ interface VideoPanelProps {
   enabled: boolean;
   micActive?: boolean;
   voiceStatus?: string;
+  /** light 用于普通页面；dark 用于面试房间 */
+  variant?: "light" | "dark";
+  className?: string;
 }
 
 export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
-  function VideoPanel({ onFaceAnalysis, enabled, micActive = false, voiceStatus = "未开启" }, ref) {
+  function VideoPanel(
+    {
+      onFaceAnalysis,
+      enabled,
+      micActive = false,
+      voiceStatus = "未开启",
+      variant = "light",
+      className,
+    },
+    ref,
+  ) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [cameraOn, setCameraOn] = useState(false);
@@ -33,6 +47,7 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
     const faceDetectorRef = useRef<BrowserFaceDetector | null>(null);
     const [faceStatus, setFaceStatus] = useState<string>("未检测");
     const jitterHistory = useRef<number[]>([]);
+    const isDark = variant === "dark";
 
     useImperativeHandle(ref, () => ({
       captureFrame: () => {
@@ -58,7 +73,6 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
         }
         setCameraOn(true);
 
-        // 初始化浏览器原生人脸检测（Chrome / Edge 支持）
         if ("FaceDetector" in window) {
           try {
             faceDetectorRef.current = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
@@ -87,10 +101,9 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
     useEffect(() => {
       if (enabled) void startCamera();
       return () => stopCamera();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [enabled]);
 
-    // 真实面部分析：FaceDetector API + 面部位置抖动估计紧张度
     const analyzeFace = useCallback(async () => {
       const video = videoRef.current;
       if (!video || !cameraOn || video.readyState < 2) return;
@@ -137,7 +150,7 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
                 ? "已检测人脸 · 未看镜头"
                 : analysis.nervousness > 0.5
                   ? "已检测人脸 · 略显紧张"
-                  : "已检测人脸 · 状态正常"
+                  : "已检测人脸 · 状态正常",
             );
           } else {
             setFaceStatus("未检测到人脸");
@@ -146,7 +159,6 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
           setFaceStatus("面部分析暂时不可用");
         }
       } else {
-        // 无 FaceDetector 时仅标记摄像头已开启
         analysis.face_detected = true;
         analysis.looking_away = false;
         setFaceStatus("摄像头已开启（浏览器不支持人脸检测 API）");
@@ -172,45 +184,68 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
     if (!enabled) return null;
 
     return (
-      <div className="rounded-xl border border-[var(--border)] bg-black/5 overflow-hidden">
-        <div className="relative aspect-video bg-gray-900">
+      <div
+        className={cn(
+          "rounded-xl overflow-hidden flex flex-col h-full min-h-0",
+          isDark
+            ? "border border-white/10 bg-black/40"
+            : "border border-[var(--border)] bg-black/5",
+          className,
+        )}
+      >
+        <div className="relative flex-1 min-h-0 bg-gray-950">
           <video
             ref={videoRef}
             autoPlay
             muted
             playsInline
-            className={`w-full h-full object-cover mirror ${cameraOn ? "" : "hidden"}`}
+            className={cn(
+              "w-full h-full object-cover",
+              cameraOn ? "" : "hidden",
+            )}
+            style={{ transform: "scaleX(-1)" }}
           />
           {!cameraOn && (
-            <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">
-              摄像头未开启
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-gray-500 text-sm">
+              <VideoOff size={28} className="opacity-50" />
+              <span>摄像头未开启</span>
             </div>
           )}
+          {/* 悬浮状态条 */}
+          <div className="absolute bottom-0 inset-x-0 p-2.5 bg-gradient-to-t from-black/70 via-black/30 to-transparent">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] text-white/80 truncate">{faceStatus}</p>
+                <p
+                  className={cn(
+                    "text-[11px] truncate flex items-center gap-1 mt-0.5",
+                    micActive ? "text-emerald-300" : "text-white/50",
+                  )}
+                >
+                  {micActive ? <Mic size={11} /> : <MicOff size={11} />}
+                  {micActive ? voiceStatus : "等待你的回合…"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={toggleCamera}
+                className={cn(
+                  "shrink-0 p-2 rounded-full transition-colors",
+                  cameraOn
+                    ? "bg-white/15 text-white hover:bg-white/25"
+                    : "bg-white/10 text-gray-400 hover:bg-white/15",
+                )}
+                title={cameraOn ? "关闭摄像头" : "开启摄像头"}
+              >
+                {cameraOn ? <Video size={16} /> : <VideoOff size={16} />}
+              </button>
+            </div>
+          </div>
           <canvas ref={canvasRef} className="hidden" />
         </div>
-        <div className="flex items-center justify-center gap-3 p-3 bg-[var(--card)]">
-          <button
-            onClick={toggleCamera}
-            className={`p-2.5 rounded-full transition-colors ${cameraOn ? "bg-brand-100 text-brand-700" : "bg-gray-100 text-gray-500"}`}
-            title={cameraOn ? "关闭摄像头" : "开启摄像头"}
-          >
-            {cameraOn ? <Video size={18} /> : <VideoOff size={18} />}
-          </button>
-        </div>
-        <div className="px-3 pb-3 space-y-1 text-xs text-[var(--muted)]">
-          <p>视频：{faceStatus}</p>
-          <p className={micActive ? "text-green-400" : ""}>
-            语音：{micActive ? voiceStatus : "等待你的回合…"}
-          </p>
-        </div>
-        <style jsx>{`
-          .mirror {
-            transform: scaleX(-1);
-          }
-        `}</style>
       </div>
     );
-  }
+  },
 );
 
 interface DetectedFace {

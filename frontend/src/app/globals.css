@@ -3,11 +3,27 @@
 @tailwind utilities;
 
 :root {
-  --background: #fafbfc;
-  --foreground: #1a1a2e;
+  --background: #f6f7fb;
+  --foreground: #0f172a;
   --card: #ffffff;
+  --card-elevated: #ffffff;
   --border: #e2e8f0;
+  --border-strong: #cbd5e1;
   --muted: #64748b;
+  --muted-soft: #94a3b8;
+  --brand: #5c7cfa;
+  --brand-strong: #4c6ef5;
+  --brand-soft: #eef2ff;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 12px 40px rgba(15, 23, 42, 0.08);
+  --radius: 12px;
+  --radius-lg: 16px;
+  --sidebar-width: 240px;
+  --sidebar-collapsed: 64px;
 }
 
 body {
@@ -16,11 +32,13 @@ body {
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 /* 自定义滚动条 */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -33,7 +51,7 @@ body {
   background: #94a3b8;
 }
 
-/* 选中文本样式 */
+/* 选中文本 */
 ::selection {
   background: rgba(92, 124, 250, 0.2);
   color: var(--foreground);
@@ -53,28 +71,103 @@ body {
   animation: stream-fade-in 0.14s ease-out;
 }
 
-/* 输入框焦点样式 */
-input:focus,
-textarea:focus,
-select:focus {
+/* 焦点环：仅键盘导航时显示，避免鼠标点击闪烁 */
+:focus {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(92, 124, 250, 0.15);
+}
+:focus-visible {
+  outline: 2px solid rgba(92, 124, 250, 0.55);
+  outline-offset: 2px;
 }
 
-/* 按钮点击反馈 */
-button:active {
-  transform: scale(0.98);
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(92, 124, 250, 0.18);
+  border-color: #91a7ff;
 }
 
-/* 平滑过渡 */
-* {
-  transition-property: background-color, border-color, color, fill, stroke;
+/* 可交互控件的轻量过渡（避免 * 全局 transition 造成动画卡顿） */
+a,
+button,
+input,
+textarea,
+select,
+[role="button"] {
+  transition-property: background-color, border-color, color, box-shadow, opacity, transform;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
 
-/* 禁用默认动画的元素 */
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
 .no-transition,
 .no-transition * {
   transition: none !important;
+}
+
+@layer components {
+  .page-shell {
+    @apply p-5 sm:p-6 lg:p-8 max-w-6xl mx-auto w-full;
+  }
+
+  .page-header {
+    @apply flex items-center gap-3 mb-6;
+  }
+
+  .page-title {
+    @apply text-2xl font-bold tracking-tight text-slate-900;
+  }
+
+  .page-desc {
+    @apply text-sm text-[var(--muted)];
+  }
+
+  .surface-card {
+    @apply rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow-sm)];
+  }
+
+  .icon-badge {
+    @apply w-10 h-10 rounded-xl flex items-center justify-center shrink-0;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl
+      bg-brand-600 text-white text-sm font-medium
+      shadow-lg shadow-brand-500/25
+      hover:bg-brand-700 hover:shadow-brand-500/35
+      disabled:opacity-60 disabled:cursor-not-allowed disabled:shadow-none;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl
+      border border-[var(--border)] bg-[var(--card)] text-sm font-medium text-slate-700
+      hover:border-brand-300 hover:bg-brand-50/50
+      disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .field-input {
+    @apply w-full px-3 py-2 rounded-xl border border-[var(--border)] bg-white text-sm
+      placeholder:text-slate-400
+      focus:outline-none focus:ring-2 focus:ring-brand-300/60 focus:border-brand-300;
+  }
+}
+
+/* 减少动态：尊重系统偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -152,24 +152,24 @@ export default function HomePage() {
       </div>
 
       {/* 内容层 */}
-      <div className="relative z-10 p-8 max-w-5xl mx-auto">
+      <div className="relative z-10 p-5 sm:p-8 max-w-5xl mx-auto">
         {/* Hero 区域 */}
-        <FadeInView className="mb-16 text-center pt-8">
+        <FadeInView className="mb-12 sm:mb-16 text-center pt-4 sm:pt-8">
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{
               duration: 0.8,
-              ease: [0.34, 1.56, 0.64, 1], // 弹性缓动
+              ease: [0.34, 1.56, 0.64, 1],
             }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-50 text-brand-600 text-sm font-medium mb-6"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-50 text-brand-600 text-sm font-medium mb-6 border border-brand-100 shadow-sm"
           >
             <Sparkles size={16} />
             <span>AI 驱动的真实面试模拟系统</span>
           </motion.div>
 
           <motion.h1
-            className="text-5xl md:text-6xl font-bold mb-4 tracking-tight"
+            className="text-4xl sm:text-5xl md:text-6xl font-bold mb-4 tracking-tight"
             initial={{ y: 30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.7, delay: 0.1, ease: [0.25, 0.1, 0.25, 1] }}
@@ -180,7 +180,7 @@ export default function HomePage() {
           </motion.h1>
 
           <motion.p
-            className="text-xl text-[var(--muted)] max-w-2xl mx-auto leading-relaxed"
+            className="text-lg sm:text-xl text-[var(--muted)] max-w-2xl mx-auto leading-relaxed"
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.6, delay: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
@@ -191,7 +191,7 @@ export default function HomePage() {
           </motion.p>
 
           <motion.div
-            className="mt-8 flex gap-4 justify-center"
+            className="mt-8 flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center items-stretch sm:items-center"
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.6, delay: 0.3 }}
@@ -199,10 +199,10 @@ export default function HomePage() {
             <MagneticButton
               renderAs="a"
               href="/interview"
-              className="px-8 py-3 bg-brand-600 text-white rounded-xl font-medium shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 transition-shadow"
+              className="px-8 py-3 bg-brand-600 text-white rounded-xl font-medium shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 hover:bg-brand-700"
               strength={0.2}
             >
-              <span className="flex items-center gap-2">
+              <span className="flex items-center justify-center gap-2">
                 立即开始
                 <ArrowRight size={18} />
               </span>
@@ -210,7 +210,7 @@ export default function HomePage() {
             <MagneticButton
               renderAs="a"
               href="/resume"
-              className="px-8 py-3 border border-[var(--border)] bg-[var(--card)] rounded-xl font-medium hover:border-brand-300 transition-colors"
+              className="px-8 py-3 border border-[var(--border)] bg-[var(--card)] rounded-xl font-medium hover:border-brand-300 shadow-sm"
               strength={0.15}
             >
               上传简历

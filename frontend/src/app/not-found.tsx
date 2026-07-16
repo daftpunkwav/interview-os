@@ -1,19 +1,19 @@
 import Link from "next/link";
-import { Compass } from "lucide-react";
+import { Compass, Home } from "lucide-react";
 
 export default function NotFound() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6 text-center">
-      <Compass className="text-gray-400 mb-4" size={48} />
-      <h1 className="text-3xl font-semibold mb-2">404 — 找不到该页面</h1>
-      <p className="text-gray-500 max-w-md mb-6">
+    <main className="min-h-[70vh] flex flex-col items-center justify-center px-6 text-center">
+      <div className="w-16 h-16 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center mb-5">
+        <Compass className="text-slate-400" size={28} />
+      </div>
+      <p className="text-sm font-medium text-brand-600 mb-2">404</p>
+      <h1 className="text-2xl font-semibold tracking-tight mb-2">找不到该页面</h1>
+      <p className="text-[var(--muted)] max-w-md mb-8 leading-relaxed">
         你访问的链接可能已被删除、合并，或者从来没有过。
       </p>
-      <Link
-        href="/"
-        className="inline-flex items-center px-4 py-2 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition"
-      >
-        返回首页
+      <Link href="/" className="btn-primary">
+        <Home size={16} /> 返回首页
       </Link>
     </main>
   );

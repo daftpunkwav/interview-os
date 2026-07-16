@@ -18,7 +18,21 @@ module.exports = {
         },
       },
       fontFamily: {
-        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
+        sans: [
+          "var(--font-inter)",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "PingFang SC",
+          "Hiragino Sans GB",
+          "Microsoft YaHei",
+          "Noto Sans SC",
+          "sans-serif",
+        ],
+      },
+      boxShadow: {
+        soft: "0 4px 16px rgba(15, 23, 42, 0.06)",
+        glow: "0 8px 28px rgba(76, 110, 245, 0.22)",
       },
       animation: {
         "fade-in": "fadeIn 0.5s ease-out",

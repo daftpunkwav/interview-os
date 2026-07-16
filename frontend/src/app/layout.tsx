@@ -4,7 +4,11 @@ import "./globals.css";
 import { AppShell } from "@/components/layout/AppShell";
 import { Toaster } from "@/components/Toast";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "InterviewOS — AI 智能模拟面试",
@@ -13,13 +17,17 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#fafbfc",
+  themeColor: "#f6f7fb",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-CN">
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body
+        className={`${inter.variable} font-sans antialiased text-slate-900 bg-[var(--background)]`}
+      >
         <AppShell>{children}</AppShell>
         <Toaster />
       </body>

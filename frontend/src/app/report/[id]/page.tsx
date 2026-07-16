@@ -26,14 +26,18 @@ export default function ReportPage() {
   }, [sessionId]);
 
   if (loading) {
-    return <div className="p-8 flex items-center gap-2"><Loader2 className="animate-spin" size={18} /> 生成报告中...</div>;
+    return (
+      <div className="page-shell flex items-center justify-center min-h-[40vh] gap-2 text-[var(--muted)]">
+        <Loader2 className="animate-spin text-brand-500" size={18} /> 生成报告中…
+      </div>
+    );
   }
 
   if (error || !report) {
     return (
-      <div className="p-8 text-center">
+      <div className="page-shell text-center py-16">
         <p className="text-[var(--muted)] mb-4">{error || "报告不可用"}</p>
-        <Link href="/interview" className="text-brand-600 hover:underline">返回面试</Link>
+        <Link href="/interview" className="btn-primary">返回面试</Link>
       </div>
     );
   }
@@ -41,19 +45,21 @@ export default function ReportPage() {
   const scores = report.score_breakdown;
 
   return (
-    <div className="p-8 max-w-3xl">
-      <Link href="/history" className="text-sm text-[var(--muted)] hover:text-brand-600 flex items-center gap-1 mb-6">
+    <div className="page-shell max-w-3xl">
+      <Link href="/history" className="text-sm text-[var(--muted)] hover:text-brand-600 flex items-center gap-1 mb-6 w-fit">
         <ArrowLeft size={14} /> 返回记录
       </Link>
 
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 surface-card p-5">
         <div>
-          <h1 className="text-2xl font-bold">面试评估报告</h1>
-          {duration && <p className="text-sm text-[var(--muted)]">面试时长：{duration} 分钟</p>}
+          <h1 className="text-2xl font-bold tracking-tight">面试评估报告</h1>
+          {duration != null && (
+            <p className="text-sm text-[var(--muted)] mt-1">面试时长：{duration} 分钟</p>
+          )}
         </div>
-        <div className="text-center">
-          <div className="text-4xl font-bold text-brand-600">{report.overall_score}</div>
-          <div className="text-xs text-[var(--muted)]">综合评分</div>
+        <div className="text-center sm:text-right px-4 py-2 rounded-2xl bg-brand-50 border border-brand-100">
+          <div className="text-4xl font-bold text-brand-600 tabular-nums">{report.overall_score}</div>
+          <div className="text-xs text-[var(--muted)] mt-0.5">综合评分</div>
         </div>
       </div>
 
@@ -117,11 +123,11 @@ export default function ReportPage() {
         </div>
       )}
 
-      <div className="mt-8 flex gap-3">
-        <Link href="/interview" className="btn-primary flex items-center gap-2 px-5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700">
+      <div className="mt-8 flex flex-wrap gap-3">
+        <Link href="/interview" className="btn-primary">
           <RefreshCw size={16} /> 再来一次
         </Link>
-        <Link href="/growth" className="px-5 py-2.5 rounded-lg border border-[var(--border)] text-sm font-medium hover:bg-gray-50">
+        <Link href="/growth" className="btn-secondary">
           查看成长记录
         </Link>
       </div>

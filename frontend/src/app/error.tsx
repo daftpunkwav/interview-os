@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, RotateCw } from "lucide-react";
+import { AlertTriangle, RotateCw, Home } from "lucide-react";
 
 interface Props {
   error: Error & { digest?: string };
@@ -24,31 +24,25 @@ export default function GlobalError({ error, reset }: Props) {
   }, [error]);
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6 text-center">
-      <AlertTriangle className="text-amber-500 mb-4" size={48} />
-      <h1 className="text-2xl font-semibold mb-2">页面出现异常</h1>
-      <p className="text-gray-500 max-w-md mb-6">
+    <main className="min-h-[70vh] flex flex-col items-center justify-center px-6 text-center">
+      <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center mb-5">
+        <AlertTriangle className="text-amber-500" size={28} />
+      </div>
+      <h1 className="text-2xl font-semibold tracking-tight mb-2">页面出现异常</h1>
+      <p className="text-[var(--muted)] max-w-md mb-8 leading-relaxed">
         {error.message || "未知错误，请稍后再试。"}
         {error.digest && (
-          <span className="block text-xs text-gray-400 mt-2">
+          <span className="block text-xs text-slate-400 mt-2 font-mono">
             trace: {error.digest}
           </span>
         )}
       </p>
-      <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={() => reset()}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition"
-        >
+      <div className="flex flex-wrap gap-3 justify-center">
+        <button type="button" onClick={() => reset()} className="btn-primary">
           <RotateCw size={16} /> 重试
         </button>
-        <button
-          type="button"
-          onClick={() => router.push("/")}
-          className="inline-flex items-center px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 transition"
-        >
-          返回首页
+        <button type="button" onClick={() => router.push("/")} className="btn-secondary">
+          <Home size={16} /> 返回首页
         </button>
       </div>
     </main>

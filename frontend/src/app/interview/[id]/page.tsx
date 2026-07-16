@@ -10,7 +10,8 @@ import { useAudioRecorder } from "@/features/media/useAudioRecorder";
 import { useTTSPlayer } from "@/features/media/useTTSPlayer";
 import { api } from "@/lib/api";
 import { PHASE_LABELS } from "@/config/phases";
-import { Flag, Loader2, Send } from "lucide-react";
+import { Flag, Loader2, Send, WifiOff, Radio } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function InterviewRoomPage() {
   const params = useParams();
@@ -200,68 +201,105 @@ export default function InterviewRoomPage() {
       ? `识别中「${partialText}」`
       : "正在聆听，停顿 1.2 秒自动发送";
 
+  const turnLabel: Record<string, string> = {
+    AI_SPEAKING: "面试官发言中",
+    USER_SPEAKING: "请你回答",
+    PROCESSING: "思考中",
+    IDLE: "待命",
+  };
+
   if (!connected) {
     if (connectionState === "failed") {
       return (
-        <div className="h-screen flex flex-col items-center justify-center gap-3 text-gray-300">
-          <p className="text-base">无法连接到面试服务</p>
-          <p className="text-sm text-gray-500">已尝试 5 次仍失败，请检查后端服务或网络</p>
-          <button
-            type="button"
-            onClick={() => retryNow()}
-            className="mt-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm hover:bg-brand-700"
-          >
-            重新连接
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push("/interview")}
-            className="text-sm text-gray-400 hover:text-gray-200 underline"
-          >
-            返回面试配置
-          </button>
+        <div className="h-screen flex flex-col items-center justify-center gap-4 bg-gray-950 text-gray-200 px-6 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
+            <WifiOff className="text-rose-400" size={26} />
+          </div>
+          <div>
+            <p className="text-base font-medium">无法连接到面试服务</p>
+            <p className="text-sm text-gray-500 mt-1.5 max-w-sm">
+              已尝试 5 次仍失败，请确认后端已启动（默认 :8000）或检查网络
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 mt-1">
+            <button
+              type="button"
+              onClick={() => retryNow()}
+              className="px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 shadow-lg shadow-brand-500/20"
+            >
+              重新连接
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/interview")}
+              className="px-5 py-2.5 rounded-xl border border-white/10 text-sm text-gray-300 hover:bg-white/5"
+            >
+              返回配置
+            </button>
+          </div>
         </div>
       );
     }
     return (
-      <div className="h-screen flex items-center justify-center gap-2 text-gray-500">
-        <Loader2 className="animate-spin" size={20} />
-        {connectionState === "reconnecting" ? "重新连接中…" : "连接面试服务..."}
+      <div className="h-screen flex flex-col items-center justify-center gap-3 bg-gray-950 text-gray-400">
+        <Loader2 className="animate-spin text-brand-400" size={28} />
+        <p className="text-sm">
+          {connectionState === "reconnecting" ? "重新连接中…" : "连接面试服务…"}
+        </p>
       </div>
     );
   }
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 text-white">
-      <header className="flex items-center justify-between px-4 py-2 border-b border-white/10 bg-black/40 shrink-0">
-        <div className="flex items-center gap-3 text-sm">
-          <span>模拟面试 #{sessionId}</span>
-          <span className="px-2 py-0.5 rounded bg-brand-600/30 text-brand-200 text-xs">
+      <header className="flex items-center justify-between gap-3 px-3 sm:px-4 py-2.5 border-b border-white/10 bg-black/50 backdrop-blur-sm shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 text-sm min-w-0">
+          <span className="font-medium text-white/90 shrink-0">面试 #{sessionId}</span>
+          <span className="px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-200 text-xs border border-brand-400/20 truncate">
             {PHASE_LABELS[currentPhase] || currentPhase || "准备中"}
           </span>
-          <span className="text-xs text-gray-400">回合: {turnState}</span>
+          <span
+            className={cn(
+              "hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border",
+              turnState === "USER_SPEAKING"
+                ? "bg-emerald-500/15 text-emerald-300 border-emerald-400/20"
+                : turnState === "AI_SPEAKING"
+                  ? "bg-amber-500/15 text-amber-200 border-amber-400/20"
+                  : "bg-white/5 text-gray-400 border-white/10",
+            )}
+          >
+            <Radio size={11} className={turnState === "USER_SPEAKING" ? "animate-pulse" : ""} />
+            {turnLabel[turnState] || turnState}
+          </span>
         </div>
-        <button onClick={handleFinish} className="text-xs text-gray-400 hover:text-red-400 flex items-center gap-1">
-          <Flag size={14} /> 结束
+        <button
+          type="button"
+          onClick={handleFinish}
+          className="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-white/10 text-gray-300 hover:text-rose-300 hover:border-rose-400/40 hover:bg-rose-500/10 flex items-center gap-1.5 transition-colors"
+        >
+          <Flag size={13} /> 结束面试
         </button>
       </header>
 
-      <div className="flex-1 grid grid-cols-[1fr_2fr] gap-2 p-2 min-h-0">
-        {/* 左侧 */}
-        <div className="grid grid-rows-[1.618fr_1fr] gap-2 min-h-0">
-          <div className="rounded-xl overflow-hidden border border-white/10">
-            <VideoPanel
-              ref={videoRef}
-              enabled
-              micActive={isRecording}
-              voiceStatus={voiceStatus}
-              onFaceAnalysis={handleFaceAnalysis}
-            />
-          </div>
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(280px,1fr)_minmax(0,1.8fr)] gap-2 p-2 min-h-0 overflow-hidden">
+        {/* 左侧：摄像头 + 对话 */}
+        <div className="grid grid-rows-[minmax(140px,0.9fr)_minmax(180px,1.1fr)] lg:grid-rows-[1.2fr_1fr] gap-2 min-h-0 order-2 lg:order-1">
+          <VideoPanel
+            ref={videoRef}
+            enabled
+            variant="dark"
+            micActive={isRecording}
+            voiceStatus={voiceStatus}
+            onFaceAnalysis={handleFaceAnalysis}
+          />
 
-          {/* 对话区 */}
-          <div className="rounded-xl border border-white/10 bg-black/30 flex flex-col min-h-0">
+          <div className="rounded-xl border border-white/10 bg-black/35 flex flex-col min-h-0 backdrop-blur-[2px]">
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
+              {messages.length === 0 && !streamingText && (
+                <p className="text-xs text-gray-500 text-center py-6">
+                  面试即将开始，请保持镜头对准自己
+                </p>
+              )}
               {messages.map((m, i) => (
                 <ChatBubble key={i} role={m.role} content={m.content} />
               ))}
@@ -271,10 +309,9 @@ export default function InterviewRoomPage() {
               <div ref={chatEndRef} />
             </div>
 
-            {/* 手动输入 */}
             <div className="border-t border-white/10 p-2 flex gap-2 shrink-0">
               <input
-                className="flex-1 px-3 py-2 rounded-lg bg-white/10 border border-white/10 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-40"
+                className="flex-1 px-3 py-2.5 rounded-xl bg-white/8 border border-white/10 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400/40 disabled:opacity-40"
                 placeholder={canInput ? "输入文字回答，或开麦说话…" : "等待面试官…"}
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
@@ -285,7 +322,7 @@ export default function InterviewRoomPage() {
                 type="button"
                 onClick={handleSend}
                 disabled={!canSend}
-                className="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg bg-brand-600 text-white disabled:bg-white/10 disabled:text-gray-500"
+                className="shrink-0 w-10 h-10 flex items-center justify-center rounded-xl bg-brand-600 text-white hover:bg-brand-500 disabled:bg-white/8 disabled:text-gray-500 transition-colors"
                 title={inputText.trim() ? "发送文字" : isRecording ? "发送语音" : "请输入或说话"}
               >
                 <Send size={16} />
@@ -294,20 +331,21 @@ export default function InterviewRoomPage() {
           </div>
         </div>
 
-        {/* 右侧 */}
-        <div className="grid grid-rows-[1.618fr_1fr] gap-2 min-h-0">
+        {/* 右侧：面试官 + 提纲 */}
+        <div className="grid grid-rows-[minmax(180px,1.4fr)_minmax(120px,0.85fr)] lg:grid-rows-[1.618fr_1fr] gap-2 min-h-0 order-1 lg:order-2">
           <InterviewerAvatar
             avatarId={sessionMeta.avatar_id}
             sceneId={sessionMeta.scene_id}
             emotion={emotion}
             speaking={aiSpeaking || turnState === "AI_SPEAKING"}
           />
-          <div className="rounded-xl border border-white/10 bg-black/40 p-4 overflow-y-auto flex flex-col min-h-0">
-            <div className="flex items-center justify-between mb-3 shrink-0">
-              <h3 className="text-sm font-medium">参考提纲</h3>
-              <label className="text-xs text-gray-400 flex items-center gap-1 cursor-pointer">
+          <div className="rounded-xl border border-white/10 bg-black/40 p-3.5 sm:p-4 overflow-y-auto flex flex-col min-h-0">
+            <div className="flex items-center justify-between mb-3 shrink-0 gap-2">
+              <h3 className="text-sm font-medium text-white/90">参考提纲</h3>
+              <label className="text-xs text-gray-400 flex items-center gap-1.5 cursor-pointer select-none">
                 <input
                   type="checkbox"
+                  className="rounded border-white/20 bg-white/10 text-brand-500 focus:ring-brand-500/40"
                   checked={showOutline}
                   onChange={(e) => {
                     setShowOutline(e.target.checked);
@@ -318,34 +356,44 @@ export default function InterviewRoomPage() {
                 显示参考
               </label>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs text-gray-300 mb-3 shrink-0">
-              <div>阶段：{PHASE_LABELS[currentPhase] || "—"}</div>
-              <div>Token 约：{tokenUsage}</div>
+            <div className="grid grid-cols-2 gap-2 text-xs text-gray-400 mb-3 shrink-0">
+              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 border border-white/5">
+                阶段：
+                <span className="text-gray-200 ml-1">
+                  {PHASE_LABELS[currentPhase] || "—"}
+                </span>
+              </div>
+              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 border border-white/5">
+                Token 约：
+                <span className="text-gray-200 ml-1">{tokenUsage}</span>
+              </div>
             </div>
 
             {!showOutline && (
-              <p className="text-xs text-gray-500">参考提纲已隐藏 — 高难度模式</p>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                参考提纲已隐藏 — 高难度模式，靠自己发挥
+              </p>
             )}
             {showOutline && hintLoading && (
               <div className="flex items-center gap-2 text-xs text-gray-400">
-                <Loader2 className="animate-spin" size={14} />
+                <Loader2 className="animate-spin text-brand-400" size={14} />
                 AI 正在生成参考回答…
               </div>
             )}
             {showOutline && !hintLoading && referenceHint && (
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto min-h-0">
                 {lastQuestion && (
-                  <p className="text-xs text-brand-300 mb-2 line-clamp-2">
+                  <p className="text-xs text-brand-300/90 mb-2 line-clamp-2 leading-relaxed">
                     针对：{lastQuestion}
                   </p>
                 )}
-                <div className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed bg-white/5 rounded-lg p-3 border border-white/10">
+                <div className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed bg-white/[0.04] rounded-xl p-3 border border-white/10">
                   {referenceHint}
                 </div>
               </div>
             )}
             {showOutline && !hintLoading && !referenceHint && (
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 leading-relaxed">
                 面试官提问后，AI 将根据你的简历生成参考回答要点。
               </p>
             )}
@@ -369,29 +417,34 @@ function ChatBubble({
   const isNudge = content.startsWith("[追问]");
 
   return (
-    <div className={`flex gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
+    <div className={cn("flex gap-2", isUser ? "flex-row-reverse" : "flex-row")}>
       <div
-        className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-          isUser ? "bg-brand-600 text-white" : "bg-amber-600/80 text-white"
-        }`}
+        className={cn(
+          "shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold",
+          isUser ? "bg-brand-600 text-white" : "bg-amber-500/90 text-white",
+        )}
       >
         {isUser ? "我" : "AI"}
       </div>
-      <div className={`max-w-[85%] ${isUser ? "items-end" : "items-start"} flex flex-col`}>
-        <span className="text-[10px] text-gray-500 mb-0.5">
+      <div className={cn("max-w-[85%] flex flex-col", isUser ? "items-end" : "items-start")}>
+        <span className="text-[10px] text-gray-500 mb-0.5 px-0.5">
           {isUser ? "候选人" : isNudge ? "面试官 · 追问" : "面试官"}
           {streaming && " · 输入中"}
         </span>
         <div
-          className={`px-3 py-2 rounded-xl text-sm leading-relaxed ${
+          className={cn(
+            "px-3 py-2 rounded-2xl text-sm leading-relaxed",
             isUser
-              ? "bg-brand-600 text-white rounded-tr-sm"
+              ? "bg-brand-600 text-white rounded-tr-md"
               : isNudge
-                ? "bg-amber-900/40 border border-amber-700/50 text-amber-100 rounded-tl-sm"
-                : "bg-white/10 text-gray-100 rounded-tl-sm"
-          }`}
+                ? "bg-amber-900/35 border border-amber-600/30 text-amber-50 rounded-tl-md"
+                : "bg-white/10 text-gray-100 rounded-tl-md border border-white/5",
+          )}
         >
           {content}
+          {streaming && (
+            <span className="inline-block w-1.5 h-3.5 ml-0.5 bg-brand-300/80 animate-pulse align-middle rounded-sm" />
+          )}
         </div>
       </div>
     </div>

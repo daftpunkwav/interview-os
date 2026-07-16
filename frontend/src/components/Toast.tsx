@@ -102,9 +102,9 @@ export function Toaster() {
     <div
       aria-live="polite"
       aria-atomic="true"
-      className="pointer-events-none fixed top-4 right-4 z-[1000] flex flex-col gap-2 max-w-sm w-[min(360px,90vw)]"
+      className="pointer-events-none fixed top-4 right-4 z-[1000] flex flex-col gap-2 max-w-sm w-[min(360px,calc(100vw-2rem))]"
     >
-      <AnimatePresence>
+      <AnimatePresence mode="popLayout">
         {items.map((t) => (
           <ToastView key={t.id} item={t} />
         ))}
@@ -129,22 +129,30 @@ function ToastView({ item }: { item: ToastItem }) {
     };
   }, [item.persist, close]);
 
+  const kindBorder: Record<ToastKind, string> = {
+    info: "border-sky-100",
+    success: "border-emerald-100",
+    warning: "border-amber-100",
+    error: "border-rose-100",
+  };
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, x: 24 }}
-      className="pointer-events-auto bg-white/95 dark:bg-zinc-900/95 border border-black/5 dark:border-white/10 rounded-lg shadow-lg p-3 flex items-start gap-3 backdrop-blur"
+      layout
+      initial={{ opacity: 0, y: -8, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, x: 24, scale: 0.98 }}
+      className={`pointer-events-auto bg-white/95 border ${kindBorder[item.kind]} rounded-xl shadow-lg shadow-slate-900/8 p-3.5 flex items-start gap-3 backdrop-blur-md`}
       role="status"
     >
-      <div className="mt-0.5">{ICONS[item.kind]}</div>
-      <p className="flex-1 text-sm text-zinc-800 dark:text-zinc-100 whitespace-pre-wrap">
+      <div className="mt-0.5 shrink-0">{ICONS[item.kind]}</div>
+      <p className="flex-1 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
         {item.message}
       </p>
       <button
         type="button"
         onClick={close}
-        className="text-zinc-400 hover:text-zinc-700 transition"
+        className="text-slate-400 hover:text-slate-700 shrink-0 p-0.5 rounded-md hover:bg-slate-100"
         aria-label="关闭"
       >
         <X size={14} />
