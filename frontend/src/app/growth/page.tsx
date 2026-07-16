@@ -18,8 +18,11 @@ import {
 import { AnimatedCounter } from "@/components/effects";
 import { LoadError } from "@/components/LoadError";
 
+type SystemInsights = Awaited<ReturnType<typeof api.getSystemInsights>>;
+
 export default function GrowthPage() {
   const [records, setRecords] = useState<GrowthRecord[]>([]);
+  const [insights, setInsights] = useState<SystemInsights | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -28,8 +31,12 @@ export default function GrowthPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const list = await api.getGrowthHistory();
+      const [list, sys] = await Promise.all([
+        api.getGrowthHistory(),
+        api.getSystemInsights().catch(() => null),
+      ]);
       setRecords(list);
+      setInsights(sys);
       const fallback = list[0];
       setSelectedId(fallback?.id ?? null);
     } catch (e) {
@@ -119,6 +126,34 @@ export default function GrowthPage() {
                 </div>
               )}
             </SectionCard>
+
+            {insights && (
+              <SectionCard title="系统自我成长" icon={BarChart3}>
+                <p className="text-xs text-[var(--muted)] mb-3">
+                  跨面试聚合：工具调用频率、公司练习分布、薄弱点沉淀（本地 memory）。
+                  {insights.interview_tools_enabled ? " 工具循环已开启。" : " 工具循环已关闭。"}
+                  {insights.github_token_configured ? " GitHub Token 已配置。" : " 未配置 GITHUB_TOKEN（公开 API 配额较低）。"}
+                </p>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  {Object.entries(insights.company_session_counts || {}).slice(0, 6).map(([k, v]) => (
+                    <div key={k} className="rounded-lg bg-slate-50 px-3 py-2 text-xs">
+                      <span className="text-[var(--muted)]">{k}</span>
+                      <span className="float-right font-semibold">{v} 场</span>
+                    </div>
+                  ))}
+                </div>
+                {insights.recent_probes && insights.recent_probes.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium mb-1.5">近期沉淀线索</p>
+                    <ul className="text-xs text-slate-600 space-y-1 max-h-28 overflow-y-auto">
+                      {insights.recent_probes.slice(0, 5).map((p, i) => (
+                        <li key={i}>· [{p.company || "—"}] {p.point}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </SectionCard>
+            )}
 
             <SectionCard title="训练历史" icon={Award}>
               {records.length > 0 ? (

@@ -2,7 +2,8 @@
 
 设计目标：
 - ws_handler / HTTP API / tests 都通过 :class:`InterviewRunner` 与面试流程交互。
-- 内部聚合 LLM 流式调用、句子切分、人脸分析提示、追问引导、阶段推进、状态保存。
+- 内部聚合 LLM 流式调用、句子切分、人脸分析提示、追问引导、状态推进、状态保存。
+- 支持 GitHub / 企业知识 / 简历工具的 function calling 循环（最多 N 轮）。
 - 状态推进接口在 :class:`InterviewAgent` 上以 public 暴露，禁止跨包访问私有字段。
 """
 
@@ -14,6 +15,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
+from app.core.constants import RAGBackendKind
 from app.models import InterviewSession, LLMSettings
 from app.services.context.manager import compress_messages, estimate_messages_tokens
 from app.services.interview.agent import (
@@ -25,9 +28,14 @@ from app.services.interview.agent import (
 )
 from app.services.interview.events import EventKind, StreamEvent
 from app.services.interview.followup import analyze as analyze_followup
+from app.services.interview.tools import (
+    MAX_TOOL_ROUNDS,
+    execute_interview_tool,
+    get_interview_tool_definitions,
+    parse_tool_arguments,
+)
 from app.services.llm.client import LLMClient
 from app.services.rag.company_rag import CompanyKnowledgeRAG, format_context as format_rag_context
-from app.core.constants import RAGBackendKind
 
 logger = logging.getLogger(__name__)
 
@@ -176,19 +184,107 @@ class InterviewRunner:
             "content": format_rag_context(hits),
         }
 
-    def _collect_chat_tools(self) -> list[dict[str, Any]] | None:
+    def _collect_chat_tools(self, *, include_function_tools: bool = True) -> list[dict[str, Any]] | None:
         """收集当前 LLM 调用应注入的 tools。
 
-        目前唯一来源是 :class:`StepFunRetrievalRAG` 的 retrieval tool。
-        其他 RAG 后端走本地注入路径,无需在此处拼装。
+        合并：
+        1. StepFun retrieval tool（若 RAG 后端支持）；
+        2. 面试 function tools（GitHub / 公司 / 简历 / 面经搜索）。
         """
-        if self.rag is None:
-            return None
-        builder = getattr(self.rag, "build_retrieval_tool", None)
-        if builder is None:
-            return None
-        tool = builder()
-        return [tool] if tool else None
+        tools: list[dict[str, Any]] = []
+        if self.rag is not None:
+            builder = getattr(self.rag, "build_retrieval_tool", None)
+            if builder is not None:
+                tool = builder()
+                if tool:
+                    tools.append(tool)
+        settings = get_settings()
+        if include_function_tools and settings.interview_tools_enabled:
+            tools.extend(get_interview_tool_definitions())
+        return tools or None
+
+    async def _run_tool_rounds(
+        self,
+        api_messages: list[dict[str, Any]],
+        db: Session,
+        *,
+        temperature: float = 0.75,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """非流式工具循环：执行 tool_calls 最多 N 轮。
+
+        Returns:
+            (messages_for_stream, final_content_or_none)
+            - 若首轮即无 tool_calls 且已有 content：返回 (messages, content)，调用方直接播报，避免二次 LLM；
+            - 若执行了工具：返回 (enriched_messages, None)，调用方再流式生成；
+            - 工具关闭：返回 (api_messages, None)。
+        """
+        settings = get_settings()
+        if not settings.interview_tools_enabled:
+            return api_messages, None
+
+        max_rounds = min(settings.interview_max_tool_rounds, MAX_TOOL_ROUNDS)
+        if max_rounds <= 0:
+            return api_messages, None
+
+        tools = self._collect_chat_tools(include_function_tools=True)
+        if not tools:
+            return api_messages, None
+
+        working = list(api_messages)
+        any_tool_used = False
+        for round_i in range(max_rounds):
+            try:
+                msg = await self.llm.chat_message(
+                    working,
+                    temperature=temperature,
+                    tools=tools,
+                )
+            except Exception as e:
+                logger.warning("工具轮次 LLM 失败 round=%s: %s", round_i, e)
+                break
+
+            tool_calls = msg.get("tool_calls") or []
+            if not tool_calls:
+                content = msg.get("content")
+                if content and not any_tool_used:
+                    # 首轮无工具：直接复用文本，避免二次请求
+                    return working, str(content)
+                break
+
+            any_tool_used = True
+            working.append({
+                "role": "assistant",
+                "content": msg.get("content"),
+                "tool_calls": tool_calls,
+            })
+            trace = self.agent.agent_state.setdefault("tool_trace", [])
+            for tc in tool_calls:
+                fn = tc.get("function") or {}
+                name = fn.get("name") or ""
+                args = parse_tool_arguments(fn.get("arguments"))
+                tc_id = tc.get("id") or f"call_{round_i}_{name}"
+                logger.info(
+                    "工具调用: session=%s round=%s tool=%s",
+                    self.session.id, round_i, name,
+                )
+                result = await execute_interview_tool(
+                    name,
+                    args,
+                    db=db,
+                    resume_id=self.session.resume_id,
+                    profile_id=self.session.profile_id,
+                    agent_state=self.agent.agent_state,
+                )
+                working.append({
+                    "role": "tool",
+                    "tool_call_id": tc_id,
+                    "content": result,
+                })
+                trace.append({"round": round_i, "tool": name, "ok": "error" not in result[:80]})
+            if len(trace) > 40:
+                del trace[:-40]
+
+        return working, None
 
     # ------------------------------------------------------------------
     # 开场
@@ -209,13 +305,23 @@ class InterviewRunner:
             opening_messages = list(self.agent.messages) + [
                 {"role": "user", "content": "面试开始，请按照当前阶段开始提问。"},
             ]
+            # 工具循环（GitHub 核验等）→ 再流式生成开场白
+            opening_messages, early = await self._run_tool_rounds(
+                opening_messages, db, temperature=0.8
+            )
 
             content_buf = ""
-            async for token in self.llm.chat_stream(
-                opening_messages, temperature=0.8, tools=self._collect_chat_tools()
-            ):
-                content_buf += token
-                yield StreamEvent.make_token(token)
+            if early:
+                content_buf = early
+                yield StreamEvent.make_token(early)
+            else:
+                # 最终流式：只带 retrieval 类 tools，避免再触发 function 循环
+                stream_tools = self._collect_chat_tools(include_function_tools=False)
+                async for token in self.llm.chat_stream(
+                    opening_messages, temperature=0.8, tools=stream_tools
+                ):
+                    content_buf += token
+                    yield StreamEvent.make_token(token)
 
             self.agent.record_assistant_text(content_buf)
             self.agent.set_questions_in_phase(1)
@@ -321,13 +427,22 @@ class InterviewRunner:
                 user_text, face, image_b64, context_window=context_window
             )
 
-            # 流式生成
+            # 工具循环：GitHub / 公司 / 简历核验后再流式发言
+            api_messages, early = await self._run_tool_rounds(
+                api_messages, db, temperature=0.75
+            )
+
             content_buf = ""
-            async for token in self.llm.chat_stream(
-                api_messages, temperature=0.75, tools=self._collect_chat_tools()
-            ):
-                content_buf += token
-                yield StreamEvent.make_token(token)
+            if early:
+                content_buf = early
+                yield StreamEvent.make_token(early)
+            else:
+                stream_tools = self._collect_chat_tools(include_function_tools=False)
+                async for token in self.llm.chat_stream(
+                    api_messages, temperature=0.75, tools=stream_tools
+                ):
+                    content_buf += token
+                    yield StreamEvent.make_token(token)
 
             # 收尾处理
             self.agent.record_assistant_text(content_buf)

@@ -55,21 +55,35 @@ def build_system_prompt(
     strictness = STRICTNESS_DESCRIPTIONS.get(config.strictness, STRICTNESS_DESCRIPTIONS[3])
 
     candidate_info = ""
-    if profile and (profile.name or profile.school or profile.self_intro):
+    if profile and (profile.name or profile.school or profile.self_intro or getattr(profile, "github_username", "")):
+        github_u = getattr(profile, "github_username", "") or ""
+        portfolio = getattr(profile, "portfolio_url", "") or ""
+        linkedin = getattr(profile, "linkedin_url", "") or ""
+        city = getattr(profile, "city", "") or ""
+        langs = getattr(profile, "preferred_languages", "") or ""
+        highlights = getattr(profile, "career_highlights", "") or ""
         candidate_info += f"""
 ## 候选人个人档案
 姓名：{profile.name}
 性别/身份：{profile.gender or '—'} / {profile.identity or '—'}
 学校/专业：{profile.school or '—'} / {profile.major or '—'}
 毕业年份：{profile.graduation_year or '—'}
+城市：{city or '—'}
 求职方向：{profile.job_direction}
 目标岗位：{profile.target_role}
 工作年限：{profile.experience_years}
 当前公司：{profile.current_company or '—'}
 期望薪资：{profile.expected_salary or '—'}
 技术领域：{', '.join(profile.tech_domains_list)}
+GitHub：{github_u or '—'}
+作品集/博客：{portfolio or '—'}
+LinkedIn：{linkedin or '—'}
+偏好语言：{langs or '—'}
+职业亮点：{(highlights or '')[:500]}
 自我介绍：{(profile.self_intro or '')[:800]}
 """
+        if github_u:
+            candidate_info += f"\n提示：候选人填写了 GitHub 用户名「{github_u}」，项目深挖阶段请使用 github_* 工具核实。\n"
     if candidate:
         candidate_info += f"""
 ## 简历解析
@@ -112,6 +126,16 @@ def build_system_prompt(
 ## 完整流程
 {phase_list}
 {followup_section}
+## 可用工具（function calling）
+你可以使用以下工具获取真实信息，再基于证据提问：
+- github_*：核验候选人 GitHub 用户/仓库/README/commit/PR/文件/语言占比
+- lookup_company_profile：查询目标公司面试风格
+- lookup_resume_projects：提取当前绑定简历中的项目与技能
+- web_search_interview_exp：补充公开面经（谨慎使用）
+
+当候选人提到具体项目名、GitHub 链接或技术架构时，**优先调用工具核实**再追问细节
+（例如：为何用 StateGraph 而非 MessageGraph、某 commit 的意图、README 与口头描述差异）。
+
 ## 行为准则
 1. 根据候选人简历和回答动态生成问题，绝不使用固定题库
 2. 发现模糊描述、数据缺失、技术漏洞时主动追问
@@ -121,6 +145,8 @@ def build_system_prompt(
 6. 当前阶段问题数够了之后，在回复末尾单独一行写：[PHASE_COMPLETE]
 7. 反问环节时，扮演公司代表回答候选人的问题
 8. 总结阶段给出简要口头评价，然后写 [INTERVIEW_COMPLETE]
+9. 工具结果仅供你内部使用，不要整段朗读 JSON；用自然口语引用关键事实
+10. 可在回复中使用情绪标记：[emotion:smile] / [emotion:serious] / [emotion:neutral]
 
 请开始当前阶段的面试。"""
 
@@ -193,6 +219,12 @@ class InterviewAgent:
         self.current_phase_idx: int = self.agent_state.get("phase_idx", 0)
         self.questions_in_phase: int = self.agent_state.get("questions_in_phase", 0)
         self.asked_topics: list[str] = self.agent_state.get("asked_topics", [])
+        # 长上下文结构化记忆（40 分钟面试用）
+        self.agent_state.setdefault("weak_points", [])
+        self.agent_state.setdefault("followup_clues", [])
+        self.agent_state.setdefault("github_findings", [])
+        self.agent_state.setdefault("tool_trace", [])
+        self.agent_state.setdefault("asked_questions", [])
 
     def save_state(self, db: Session) -> None:
         """将当前状态写回数据库。"""
@@ -205,6 +237,30 @@ class InterviewAgent:
         self.session.messages = json.dumps(self.messages, ensure_ascii=False)
         self.session.current_phase = self.current_phase().id
         db.commit()
+
+    def note_question(self, question_text: str) -> None:
+        """记录已问问题（结构化，便于压缩后仍可去重）。"""
+        q = (question_text or "").strip()
+        if not q:
+            return
+        asked = self.agent_state.setdefault("asked_questions", [])
+        # 只保留摘要前 120 字
+        snippet = q[:120]
+        if snippet not in asked:
+            asked.append(snippet)
+        if len(asked) > 80:
+            del asked[:-80]
+
+    def note_weak_point(self, point: str) -> None:
+        """记录候选人薄弱点线索。"""
+        p = (point or "").strip()
+        if not p:
+            return
+        weak = self.agent_state.setdefault("weak_points", [])
+        if p not in weak:
+            weak.append(p[:200])
+        if len(weak) > 30:
+            del weak[:-30]
 
     # ---- 阶段查询 -----------------------------------------------------------
 
@@ -244,6 +300,27 @@ class InterviewAgent:
         except (json.JSONDecodeError, Exception):
             return None
 
+    def _memory_section(self) -> str:
+        """结构化记忆摘要（压缩后仍可用）。"""
+        parts: list[str] = []
+        asked = self.agent_state.get("asked_questions") or []
+        if asked:
+            parts.append("已问问题摘要：\n- " + "\n- ".join(str(q)[:80] for q in asked[-12:]))
+        weak = self.agent_state.get("weak_points") or []
+        if weak:
+            parts.append("已知薄弱点：\n- " + "\n- ".join(str(w)[:80] for w in weak[-8:]))
+        findings = self.agent_state.get("github_findings") or []
+        if findings:
+            previews = []
+            for f in findings[-5:]:
+                if isinstance(f, dict):
+                    previews.append(f"{f.get('tool')}: {str(f.get('preview', ''))[:120]}")
+            if previews:
+                parts.append("GitHub 核验摘要：\n- " + "\n- ".join(previews))
+        if not parts:
+            return ""
+        return "\n\n## 会话结构化记忆（请勿重复已问问题）\n" + "\n".join(parts)
+
     def build_opening_prompt(self, db: Session) -> str:
         """构建首回合系统提示。"""
         config = self.get_config()
@@ -253,7 +330,7 @@ class InterviewAgent:
         phase = self.current_phase()
         return build_system_prompt(
             config, candidate, company_ctx, self.workflow, phase, profile
-        )
+        ) + self._memory_section()
 
     def build_turn_prompt(
         self,
@@ -299,8 +376,12 @@ class InterviewAgent:
         self.messages.append({"role": "user", "content": content})
 
     def record_assistant_text(self, content: str) -> None:
-        """记录面试官发言到消息历史。"""
+        """记录面试官发言到消息历史，并写入结构化已问问题。"""
         self.messages.append({"role": "assistant", "content": content})
+        # 控制标记剥离后记入 asked_questions
+        clean = strip_markers(content)
+        if clean:
+            self.note_question(clean)
 
     def reset_messages(self) -> None:
         """重置消息历史（用于 start 时）。"""

@@ -68,6 +68,14 @@ class UserProfileUpdate(BaseModel):
     self_intro: str = ""
     tech_domains: list[str] = Field(default_factory=list)
     target_role: str = ""
+    github_username: str = ""
+    portfolio_url: str = ""
+    linkedin_url: str = ""
+    city: str = ""
+    preferred_languages: str = ""
+    career_highlights: str = ""
+    open_to_remote: str = ""
+    notice_period: str = ""
 
 
 class UserProfileResponse(BaseModel):
@@ -86,6 +94,14 @@ class UserProfileResponse(BaseModel):
     self_intro: str = ""
     tech_domains: list[str]
     target_role: str
+    github_username: str = ""
+    portfolio_url: str = ""
+    linkedin_url: str = ""
+    city: str = ""
+    preferred_languages: str = ""
+    career_highlights: str = ""
+    open_to_remote: str = ""
+    notice_period: str = ""
     updated_at: datetime | None = None
 
 
@@ -111,12 +127,33 @@ class ResumeResponse(BaseModel):
     created_at: datetime
 
 
+class DimensionScore(BaseModel):
+    """简历评价单维度得分。"""
+    score: int = Field(ge=0, le=100)
+    comment: str = ""
+
+
 class ResumeAnalysis(BaseModel):
-    score: int
+    """多维度简历 Agent 评价结果。
+
+    兼容旧字段 strengths/weaknesses/…，并扩展 dimension_scores 等。
+    """
+    score: int = Field(ge=0, le=100)
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     improvement_suggestions: list[str] = Field(default_factory=list)
     predicted_questions: list[str] = Field(default_factory=list)
+    # 扩展：多维度
+    dimension_scores: dict[str, DimensionScore] = Field(default_factory=dict)
+    ats_keywords: list[str] = Field(default_factory=list)
+    missing_keywords: list[str] = Field(default_factory=list)
+    project_deep_dive: list[str] = Field(default_factory=list)
+    red_flags: list[str] = Field(default_factory=list)
+    role_fit_summary: str = ""
+    seniority_estimate: str = ""
+    rewrite_examples: list[str] = Field(default_factory=list)
+    interview_risk_areas: list[str] = Field(default_factory=list)
+    overall_narrative: str = ""
 
 
 # ── 面试配置 ──────────────────────────────────────────

@@ -45,6 +45,14 @@ def get_growth_history(db: Session = Depends(get_db)):
     ]
 
 
+@router.get("/growth/system-insights")
+def get_system_growth_insights():
+    """系统级自我成长洞察（跨面试聚合，非候选人个人隐私外泄）。"""
+    from app.services.growth.learning import get_system_insights
+
+    return get_system_insights(limit=15)
+
+
 @router.get("/{session_id}/stream")
 async def get_report_stream(session_id: int, db: Session = Depends(get_db)):
     """流式返回报告。前端可增量渲染，JSON 解析由前端负责。

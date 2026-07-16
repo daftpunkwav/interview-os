@@ -212,6 +212,8 @@ export const api = {
   listResumes: () => request<Resume[]>("/v1/resume/list"),
   activateResume: (id: number) =>
     request<ResumeActivateResponse>(`/v1/resume/${id}/activate`, { method: "POST" }),
+  deleteResume: (id: number) =>
+    request<{ ok: boolean; id: number }>(`/v1/resume/${id}`, { method: "DELETE" }),
   analyzeResume: (id: number) =>
     request<ResumeAnalysis>(`/v1/resume/${id}/analyze`, { method: "POST" }),
 
@@ -298,6 +300,17 @@ export const api = {
   /* 报告 */
   getReport: (id: number) => request<GetReportResponse>(`/v1/reports/${id}`),
   getGrowthHistory: () => request<GrowthRecord[]>("/v1/reports/growth/history"),
+  getSystemInsights: () =>
+    request<{
+      company_session_counts: Record<string, number>;
+      role_session_counts: Record<string, number>;
+      avg_scores_by_company: Record<string, number | null>;
+      followup_category_hits: Record<string, number>;
+      recent_probes: { company?: string; role?: string; point?: string; session_id?: number }[];
+      updated_at?: string | null;
+      github_token_configured?: boolean;
+      interview_tools_enabled?: boolean;
+    }>("/v1/reports/growth/system-insights"),
 };
 
 export { ApiError };

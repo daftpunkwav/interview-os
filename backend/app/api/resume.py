@@ -46,15 +46,41 @@ _MAGIC_BYTES: dict[str, list[bytes]] = {
     "doc": [b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"],  # OLE
 }
 
-_RESUME_ANALYZE_PROMPT = """你是资深简历顾问和面试官。分析以下简历，返回 JSON：
+_RESUME_ANALYZE_PROMPT = """你是资深技术招聘负责人 + 简历教练 + 面试官。请对候选人简历做**全面、准确、可执行**的评价。
+
+必须返回 JSON（字段齐全，中文撰写）：
 {
-  "score": 85,
-  "strengths": ["优势"],
-  "weaknesses": ["不足"],
-  "improvement_suggestions": ["简历改进建议"],
-  "predicted_questions": ["面试官可能问的问题1", "问题2"]
+  "score": 0-100 综合分,
+  "strengths": ["可量化的优势，3-6 条"],
+  "weaknesses": ["具体不足，3-6 条"],
+  "improvement_suggestions": ["可执行的简历修改建议，4-8 条"],
+  "predicted_questions": ["面试官高概率追问，6-12 条，贴合简历项目"],
+  "dimension_scores": {
+    "structure_clarity": {"score": 0-100, "comment": "结构与排版清晰度"},
+    "impact_quantification": {"score": 0-100, "comment": "成果量化与业务影响"},
+    "tech_depth": {"score": 0-100, "comment": "技术深度与栈匹配"},
+    "project_narrative": {"score": 0-100, "comment": "项目叙事完整性（背景-职责-难点-结果）"},
+    "role_fit": {"score": 0-100, "comment": "与目标岗位匹配度"},
+    "keyword_ats": {"score": 0-100, "comment": "关键词与 ATS 友好度"},
+    "credibility": {"score": 0-100, "comment": "可信度与一致性（时间线/职责/技能）"},
+    "seniority_signal": {"score": 0-100, "comment": "职级信号与领导力/ownership"}
+  },
+  "ats_keywords": ["简历已覆盖的关键关键词"],
+  "missing_keywords": ["目标岗常见但缺失的关键词"],
+  "project_deep_dive": ["针对每个重点项目的深挖问题或疑点"],
+  "red_flags": ["风险点：空窗、夸大、技术名词堆砌、职责不清等；无则空数组"],
+  "role_fit_summary": "一段话总结岗位匹配",
+  "seniority_estimate": "如：初级/中级偏上/高级",
+  "rewrite_examples": ["把某一条 bullet 改写为更强版本（给出改前→改后）"],
+  "interview_risk_areas": ["面试中最容易被打穿的领域"],
+  "overall_narrative": "给候选人的总体评价与下一步行动（150-300字）"
 }
-只返回 JSON。"""
+要求：
+1. 评价必须基于简历事实，禁止空泛套话
+2. predicted_questions 必须能从简历项目/技能推出
+3. rewrite_examples 至少 2 条，给出可直接粘贴的改写
+4. 只返回 JSON，不要 Markdown
+"""
 
 
 def _sniff_extension(head: bytes, ext: str) -> bool:
@@ -211,6 +237,73 @@ def activate_resume(resume_id: int, db: Session = Depends(get_db)):
     )
 
 
+def _normalize_resume_analysis_payload(data: dict) -> dict:
+    """容错规范化 LLM 返回，保证能通过 ResumeAnalysis 校验。"""
+    if not isinstance(data, dict):
+        return {}
+    out = dict(data)
+    # score
+    try:
+        out["score"] = int(max(0, min(100, int(out.get("score", 0)))))
+    except (TypeError, ValueError):
+        out["score"] = 0
+    # 列表字段
+    for key in (
+        "strengths", "weaknesses", "improvement_suggestions", "predicted_questions",
+        "ats_keywords", "missing_keywords", "project_deep_dive", "red_flags",
+        "rewrite_examples", "interview_risk_areas",
+    ):
+        val = out.get(key)
+        if not isinstance(val, list):
+            out[key] = []
+        else:
+            out[key] = [str(x) for x in val if x is not None][:20]
+    # 维度分：允许 {k: 80} 或 {k: {score, comment}}
+    dims = out.get("dimension_scores") or {}
+    if not isinstance(dims, dict):
+        dims = {}
+    normalized_dims: dict = {}
+    for k, v in dims.items():
+        key = str(k)[:64]
+        if isinstance(v, dict):
+            try:
+                sc = int(v.get("score", 0))
+            except (TypeError, ValueError):
+                sc = 0
+            normalized_dims[key] = {
+                "score": max(0, min(100, sc)),
+                "comment": str(v.get("comment") or "")[:500],
+            }
+        elif isinstance(v, (int, float)):
+            normalized_dims[key] = {"score": max(0, min(100, int(v))), "comment": ""}
+    out["dimension_scores"] = normalized_dims
+    for key in ("role_fit_summary", "seniority_estimate", "overall_narrative"):
+        out[key] = str(out.get(key) or "")[:2000]
+    return out
+
+
+@router.delete("/{resume_id}")
+def delete_resume(resume_id: int, db: Session = Depends(get_db)):
+    """删除简历及本地文件（若存在）。"""
+    r = db.query(Resume).filter(Resume.id == resume_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="简历不存在")
+    # 尝试删除上传文件（文件名含 uuid 前缀，与落盘规则一致时）
+    try:
+        upload_dir = Path(settings.upload_dir).resolve()
+        for p in upload_dir.glob(f"*_{sanitize_filename(r.filename)}"):
+            try:
+                assert_within_dir(p, upload_dir)
+                p.unlink(missing_ok=True)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning("删除简历文件时忽略错误: %s", e)
+    db.delete(r)
+    db.commit()
+    return {"ok": True, "id": resume_id}
+
+
 @router.post("/{resume_id}/analyze")
 async def analyze_resume(resume_id: int, db: Session = Depends(get_db)):
     r = db.query(Resume).filter(Resume.id == resume_id).first()
@@ -219,13 +312,17 @@ async def analyze_resume(resume_id: int, db: Session = Depends(get_db)):
     llm = LLMClient.from_db(db)
     if not llm.api_key:
         raise HTTPException(status_code=400, detail="请先配置 API Key")
+    # 注入解析档案帮助 Agent 对齐项目
+    user_blob = (r.raw_text or "")[:14000]
+    if r.parsed_profile:
+        user_blob += f"\n\n---\n已解析档案 JSON：\n{r.parsed_profile[:4000]}"
     messages = [
         {"role": "system", "content": _RESUME_ANALYZE_PROMPT},
-        {"role": "user", "content": r.raw_text[:12000] or r.parsed_profile},
+        {"role": "user", "content": user_blob or "（空简历）"},
     ]
     data = await llm.chat_json(messages)
     # 强校验，防 LLM 注入污染数据库
-    analysis = ResumeAnalysis.model_validate(data)
+    analysis = ResumeAnalysis.model_validate(_normalize_resume_analysis_payload(data))
     r.score = analysis.score
     r.analysis = analysis.model_dump_json()
     db.commit()

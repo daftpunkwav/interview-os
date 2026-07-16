@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import { toast } from "@/components/Toast";
-import type { Resume } from "@/types";
+import type { Resume, ResumeAnalysis } from "@/types";
 import {
   Upload,
   FileText,
@@ -15,14 +15,42 @@ import {
   Star,
   Lightbulb,
   FolderOpen,
+  AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import { LoadError } from "@/components/LoadError";
+
+const DIM_LABELS: Record<string, string> = {
+  structure_clarity: "结构清晰度",
+  impact_quantification: "成果量化",
+  tech_depth: "技术深度",
+  project_narrative: "项目叙事",
+  role_fit: "岗位匹配",
+  keyword_ats: "ATS 关键词",
+  credibility: "可信度",
+  seniority_signal: "职级信号",
+};
+
+function asAnalysis(raw: Resume["analysis"]): ResumeAnalysis | null {
+  if (!raw || typeof raw !== "object") return null;
+  if (!("score" in raw)) return null;
+  return raw as ResumeAnalysis;
+}
+
+function dimScore(v: ResumeAnalysis["dimension_scores"] extends infer D
+  ? D extends Record<string, infer V> ? V : never
+  : never): number {
+  if (typeof v === "number") return v;
+  if (v && typeof v === "object" && "score" in v) return Number((v as { score: number }).score) || 0;
+  return 0;
+}
 
 export default function ResumePage() {
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
@@ -202,24 +230,52 @@ export default function ResumePage() {
                           <motion.button
                             onClick={async (e) => {
                               e.stopPropagation();
+                              if (!confirm(`确定删除简历「${r.filename}」？`)) return;
+                              try {
+                                await api.deleteResume(r.id);
+                                toast.success("已删除");
+                                await load();
+                              } catch (err) {
+                                toast.error(err instanceof Error ? err.message : "删除失败");
+                              }
+                            }}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center gap-1"
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                          >
+                            <Trash2 size={12} />
+                            删除
+                          </motion.button>
+                          <motion.button
+                            onClick={async (e) => {
+                              e.stopPropagation();
                               setError("");
+                              setAnalyzingId(r.id);
                               try {
                                 const data = await api.analyzeResume(r.id);
                                 await load();
                                 toast.success(
-                                  `评分：${data.score}\n预测问题：\n${data.predicted_questions?.join("\n") || "—"}`,
-                                  { persist: true },
+                                  `综合评分 ${data.score} · 已生成多维度评价与预测题`,
                                 );
+                                setPreviewId(r.id);
+                                setExpandedId(r.id);
                               } catch (err) {
                                 toast.error(err instanceof Error ? err.message : "分析失败");
+                              } finally {
+                                setAnalyzingId(null);
                               }
                             }}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white flex items-center gap-1"
+                            disabled={analyzingId === r.id}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white flex items-center gap-1 disabled:opacity-60"
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                           >
-                            <Sparkles size={12} />
-                            AI 分析
+                            {analyzingId === r.id ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <Sparkles size={12} />
+                            )}
+                            {analyzingId === r.id ? "Agent 评价中…" : "AI 深度评价"}
                           </motion.button>
                         </div>
 
@@ -311,7 +367,7 @@ export default function ResumePage() {
                 )}
 
                 {previewResume.parsed_profile.projects.length > 0 && (
-                  <div>
+                  <div className="mb-4">
                     <p className="text-xs text-[var(--muted)] mb-1.5">项目经历</p>
                     <ul className="space-y-1">
                       {previewResume.parsed_profile.projects.slice(0, 3).map((p, i) => (
@@ -323,6 +379,112 @@ export default function ResumePage() {
                     </ul>
                   </div>
                 )}
+
+                {(() => {
+                  const analysis = asAnalysis(previewResume.analysis);
+                  if (!analysis) return null;
+                  const dims = analysis.dimension_scores || {};
+                  const dimEntries = Object.entries(dims);
+                  return (
+                    <div className="mt-4 pt-4 border-t border-[var(--border)] space-y-3">
+                      <p className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                        <Sparkles size={12} className="text-brand-600" />
+                        Agent 深度评价
+                      </p>
+                      {analysis.overall_narrative && (
+                        <p className="text-xs leading-relaxed text-slate-600">{analysis.overall_narrative}</p>
+                      )}
+                      {analysis.seniority_estimate && (
+                        <p className="text-xs text-[var(--muted)]">
+                          职级估计：<span className="text-slate-800 font-medium">{analysis.seniority_estimate}</span>
+                        </p>
+                      )}
+                      {dimEntries.length > 0 && (
+                        <div className="space-y-2">
+                          {dimEntries.map(([k, v]) => {
+                            const sc = dimScore(v as never);
+                            return (
+                              <div key={k}>
+                                <div className="flex justify-between text-[11px] mb-0.5">
+                                  <span className="text-[var(--muted)]">{DIM_LABELS[k] || k}</span>
+                                  <span className="font-medium">{sc}</span>
+                                </div>
+                                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-brand-500 to-indigo-500 rounded-full"
+                                    style={{ width: `${Math.min(sc, 100)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {analysis.strengths && analysis.strengths.length > 0 && (
+                        <div>
+                          <p className="text-[11px] text-green-700 font-medium mb-1">优势</p>
+                          <ul className="text-xs space-y-0.5 text-slate-600">
+                            {analysis.strengths.slice(0, 4).map((s, i) => (
+                              <li key={i}>· {s}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {analysis.weaknesses && analysis.weaknesses.length > 0 && (
+                        <div>
+                          <p className="text-[11px] text-amber-700 font-medium mb-1">不足</p>
+                          <ul className="text-xs space-y-0.5 text-slate-600">
+                            {analysis.weaknesses.slice(0, 4).map((s, i) => (
+                              <li key={i}>· {s}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {analysis.red_flags && analysis.red_flags.length > 0 && (
+                        <div className="rounded-lg bg-red-50 border border-red-100 p-2">
+                          <p className="text-[11px] text-red-700 font-medium mb-1 flex items-center gap-1">
+                            <AlertTriangle size={11} /> 风险点
+                          </p>
+                          <ul className="text-xs space-y-0.5 text-red-800/80">
+                            {analysis.red_flags.slice(0, 3).map((s, i) => (
+                              <li key={i}>· {s}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {analysis.predicted_questions && analysis.predicted_questions.length > 0 && (
+                        <div>
+                          <p className="text-[11px] text-brand-700 font-medium mb-1">预测面试题</p>
+                          <ul className="text-xs space-y-1 text-slate-600 max-h-36 overflow-y-auto">
+                            {analysis.predicted_questions.slice(0, 8).map((q, i) => (
+                              <li key={i} className="leading-snug">Q{i + 1}. {q}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {analysis.rewrite_examples && analysis.rewrite_examples.length > 0 && (
+                        <div>
+                          <p className="text-[11px] text-indigo-700 font-medium mb-1">改写示例</p>
+                          <ul className="text-xs space-y-1 text-slate-600">
+                            {analysis.rewrite_examples.slice(0, 3).map((s, i) => (
+                              <li key={i} className="leading-snug bg-slate-50 rounded p-1.5">· {s}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {analysis.improvement_suggestions && analysis.improvement_suggestions.length > 0 && (
+                        <div>
+                          <p className="text-[11px] text-[var(--muted)] font-medium mb-1">改进建议</p>
+                          <ul className="text-xs space-y-0.5 text-slate-600">
+                            {analysis.improvement_suggestions.slice(0, 5).map((s, i) => (
+                              <li key={i}>· {s}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             ) : (
               <p className="text-sm text-[var(--muted)]">上传简历后，将在此显示解析预览</p>
@@ -360,7 +522,7 @@ export default function ResumePage() {
             </h2>
             <ul className="text-xs text-[var(--muted)] space-y-2 leading-relaxed">
               <li>· 设为「投递简历」后，模拟面试与面试准备将默认关联该份简历</li>
-              <li>· 点击「AI 分析」可获取评分与预测面试题</li>
+              <li>· 点击「AI 深度评价」获取多维度评分、风险点、改写示例与预测题</li>
               <li>· 支持多份简历管理，点击列表项可在右侧查看详情</li>
             </ul>
           </div>

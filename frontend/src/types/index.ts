@@ -46,6 +46,14 @@ export interface UserProfile {
   self_intro?: string;
   tech_domains: string[];
   target_role: string;
+  github_username?: string;
+  portfolio_url?: string;
+  linkedin_url?: string;
+  city?: string;
+  preferred_languages?: string;
+  career_highlights?: string;
+  open_to_remote?: string;
+  notice_period?: string;
   updated_at?: string;
 }
 
@@ -58,12 +66,27 @@ export interface CandidateProfile {
   summary: string;
 }
 
+export interface DimensionScore {
+  score: number;
+  comment?: string;
+}
+
 export interface ResumeAnalysis {
   score: number;
   strengths: string[];
   weaknesses: string[];
   improvement_suggestions: string[];
   predicted_questions: string[];
+  dimension_scores?: Record<string, DimensionScore | number>;
+  ats_keywords?: string[];
+  missing_keywords?: string[];
+  project_deep_dive?: string[];
+  red_flags?: string[];
+  role_fit_summary?: string;
+  seniority_estimate?: string;
+  rewrite_examples?: string[];
+  interview_risk_areas?: string[];
+  overall_narrative?: string;
 }
 
 export interface Resume {

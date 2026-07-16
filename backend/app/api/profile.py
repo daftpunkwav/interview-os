@@ -39,6 +39,14 @@ def _to_response(p: UserProfile) -> UserProfileResponse:
         self_intro=p.self_intro,
         tech_domains=p.tech_domains_list,
         target_role=p.target_role,
+        github_username=getattr(p, "github_username", "") or "",
+        portfolio_url=getattr(p, "portfolio_url", "") or "",
+        linkedin_url=getattr(p, "linkedin_url", "") or "",
+        city=getattr(p, "city", "") or "",
+        preferred_languages=getattr(p, "preferred_languages", "") or "",
+        career_highlights=getattr(p, "career_highlights", "") or "",
+        open_to_remote=getattr(p, "open_to_remote", "") or "",
+        notice_period=getattr(p, "notice_period", "") or "",
         updated_at=p.updated_at,
     )
 
@@ -55,6 +63,8 @@ def update_profile(body: UserProfileUpdate, db: Session = Depends(get_db)):
         "name", "gender", "identity", "school", "major", "graduation_year",
         "job_direction", "experience_years", "work_years_detail",
         "current_company", "expected_salary", "self_intro", "target_role",
+        "github_username", "portfolio_url", "linkedin_url", "city",
+        "preferred_languages", "career_highlights", "open_to_remote", "notice_period",
     ]:
         setattr(p, field, getattr(body, field))
     p.set_tech_domains(body.tech_domains)

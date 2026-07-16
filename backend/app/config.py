@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     tts_voice: str = "zh-CN-XiaoxiaoNeural"
     silence_nudge_seconds: int = Field(default=10, ge=1, le=600)
 
+    # GitHub（面试核验工具；可选 PAT，提高 API 配额）
+    github_token: str = ""
+    # 面试 Agent 是否启用 function calling 工具循环
+    interview_tools_enabled: bool = True
+    interview_max_tool_rounds: int = Field(default=3, ge=0, le=6)
+
     # LLM 调用：是否允许本机/私网 base_url。生产必须为 False。
     allow_local_llm: bool = Field(default=False)
 

@@ -78,9 +78,12 @@ export default function ProfilePage() {
         profile.target_role,
         profile.self_intro,
         filledDomains.length > 0 ? "ok" : "",
+        profile.github_username,
+        profile.city,
+        profile.career_highlights,
       ].filter(Boolean).length
     : 0;
-  const completionPct = Math.round((completion / 9) * 100);
+  const completionPct = Math.round((completion / 12) * 100);
 
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto w-full">
@@ -165,6 +168,56 @@ export default function ProfilePage() {
               </div>
             </SectionCard>
 
+          <SectionCard title="在线身份与链接" icon={MapPin}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field
+                  label="GitHub 用户名"
+                  value={profile.github_username || ""}
+                  onChange={(v) => setProfile({ ...profile, github_username: v })}
+                  placeholder="如 octocat（面试官可核验仓库）"
+                />
+                <Field
+                  label="所在城市"
+                  value={profile.city || ""}
+                  onChange={(v) => setProfile({ ...profile, city: v })}
+                  placeholder="如 上海"
+                />
+                <Field
+                  label="作品集 / 博客"
+                  value={profile.portfolio_url || ""}
+                  onChange={(v) => setProfile({ ...profile, portfolio_url: v })}
+                  placeholder="https://..."
+                  className="sm:col-span-2"
+                />
+                <Field
+                  label="LinkedIn"
+                  value={profile.linkedin_url || ""}
+                  onChange={(v) => setProfile({ ...profile, linkedin_url: v })}
+                  placeholder="https://linkedin.com/in/..."
+                  className="sm:col-span-2"
+                />
+                <Field
+                  label="偏好语言"
+                  value={profile.preferred_languages || ""}
+                  onChange={(v) => setProfile({ ...profile, preferred_languages: v })}
+                  placeholder="中文, English"
+                />
+                <Field
+                  label="远程意愿"
+                  value={profile.open_to_remote || ""}
+                  onChange={(v) => setProfile({ ...profile, open_to_remote: v })}
+                  placeholder="yes / no / hybrid"
+                />
+                <Field
+                  label="到岗时间"
+                  value={profile.notice_period || ""}
+                  onChange={(v) => setProfile({ ...profile, notice_period: v })}
+                  placeholder="如 两周 / 一个月"
+                  className="sm:col-span-2"
+                />
+              </div>
+            </SectionCard>
+
           <SectionCard title="技能与介绍" icon={Sparkles}>
               <div className="space-y-4">
                 <div className={FIELD_BOX_CLS}>
@@ -175,6 +228,16 @@ export default function ProfilePage() {
                     value={profile.self_intro || ""}
                     onChange={(e) => setProfile({ ...profile, self_intro: e.target.value })}
                     placeholder="简要介绍你的背景、优势与求职动机…"
+                  />
+                </div>
+                <div className={FIELD_BOX_CLS}>
+                  <label className={LABEL_CLS}>职业亮点</label>
+                  <textarea
+                    className={`${INPUT_CLS} min-h-[64px] resize-y`}
+                    rows={3}
+                    value={profile.career_highlights || ""}
+                    onChange={(e) => setProfile({ ...profile, career_highlights: e.target.value })}
+                    placeholder="2–4 条最想被面试官记住的成就（可量化）…"
                   />
                 </div>
                 <div>
@@ -237,6 +300,12 @@ export default function ProfilePage() {
               )}
               {profile.expected_salary && (
                 <PreviewRow icon={Briefcase} label="期望薪资" value={profile.expected_salary} />
+              )}
+              {profile.github_username && (
+                <PreviewRow icon={Building2} label="GitHub" value={profile.github_username} />
+              )}
+              {profile.city && (
+                <PreviewRow icon={MapPin} label="城市" value={profile.city} />
               )}
             </div>
 

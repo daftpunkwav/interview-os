@@ -53,6 +53,16 @@ async def _generate_and_persist_report(
         session.ended_at = datetime.now(timezone.utc)
         db.add(growth)
         db.commit()
+        # 系统自我成长记忆（失败不影响主流程）
+        try:
+            from app.services.growth.learning import record_interview_learning
+
+            record_interview_learning(
+                session,
+                report=report.model_dump(),
+            )
+        except Exception:
+            pass
     except Exception:
         db.rollback()
         raise

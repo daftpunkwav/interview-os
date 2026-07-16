@@ -203,7 +203,67 @@ class LLMClient:
                 )
                 raise
 
-        return data["choices"][0]["message"]["content"]
+        content = data["choices"][0]["message"].get("content")
+        return content if content is not None else ""
+
+    async def chat_message(
+        self,
+        messages: list[dict[str, Any]],
+        temperature: float = 0.7,
+        response_format: dict[str, str] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """发送 Chat Completions 并返回完整 message 对象（含 tool_calls）。
+
+        返回形如::
+
+            {
+              "role": "assistant",
+              "content": "...",
+              "tool_calls": [
+                {"id": "...", "type": "function",
+                 "function": {"name": "...", "arguments": "{...}"}}
+              ]
+            }
+
+        用于面试 Agent 的工具调用循环；无 tool_calls 时仅含 content。
+        """
+        if not is_safe_http_url(self.api_base, allow_local=_is_local_allowed()):
+            raise UnsafeURLError(f"LLM api_base 不安全: {self.api_base}")
+        url = f"{self.api_base}/chat/completions"
+        payload = self._build_payload(
+            messages, temperature, response_format=response_format, tools=tools
+        )
+        if tool_choice is not None:
+            payload["tool_choice"] = tool_choice
+        headers = self._headers()
+
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            try:
+                resp = await _retry_request(
+                    lambda: client.post(url, headers=headers, json=payload)
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            except httpx.HTTPStatusError as e:
+                logger.warning(
+                    "LLM chat_message 失败: model=%s status=%s key=%s",
+                    self.model,
+                    e.response.status_code,
+                    redact_api_key(self.api_key),
+                )
+                raise
+
+        msg = data["choices"][0]["message"]
+        # 规范化：保证可 JSON 序列化
+        result: dict[str, Any] = {
+            "role": msg.get("role") or "assistant",
+            "content": msg.get("content"),
+        }
+        if msg.get("tool_calls"):
+            result["tool_calls"] = msg["tool_calls"]
+        return result
 
     async def chat_stream(
         self,

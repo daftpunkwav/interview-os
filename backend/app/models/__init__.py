@@ -34,6 +34,15 @@ class UserProfile(Base):
     self_intro: Mapped[str] = mapped_column(Text, default="")
     tech_domains: Mapped[str] = mapped_column(Text, default="[]")
     target_role: Mapped[str] = mapped_column(String(100), default="")
+    # 扩展字段：供 Agent 获取更丰富候选人上下文
+    github_username: Mapped[str] = mapped_column(String(100), default="")
+    portfolio_url: Mapped[str] = mapped_column(String(500), default="")
+    linkedin_url: Mapped[str] = mapped_column(String(500), default="")
+    city: Mapped[str] = mapped_column(String(100), default="")
+    preferred_languages: Mapped[str] = mapped_column(String(200), default="")  # 如 中文,English
+    career_highlights: Mapped[str] = mapped_column(Text, default="")
+    open_to_remote: Mapped[str] = mapped_column(String(20), default="")  # yes/no/hybrid
+    notice_period: Mapped[str] = mapped_column(String(50), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 

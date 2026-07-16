@@ -16,20 +16,23 @@ from app.services.search.web import web_search
 
 logger = logging.getLogger(__name__)
 
-PREP_SYSTEM = """你是 InterviewOS 的面试准备教练。帮助用户针对目标岗位和简历进行面试辅导。
+PREP_SYSTEM = """你是 InterviewOS 的面试准备教练。帮助用户针对目标岗位和**选定简历**进行面试前辅导。
 
 工作模式：ReAct
-- 分析用户问题，决定是否需要搜索面经或公司信息
+- 结合简历项目与技能给出贴合的准备建议
+- 分析用户问题，决定是否需要搜索面经、公司信息或 GitHub 仓库
 - 主动反问用户薄弱点
 - 可以出题让用户作答并点评
-- 回答简洁实用
+- 回答简洁实用、可执行
 
 可用工具（在回复中用 JSON 标记调用，一次一个）：
 {"tool": "web_search", "query": "搜索词"}
 {"tool": "company_info", "company": "公司id"}
 {"tool": "quiz", "question": "题目", "type": "choice|open"}
+{"tool": "github_list_repos", "username": "github用户名"}
+{"tool": "github_get_readme", "owner": "用户", "repo": "仓库"}
 
-若不需要工具，直接回复用户。"""
+若不需要工具，直接回复用户。辅导时优先引用简历中的具体项目名与技术点。"""
 
 
 class PrepAgent:
@@ -135,4 +138,11 @@ class PrepAgent:
             return get_company_context(tool_call.get("company", ""))
         if tool == "quiz":
             return f"已出题：{tool_call.get('question', '')}（类型：{tool_call.get('type', 'open')}）"
+        if tool in ("github_list_repos", "github_get_readme", "github_get_repo", "github_list_commits"):
+            from app.services.github.tools import execute_github_tool
+
+            # 映射 prep 简写到 github_* 工具名
+            name = tool if tool.startswith("github_") else f"github_{tool}"
+            args = {k: v for k, v in tool_call.items() if k != "tool"}
+            return await execute_github_tool(name, args)
         return "未知工具"
