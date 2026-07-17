@@ -6,7 +6,8 @@
 - 消费 runner 的 :class:`StreamEvent` 并翻译为前端事件
 - 调度 TTS 句子级播放（非阻塞，使用串行队列避免重叠）
 - 心跳 + 死锁 fallback：30s 收不到客户端消息发 ping，连续 3 次未回 pong
-  关闭；异常路径强制 turn_state 回到 ``USER_SPEAKING`` 防卡死。
+  关闭；异常路径强制 turn_state 回到 ``USER_SPEAKING`` 防卡死
+- 单 session 单活跃连接：新连接踢旧，避免多端 save_state 互相覆盖
 """
 
 from __future__ import annotations
@@ -49,6 +50,51 @@ _HEARTBEAT_MAX_MISSES: int = 3
 _AUDIO_BUFFER_MAX_BYTES: int = 5 * 1024 * 1024  # 5 MB
 # 与 HTTP InterviewMessageRequest.image_base64 对齐的视觉帧长度上限
 _IMAGE_BASE64_MAX_LEN: int = 300_000
+
+# ── 单会话单连接注册表 ────────────────────────────────────────
+# session_id -> 当前持有租约的 handler；新连接 claim 时踢掉旧连接
+_active_handlers: dict[int, InterviewWSHandler] = {}
+_registry_lock = asyncio.Lock()
+
+
+async def claim_session_connection(handler: InterviewWSHandler) -> None:
+    """为 handler 占用 session 租约；若已有旧连接则通知并关闭旧连接。"""
+    old: InterviewWSHandler | None = None
+    async with _registry_lock:
+        old = _active_handlers.get(handler.session_id)
+        _active_handlers[handler.session_id] = handler
+        handler._superseded = False
+    if old is not None and old is not handler:
+        old._superseded = True
+        logger.info(
+            "WS 会话租约被顶替 session=%s old=%s new=%s",
+            handler.session_id,
+            id(old),
+            id(handler),
+        )
+        try:
+            await old.send(
+                "error",
+                message="该面试已在其他连接中打开，本连接将关闭",
+            )
+        except Exception:
+            pass
+        try:
+            await old.ws.close(code=4000)
+        except Exception:
+            pass
+
+
+async def release_session_connection(handler: InterviewWSHandler) -> None:
+    """仅当 handler 仍持有租约时释放（被顶替的旧连接不得误删新连接）。"""
+    async with _registry_lock:
+        if _active_handlers.get(handler.session_id) is handler:
+            _active_handlers.pop(handler.session_id, None)
+
+
+def reset_session_registry_for_tests() -> None:
+    """测试用：清空会话连接注册表。"""
+    _active_handlers.clear()
 
 
 class _SentenceTTSQueue:
@@ -133,6 +179,8 @@ class InterviewWSHandler:
         self.tts_voice = settings.tts_voice
         self._whisper_model = settings.whisper_model
         self._tts_queue = _SentenceTTSQueue()
+        # 被同 session 新连接顶替时置 True，主循环应尽快退出
+        self._superseded = False
 
     # ------------------------------------------------------------------
     # 传输层工具
@@ -154,6 +202,8 @@ class InterviewWSHandler:
         # 注入 trace_id 便于按 WS 会话串联日志
         ws_tid = f"ws-{self.session_id}-{uuid.uuid4().hex[:8]}"
         set_trace_id(ws_tid)
+        # 单会话单连接：先占租约，再跑业务（新连接踢旧）
+        await claim_session_connection(self)
         db = SessionLocal()
         try:
             session = db.query(InterviewSession).filter(
@@ -203,13 +253,15 @@ class InterviewWSHandler:
 
             # 主循环带心跳：30s 未收到客户端消息主动 ping；累计 3 次失败断开
             miss_count = 0
-            while True:
+            while not self._superseded:
                 try:
                     data = await asyncio.wait_for(
                         self.ws.receive_json(),
                         timeout=_HEARTBEAT_TIMEOUT_SEC,
                     )
                 except asyncio.TimeoutError:
+                    if self._superseded:
+                        break
                     miss_count += 1
                     if miss_count >= _HEARTBEAT_MAX_MISSES:
                         logger.warning(
@@ -225,6 +277,8 @@ class InterviewWSHandler:
                     except Exception:
                         break
                     continue
+                if self._superseded:
+                    break
                 miss_count = 0  # 收到任何客户端消息即重置
                 await self._dispatch(data, db, session)
         except WebSocketDisconnect:
@@ -242,6 +296,7 @@ class InterviewWSHandler:
             except Exception:
                 pass
         finally:
+            await release_session_connection(self)
             try:
                 await self._tts_queue.stop()
             except Exception:
