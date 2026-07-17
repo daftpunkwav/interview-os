@@ -10,6 +10,7 @@ import { useAudioRecorder } from "@/features/media/useAudioRecorder";
 import { useTTSPlayer } from "@/features/media/useTTSPlayer";
 import { api } from "@/lib/api";
 import { PHASE_LABELS } from "@/config/phases";
+import { toast } from "@/components/Toast";
 import { Flag, Loader2, Send, WifiOff, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -149,7 +150,15 @@ export default function InterviewRoomPage() {
       setTokenUsage((t) => t + msg.content.length);
       requestHint(msg.content);
       if (msg.is_complete) {
-        setTimeout(() => router.push(`/report/${sessionId}`), 2000);
+        // 先确保报告落库（WS 端也会生成；finish 幂等），失败则不跳转
+        void (async () => {
+          try {
+            await api.finishInterview(sessionId);
+            setTimeout(() => router.push(`/report/${sessionId}`), 1500);
+          } catch {
+            toast.error("报告尚未就绪，请点击「结束面试」重试");
+          }
+        })();
       }
     });
     on("stt_final", (msg) => {
@@ -191,8 +200,10 @@ export default function InterviewRoomPage() {
   const handleFinish = async () => {
     try {
       await api.finishInterview(sessionId);
-    } catch { /* */ }
-    router.push(`/report/${sessionId}`);
+      router.push(`/report/${sessionId}`);
+    } catch {
+      toast.error("结束面试失败，请检查网络与 LLM 配置后重试");
+    }
   };
 
   const voiceStatus = micError
