@@ -5,7 +5,7 @@
 - 文件名清洗（防路径穿越）
 - MIME 类型嗅探
 - URL/SSRF 过滤（多 A 记录遍历 + IPv6 + 端口白名单）
-- DNS pin：校验后固定 IP 建连，缓解 DNS 重绑定 TOCTOU
+- DNS pin：单次解析后固定 IP 建连，缓解 DNS 重绑定 TOCTOU
 - API Key 脱敏（覆盖主流形态）
 """
 
@@ -90,6 +90,10 @@ _DEFAULT_BLOCKED_NETS = [
     ipaddress.ip_network("::ffff:0:0/96"),
 ]
 
+_LOOPBACK_NETS = (
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+)
 
 # 允许的对外端口：dev 模式可放行任意；生产期仅 HTTP/HTTPS。
 _DEFAULT_ALLOWED_PORTS = frozenset({80, 443})
@@ -99,13 +103,11 @@ class UnsafeURLError(ValueError):
     """传入的 URL 命中安全策略。"""
 
 
-def _resolve_all(hostname: str) -> list[ipaddress._BaseNetwork | ipaddress._BaseAddress]:
+def _resolve_all(hostname: str) -> list[ipaddress._BaseAddress]:
     """解析域名/字面量为所有候选 IP。
 
     - IPv4 / IPv6 字面量直接返回；
     - 域名返回 getaddrinfo 全量 SOCK_STREAM 解析结果。
-
-    任一记录在私有/loopback 网段内都视为不安全。
     """
     try:
         # IPv4 / IPv6 字面量（如 1.2.3.4 或 ::1）
@@ -130,6 +132,30 @@ def _resolve_all(hostname: str) -> list[ipaddress._BaseNetwork | ipaddress._Base
     return out
 
 
+def _is_loopback_ip(ip: ipaddress._BaseAddress) -> bool:
+    return any(ip in net for net in _LOOPBACK_NETS)
+
+
+def _ip_is_safe(ip: ipaddress._BaseAddress, *, allow_local: bool) -> bool:
+    """单个解析结果是否允许出站。
+
+    ``allow_local=True`` 仅额外放行 loopback；私网 / metadata 仍拒绝。
+    必须对全部 A/AAAA 分别判定（禁止「首个 loopback 即放行」）。
+    """
+    if allow_local and _is_loopback_ip(ip):
+        return True
+    for net in _DEFAULT_BLOCKED_NETS:
+        if ip in net:
+            return False
+    return True
+
+
+def _all_ips_safe(ips: list[ipaddress._BaseAddress], *, allow_local: bool) -> bool:
+    if not ips:
+        return False
+    return all(_ip_is_safe(ip, allow_local=allow_local) for ip in ips)
+
+
 def is_safe_http_url(
     url: str,
     *,
@@ -140,16 +166,14 @@ def is_safe_http_url(
     """校验 ``url`` 是否为安全可外发的 HTTP/HTTPS URL。
 
     - 仅允许 http(s) 协议；
-    - 解析并校验主机名；
-    - 多 A 记录遍历：任一记录在 loopback / 私网 / 链路本地内即拒绝；
+    - 多 A 记录：**任一** 不安全即拒绝；
     - ``allow_local=False`` 时拒绝非常规端口（默认仅 80/443）；
-    - ``allow_local=True``（dev 模式）放行 loopback，但端口仍受约束。
+    - ``allow_local=True`` 放行 loopback，私网/metadata 仍拒。
 
     .. note::
 
-        仅做校验不建连。实际出站请配合 :func:`pin_safe_http_url` /
-        :class:`PinnedHostTransport` / :func:`make_pinned_async_client`，
-        将解析 IP pin 住后再请求，缓解 DNS 重绑定 TOCTOU。
+        仅做校验不建连。出站请用 :func:`pin_safe_http_url`
+        （单次解析 → 校验 → pin，禁止二次 DNS）。
     """
     if not url:
         return False
@@ -163,41 +187,16 @@ def is_safe_http_url(
     if not parsed.hostname:
         return False
 
-    if allow_local:
-        # dev 模式：放行 loopback / IPv6 loopback；
-        # 私网 / metadata / multicast 仍拒（防止误用 ollama 等本地服务时
-        # 退化到攻击内网 metadata 服务）。
-        try:
-            ips = _resolve_all(parsed.hostname)
-        except ValueError:
+    if not allow_local:
+        port = parsed.port
+        if port is not None and port not in (allowed_ports or _DEFAULT_ALLOWED_PORTS):
             return False
-        for ip in ips:
-            for net in _DEFAULT_BLOCKED_NETS:
-                if ip in net:
-                    # loopback 允许
-                    if net in (
-                        ipaddress.ip_network("127.0.0.0/8"),
-                        ipaddress.ip_network("::1/128"),
-                    ):
-                        return True
-                    return False
-        return True
-
-    # 端口白名单（非 allow_local 时）
-    port = parsed.port
-    if port is not None and port not in (allowed_ports or _DEFAULT_ALLOWED_PORTS):
-        return False
 
     try:
         ips = _resolve_all(parsed.hostname)
-        for ip in ips:
-            for net in _DEFAULT_BLOCKED_NETS:
-                if ip in net:
-                    return False
     except ValueError:
         return False
-
-    return True
+    return _all_ips_safe(ips, allow_local=allow_local)
 
 
 def assert_safe_http_url(
@@ -215,8 +214,8 @@ def assert_safe_http_url(
 class PinnedHttpTarget:
     """SSRF 校验通过后锁定的连接目标。
 
-    - ``hostname``: 原始主机名（用于 Host 头与 TLS SNI）
-    - ``pinned_ip``: 校验瞬间解析到的安全 IP（建连不再二次 DNS）
+    - ``hostname``: 原始主机名（Host / SNI）
+    - ``pinned_ip``: **同一次**解析中校验通过的安全 IP
     """
 
     original_url: str
@@ -232,29 +231,42 @@ def pin_safe_http_url(
     allow_local: bool = False,
     allowed_ports: frozenset[int] | None = None,
 ) -> PinnedHttpTarget:
-    """校验 URL 安全并将主机 pin 到单一解析 IP。
+    """单次 DNS 解析 → 校验全部候选 → pin 首个安全 IP。
 
-    调用方应通过 :class:`PinnedHostTransport` 使用 ``pinned_ip`` 建连，
-    同时保留 ``Host`` / SNI 为原始 ``hostname``，关闭「校验后 DNS 重绑」窗口。
+    **禁止**先 ``is_safe_http_url`` 再二次 ``_resolve_all``，否则存在
+    DNS 重绑定 TOCTOU（校验时公网、pin 时内网）。
     """
-    if not is_safe_http_url(url, allow_local=allow_local, allowed_ports=allowed_ports):
-        raise UnsafeURLError(f"URL 被策略拒绝: {url!r}")
-    parsed = urlparse(url.strip())
+    if not url:
+        raise UnsafeURLError("URL 为空")
+    try:
+        parsed = urlparse(url.strip())
+    except Exception as e:
+        raise UnsafeURLError(f"URL 解析失败: {url!r}") from e
+
+    if parsed.scheme not in ("http", "https"):
+        raise UnsafeURLError(f"URL 协议不安全: {url!r}")
     hostname = parsed.hostname
     if not hostname:
         raise UnsafeURLError(f"URL 缺少主机名: {url!r}")
+
+    if not allow_local:
+        port = parsed.port
+        if port is not None and port not in (allowed_ports or _DEFAULT_ALLOWED_PORTS):
+            raise UnsafeURLError(f"URL 端口不被允许: {url!r}")
+
     try:
         ips = _resolve_all(hostname)
     except ValueError as e:
         raise UnsafeURLError(str(e)) from e
     if not ips:
         raise UnsafeURLError(f"无法解析主机: {hostname!r}")
-    # is_safe_http_url 已保证全部候选安全；取首个稳定建连
-    pinned = str(ips[0])
+    if not _all_ips_safe(ips, allow_local=allow_local):
+        raise UnsafeURLError(f"URL 被策略拒绝: {url!r}")
+
     return PinnedHttpTarget(
         original_url=url.strip(),
         hostname=hostname,
-        pinned_ip=pinned,
+        pinned_ip=str(ips[0]),
         scheme=parsed.scheme,
         port=parsed.port,
     )
@@ -329,7 +341,12 @@ def make_pinned_async_client(
         hostname=target.hostname,
         pinned_ip=target.pinned_ip,
     )
-    return httpx.AsyncClient(transport=transport, timeout=timeout)
+    # 禁止跟随重定向：跳转目标可能脱离 pin 主机
+    return httpx.AsyncClient(
+        transport=transport,
+        timeout=timeout,
+        follow_redirects=False,
+    )
 
 
 def is_localhost_family(host: str) -> bool:
