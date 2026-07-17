@@ -1,7 +1,7 @@
 """面试报告 API。
 
-- 流式端点 ``/{session_id}/stream``：先增量 yield token，最后一次性 yield
-  done 事件并附带完整报告 JSON，避免前端在 token 流结束后再发一次拉取；
+- 流式端点 ``/{session_id}/stream``：单次 LLM 结构化生成报告，再将 JSON
+  伪流式分片推送，最后 ``done`` 附完整 report（避免 stream + chat_json 双次计费）；
 - 异常时仅返回脱敏后的提示文案，上游异常细节走 logger.exception；
 - 状态比较统一使用 :class:`app.core.constants.SessionStatus` 枚举值，
   防止字符串漂移。
@@ -21,7 +21,7 @@ from app.core.security import redact_api_key
 from app.database import get_db
 from app.models import GrowthRecord, InterviewSession
 from app.schemas import InterviewReport, InterviewReportResponse
-from app.services.interview.agent import generate_report, stream_report
+from app.services.interview.agent import generate_report
 from app.services.llm.client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,8 @@ router = APIRouter()
 
 # SSE done/error 事件的常量文案（避免上游异常泄露）
 _SSE_ERR_GENERIC = "报告生成失败，请稍后重试"
+# 伪流式分片大小（字符），兼顾首包延迟与事件数量
+_PSEUDO_STREAM_CHUNK = 48
 
 
 def _safe_json_list(raw: str | None, *, field: str, record_id: int) -> list:
@@ -82,9 +84,11 @@ def get_system_growth_insights():
     ],
 )
 async def get_report_stream(session_id: int, db: Session = Depends(get_db)):
-    """流式返回报告。前端可增量渲染，JSON 解析由前端负责。
+    """流式返回报告（单次 LLM 调用）。
 
-    ``done`` 事件携带完整 ``report`` JSON，前端一次性落库；避免再次请求。
+    仅调用一次 ``generate_report``（``chat_json``），再将 JSON 文本分片
+    以 ``token`` 事件伪流式推送，最后 ``done`` 携带同一份结构化 report 并落库。
+    避免历史路径「自由文本 stream + 再 chat_json」双倍成本与内容不一致。
     """
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
@@ -96,14 +100,16 @@ async def get_report_stream(session_id: int, db: Session = Depends(get_db)):
 
     async def event_stream():
         try:
-            async for token in stream_report(session, llm):
-                yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
-            # 流式结束后再生成一次结构化报告并保存（与同步 finish 路径一致）
             report = await generate_report(session, llm)
-            session.report = report.model_dump_json()
+            report_json = report.model_dump_json()
+            # 伪流式：同一份 JSON 分片推送，便于前端渐进展示
+            for i in range(0, len(report_json), _PSEUDO_STREAM_CHUNK):
+                chunk = report_json[i : i + _PSEUDO_STREAM_CHUNK]
+                yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
+            session.report = report_json
             session.overall_score = report.overall_score
             db.commit()
-            report_payload = json.loads(report.model_dump_json())
+            report_payload = json.loads(report_json)
             yield f"data: {json.dumps({'type': 'done', 'report': report_payload}, ensure_ascii=False)}\n\n"
         except asyncio.CancelledError:
             # 客户端断开：记录但不再尝试 yield（连接已关闭）
