@@ -2,7 +2,8 @@
  *
  * 所有接口返回类型严格基于 ``src/types``：
  * - REST 调用走 Next rewrites（``/api/* → localhost:8000/*``）；
- * - 流式调用走 ``NEXT_PUBLIC_STREAM_API_BASE``，避免 Next 缓冲；
+ * - 流式调用：本机 loopback 时走同源 ``/api/*``（避免 localhost vs 127.0.0.1 跨域），
+ *   远程 ``STREAM_API_BASE`` 时直连后端以避免代理缓冲；
  * - 错误信息解析兼容 FastAPI 的 ``{detail: ...}``。
  */
 
@@ -30,6 +31,36 @@ import type {
   UserProfile,
 } from "@/types";
 import { getEnv } from "@/lib/env";
+
+/* ====================================================================== */
+/* 流式 URL 解析                                                            */
+/* ====================================================================== */
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+/**
+ * 解析流式接口最终 URL。
+ *
+ * - 浏览器 + STREAM_API_BASE 指向本机：返回同源相对路径，经 Next rewrite，
+ *   避免 ``localhost:3000`` → ``127.0.0.1:8000`` 的跨域/PNA 导致 Failed to fetch。
+ * - 其他情况：拼绝对地址直连后端（生产分离部署）。
+ */
+function resolveStreamUrl(apiPath: string): string {
+  const path = apiPath.startsWith("/") ? apiPath : `/${apiPath}`;
+  const base = getEnv().STREAM_API_BASE;
+  if (typeof window !== "undefined") {
+    try {
+      const host = new URL(base).hostname.toLowerCase();
+      if (LOOPBACK_HOSTS.has(host)) {
+        return path;
+      }
+    } catch {
+      // base 非法时退回同源路径，至少不跨域
+      return path;
+    }
+  }
+  return `${base}${path}`;
+}
 
 /* ====================================================================== */
 /* 通用 fetch 封装                                                          */
@@ -237,18 +268,21 @@ export const api = {
     content: string,
     onToken: (token: string) => void,
   ): Promise<{ token_usage: number }> => {
+    const url = resolveStreamUrl(
+      `/api/v1/prep/sessions/${sessionId}/message/stream`,
+    );
     let res: Response;
     try {
-      res = await fetch(
-        `${getEnv().STREAM_API_BASE}/api/v1/prep/sessions/${sessionId}/message/stream`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content }),
-        },
-      );
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
     } catch {
-      throw new ApiError("无法连接后端服务", 0);
+      throw new ApiError(
+        `无法连接后端服务（流式 ${url}）。请确认 backend 已启动，且前端代理指向正确端口`,
+        0,
+      );
     }
     if (!res.ok) throw new ApiError(await parseErrorResponse(res), res.status);
 
