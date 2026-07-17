@@ -5,6 +5,7 @@
 - 文件名清洗（防路径穿越）
 - MIME 类型嗅探
 - URL/SSRF 过滤（多 A 记录遍历 + IPv6 + 端口白名单）
+- DNS pin：校验后固定 IP 建连，缓解 DNS 重绑定 TOCTOU
 - API Key 脱敏（覆盖主流形态）
 """
 
@@ -14,8 +15,12 @@ import ipaddress
 import logging
 import re
 import socket
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -142,9 +147,9 @@ def is_safe_http_url(
 
     .. note::
 
-        本函数为 BEST-EFFORT 校验：DNS 重绑定（TOCTOU）需要上游 LLMClient
-        把校验过的 IP 透传到 httpx transport 才能根治。建议后续用
-        httpx transport layer 在该 IP 上强制连接并保留 ``Host`` 头。
+        仅做校验不建连。实际出站请配合 :func:`pin_safe_http_url` /
+        :class:`PinnedHostTransport` / :func:`make_pinned_async_client`，
+        将解析 IP pin 住后再请求，缓解 DNS 重绑定 TOCTOU。
     """
     if not url:
         return False
@@ -204,6 +209,127 @@ def assert_safe_http_url(
     """不安全时抛出 :class:`UnsafeURLError`。"""
     if not is_safe_http_url(url, allow_local=allow_local, allowed_ports=allowed_ports):
         raise UnsafeURLError(f"URL 被策略拒绝: {url!r}")
+
+
+@dataclass(frozen=True)
+class PinnedHttpTarget:
+    """SSRF 校验通过后锁定的连接目标。
+
+    - ``hostname``: 原始主机名（用于 Host 头与 TLS SNI）
+    - ``pinned_ip``: 校验瞬间解析到的安全 IP（建连不再二次 DNS）
+    """
+
+    original_url: str
+    hostname: str
+    pinned_ip: str
+    scheme: str
+    port: int | None
+
+
+def pin_safe_http_url(
+    url: str,
+    *,
+    allow_local: bool = False,
+    allowed_ports: frozenset[int] | None = None,
+) -> PinnedHttpTarget:
+    """校验 URL 安全并将主机 pin 到单一解析 IP。
+
+    调用方应通过 :class:`PinnedHostTransport` 使用 ``pinned_ip`` 建连，
+    同时保留 ``Host`` / SNI 为原始 ``hostname``，关闭「校验后 DNS 重绑」窗口。
+    """
+    if not is_safe_http_url(url, allow_local=allow_local, allowed_ports=allowed_ports):
+        raise UnsafeURLError(f"URL 被策略拒绝: {url!r}")
+    parsed = urlparse(url.strip())
+    hostname = parsed.hostname
+    if not hostname:
+        raise UnsafeURLError(f"URL 缺少主机名: {url!r}")
+    try:
+        ips = _resolve_all(hostname)
+    except ValueError as e:
+        raise UnsafeURLError(str(e)) from e
+    if not ips:
+        raise UnsafeURLError(f"无法解析主机: {hostname!r}")
+    # is_safe_http_url 已保证全部候选安全；取首个稳定建连
+    pinned = str(ips[0])
+    return PinnedHttpTarget(
+        original_url=url.strip(),
+        hostname=hostname,
+        pinned_ip=pinned,
+        scheme=parsed.scheme,
+        port=parsed.port,
+    )
+
+
+class PinnedHostTransport(httpx.AsyncBaseTransport):
+    """将请求中的主机名改写为已 pin 的 IP，并保留 Host / SNI。
+
+    建连路径使用 IP 字面量，不再触发 DNS 二次解析，从而缓解经典 DNS 重绑定。
+    """
+
+    def __init__(
+        self,
+        hostname: str,
+        pinned_ip: str,
+        **transport_kwargs: Any,
+    ) -> None:
+        self._hostname = hostname
+        self._pinned_ip = pinned_ip
+        self._inner = httpx.AsyncHTTPTransport(**transport_kwargs)
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        # 仅改写匹配 pin 的主机；其它透传（防御误用）
+        if not host or host.lower() not in {
+            self._hostname.lower(),
+            self._pinned_ip.lower().strip("[]"),
+        }:
+            return await self._inner.handle_async_request(request)
+
+        # httpx 0.28 Headers 无 mutablecopy，复制为新 Headers
+        headers = httpx.Headers(request.headers)
+        port = request.url.port
+        if port and port not in (80, 443):
+            headers["host"] = f"{self._hostname}:{port}"
+        else:
+            headers["host"] = self._hostname
+
+        new_url = request.url.copy_with(host=self._pinned_ip)
+        extensions = dict(request.extensions or {})
+        # httpcore：SNI + 证书校验主机名使用原始域名，而非 IP
+        extensions["sni_hostname"] = self._hostname
+
+        pinned_request = httpx.Request(
+            method=request.method,
+            url=new_url,
+            headers=headers,
+            stream=request.stream,
+            extensions=extensions,
+        )
+        return await self._inner.handle_async_request(pinned_request)
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
+
+def make_pinned_async_client(
+    url: str,
+    *,
+    allow_local: bool = False,
+    timeout: float = 60.0,
+    allowed_ports: frozenset[int] | None = None,
+) -> httpx.AsyncClient:
+    """创建对 ``url`` 主机做 DNS pin 的 :class:`httpx.AsyncClient`。
+
+    请求仍使用原始 URL（含 hostname），由 transport 在出站时改写为 pin IP。
+    """
+    target = pin_safe_http_url(
+        url, allow_local=allow_local, allowed_ports=allowed_ports
+    )
+    transport = PinnedHostTransport(
+        hostname=target.hostname,
+        pinned_ip=target.pinned_ip,
+    )
+    return httpx.AsyncClient(transport=transport, timeout=timeout)
 
 
 def is_localhost_family(host: str) -> bool:

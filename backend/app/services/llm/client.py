@@ -22,7 +22,12 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.constants import DEFAULT_LLM_PROTOCOL
-from app.core.security import UnsafeURLError, is_safe_http_url, redact_api_key
+from app.core.security import (
+    UnsafeURLError,
+    is_safe_http_url,
+    make_pinned_async_client,
+    redact_api_key,
+)
 from app.core.secrets import LegacySecretFormatError, decrypt_secret
 from app.models import LLMSettings
 
@@ -217,7 +222,10 @@ class LLMClient:
         )
         headers = self._headers()
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        # pin DNS：校验后固定 IP 建连，避免重绑定 TOCTOU
+        async with make_pinned_async_client(
+            self.api_base, allow_local=_is_local_allowed(), timeout=60.0
+        ) as client:
             try:
                 resp = await _retry_request(
                     lambda: client.post(url, headers=headers, json=payload)
@@ -269,7 +277,9 @@ class LLMClient:
             payload["tool_choice"] = tool_choice
         headers = self._headers()
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
+        async with make_pinned_async_client(
+            self.api_base, allow_local=_is_local_allowed(), timeout=90.0
+        ) as client:
             try:
                 resp = await _retry_request(
                     lambda: client.post(url, headers=headers, json=payload)
@@ -318,7 +328,9 @@ class LLMClient:
         max_retries = 3
         backoff = 0.5
         last_exc: Exception | None = None
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with make_pinned_async_client(
+            self.api_base, allow_local=_is_local_allowed(), timeout=120.0
+        ) as client:
             for attempt in range(max_retries + 1):
                 try:
                     async with client.stream(
@@ -476,7 +488,9 @@ class LLMClient:
             "Authorization": f"Bearer {embed_key}",
             "Content-Type": "application/json",
         }
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with make_pinned_async_client(
+            base, allow_local=_is_local_allowed(), timeout=60.0
+        ) as client:
             try:
                 resp = await _retry_request(
                     lambda: client.post(url, headers=headers, json=payload)

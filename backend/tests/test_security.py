@@ -11,13 +11,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 
 from app.core.security import (
+    PinnedHostTransport,
     UnsafeURLError,
     assert_safe_http_url,
     assert_within_dir,
     is_safe_http_url,
+    pin_safe_http_url,
     redact_api_key,
     sanitize_filename,
 )
@@ -186,3 +189,56 @@ class TestIsSafeHttpUrl:
         """IPv6 字面量 [::1] 也走严格拒绝。"""
         assert is_safe_http_url("http://[::1]", allow_local=False) is False
         assert is_safe_http_url("http://[::ffff:127.0.0.1]", allow_local=False) is False
+
+
+class TestPinSafeHttpUrl:
+    def test_pin_literal_ip_loopback_dev(self) -> None:
+        target = pin_safe_http_url("http://127.0.0.1:11434/v1", allow_local=True)
+        assert target.hostname == "127.0.0.1"
+        assert target.pinned_ip == "127.0.0.1"
+        assert target.port == 11434
+
+    def test_pin_rejects_unsafe(self) -> None:
+        with pytest.raises(UnsafeURLError):
+            pin_safe_http_url("http://127.0.0.1:11434/v1", allow_local=False)
+
+    def test_pin_public_hostname(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import ipaddress
+
+        monkeypatch.setattr(
+            "app.core.security._resolve_all",
+            lambda host: [ipaddress.ip_address("93.184.216.34")],
+        )
+        target = pin_safe_http_url("https://example.com/v1", allow_local=False)
+        assert target.hostname == "example.com"
+        assert target.pinned_ip == "93.184.216.34"
+
+
+@pytest.mark.asyncio
+async def test_pinned_host_transport_rewrites_to_ip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """出站请求 host 改为 pin IP，Host 头与 sni_hostname 保留原域名。"""
+    captured: dict = {}
+
+    class _Inner(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+            captured["host"] = request.url.host
+            captured["header_host"] = request.headers.get("host")
+            captured["sni"] = (request.extensions or {}).get("sni_hostname")
+            return httpx.Response(200, json={"ok": True}, request=request)
+
+    import app.core.security as sec
+
+    monkeypatch.setattr(
+        sec.httpx,
+        "AsyncHTTPTransport",
+        lambda **kw: _Inner(),
+    )
+    transport = PinnedHostTransport(hostname="api.example.com", pinned_ip="1.2.3.4")
+    async with httpx.AsyncClient(transport=transport) as client:
+        resp = await client.get("https://api.example.com/v1/models")
+    assert resp.status_code == 200
+    assert captured["host"] == "1.2.3.4"
+    assert captured["header_host"] == "api.example.com"
+    assert captured["sni"] == "api.example.com"
