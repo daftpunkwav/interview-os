@@ -11,10 +11,12 @@ export function FluidBackground({ className = "" }: { className?: string }) {
   const animationRef = useRef(0);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d", { alpha: true });
-    if (!ctx) return;
+    const canvasEl = canvasRef.current;
+    if (!canvasEl) return;
+    const ctx2d = canvasEl.getContext("2d", { alpha: true });
+    if (!ctx2d) return;
+    const canvas = canvasEl;
+    const ctx = ctx2d;
 
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let dpr = 1;
