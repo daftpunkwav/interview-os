@@ -512,13 +512,59 @@ async def generate_report(
     llm: LLMClient,
     face_records: list[dict] | None = None,
 ) -> InterviewReport:
-    """根据面试对话生成评估报告（同步版本）。"""
+    """根据面试对话生成评估报告。
+
+    失败时向上抛出，避免调用方把假分数 ``_fallback_report`` 当作正式结果落库。
+    仅在明确需要降级展示且不落库的场景再调用 :func:`_fallback_report`。
+    """
     try:
         data = await llm.chat_json(build_report_messages(session, face_records))
         return InterviewReport(**data)
     except Exception as e:
         logger.error("报告生成失败: %s", e)
-        return _fallback_report()
+        raise
+
+
+async def generate_and_persist_report(
+    session: InterviewSession,
+    llm: LLMClient,
+    db: Session,
+    face_records: list[dict] | None = None,
+) -> InterviewReport:
+    """生成报告并写入 session / GrowthRecord（同一事务）。
+
+    任意阶段失败整体回滚，避免「session 已 completed 但 GrowthRecord 缺失」。
+    """
+    from app.core.constants import SessionStatus
+    from app.models import GrowthRecord
+
+    report = await generate_report(session, llm, face_records)
+
+    growth = GrowthRecord(
+        profile_id=session.profile_id,
+        session_id=session.id,
+        weak_skills=json.dumps(report.weaknesses, ensure_ascii=False),
+        common_mistakes=json.dumps(report.weaknesses[:3], ensure_ascii=False),
+        training_plan=json.dumps(report.training_plan, ensure_ascii=False),
+    )
+
+    try:
+        session.report = report.model_dump_json()
+        session.overall_score = report.overall_score
+        session.status = SessionStatus.COMPLETED.value
+        session.ended_at = datetime.now(timezone.utc)
+        db.add(growth)
+        db.commit()
+        try:
+            from app.services.growth.learning import record_interview_learning
+
+            record_interview_learning(session, report=report.model_dump())
+        except Exception:
+            pass
+    except Exception:
+        db.rollback()
+        raise
+    return report
 
 
 async def stream_report(

@@ -7,9 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import TypeAdapter
 from sqlalchemy.orm import Session
 
-from app.core.constants import SessionStatus
+from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, SessionStatus
+from app.core.ratelimit import rate_limit_dep
 from app.database import get_db
-from app.models import GrowthRecord, InterviewSession
+from app.models import InterviewSession
 from app.schemas import (
     ChatMessage,
     InterviewConfig,
@@ -17,55 +18,15 @@ from app.schemas import (
     InterviewMessageResponse,
     InterviewSessionResponse,
 )
-from app.services.interview.agent import InterviewAgent, generate_report
+from app.services.interview.agent import InterviewAgent, generate_and_persist_report
+from app.services.interview.events import EventKind
+from app.services.interview.runner import InterviewRunner
 from app.services.llm.client import LLMClient
 
 router = APIRouter()
 
 # 强类型 ChatMessage 列表校验（防御存储层历史脏数据）
 _CHAT_MSG_ADAPTER: TypeAdapter[list[ChatMessage]] = TypeAdapter(list[ChatMessage])
-
-
-async def _generate_and_persist_report(
-    session: InterviewSession,
-    llm: LLMClient,
-    db: Session,
-) -> None:
-    """生成报告并写入 session / GrowthRecord。
-
-    报告生成与成长记录在单一事务中完成；任意阶段失败整体回滚，
-    避免出现"session 已 completed 但 GrowthRecord 缺失"的不一致状态。
-    """
-    report = await generate_report(session, llm)
-
-    growth = GrowthRecord(
-        profile_id=session.profile_id,
-        session_id=session.id,
-        weak_skills=json.dumps(report.weaknesses, ensure_ascii=False),
-        common_mistakes=json.dumps(report.weaknesses[:3], ensure_ascii=False),
-        training_plan=json.dumps(report.training_plan, ensure_ascii=False),
-    )
-
-    try:
-        session.report = report.model_dump_json()
-        session.overall_score = report.overall_score
-        session.status = SessionStatus.COMPLETED.value
-        session.ended_at = datetime.now(timezone.utc)
-        db.add(growth)
-        db.commit()
-        # 系统自我成长记忆（失败不影响主流程）
-        try:
-            from app.services.growth.learning import record_interview_learning
-
-            record_interview_learning(
-                session,
-                report=report.model_dump(),
-            )
-        except Exception:
-            pass
-    except Exception:
-        db.rollback()
-        raise
 
 
 @router.post("/sessions", response_model=InterviewSessionResponse)
@@ -104,7 +65,35 @@ def get_session(session_id: int, db: Session = Depends(get_db)):
     return _to_response(session)
 
 
-@router.post("/sessions/{session_id}/start")
+async def _collect_turn_result(stream) -> tuple[str, bool]:
+    """消费 Runner 事件流，返回 (最终文案, is_complete)。"""
+    content = ""
+    is_complete = False
+    error: str | None = None
+    async for event in stream:
+        if event.kind == EventKind.TOKEN:
+            content += event.token
+        elif event.kind == EventKind.TURN_COMPLETE:
+            content = event.content
+            is_complete = bool(event.is_complete)
+        elif event.kind == EventKind.ERROR:
+            error = event.error or "面试执行失败"
+    if error:
+        raise HTTPException(status_code=502, detail=error)
+    return content, is_complete
+
+
+@router.post(
+    "/sessions/{session_id}/start",
+    dependencies=[
+        Depends(
+            rate_limit_dep(
+                key="llm",
+                limit=DEFAULT_LLM_RATE_LIMIT_PER_MINUTE,
+            )
+        )
+    ],
+)
 async def start_interview(session_id: int, db: Session = Depends(get_db)):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
@@ -117,7 +106,8 @@ async def start_interview(session_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="请先配置 LLM API Key")
 
     agent = InterviewAgent(session, llm)
-    opening = await agent.start(db)
+    runner = InterviewRunner(session, llm, agent)
+    opening, _ = await _collect_turn_result(runner.stream_opening(db))
 
     return {
         "session_id": session_id,
@@ -126,7 +116,18 @@ async def start_interview(session_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/sessions/{session_id}/message", response_model=InterviewMessageResponse)
+@router.post(
+    "/sessions/{session_id}/message",
+    response_model=InterviewMessageResponse,
+    dependencies=[
+        Depends(
+            rate_limit_dep(
+                key="llm",
+                limit=DEFAULT_LLM_RATE_LIMIT_PER_MINUTE,
+            )
+        )
+    ],
+)
 async def send_message(
     session_id: int,
     body: InterviewMessageRequest,
@@ -139,24 +140,46 @@ async def send_message(
         raise HTTPException(status_code=400, detail="面试已结束")
 
     llm = LLMClient.from_db(db)
+    if not llm.api_key:
+        raise HTTPException(status_code=400, detail="请先配置 LLM API Key")
+
     agent = InterviewAgent(session, llm)
-    reply, is_complete = await agent.respond(
-        body.content, db, body.face_analysis, body.image_base64
+    runner = InterviewRunner(session, llm, agent)
+    reply, is_complete = await _collect_turn_result(
+        runner.stream_turn(
+            body.content,
+            db,
+            face=body.face_analysis,
+            image_b64=body.image_base64,
+        )
     )
 
     if is_complete:
-        await _generate_and_persist_report(session, llm, db)
+        try:
+            await generate_and_persist_report(session, llm, db)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"报告生成失败: {e}") from e
 
     return InterviewMessageResponse(
         session_id=session_id,
         message=ChatMessage(role="assistant", content=reply, timestamp=datetime.now(timezone.utc)),
         current_phase=session.current_phase,
         is_complete=is_complete,
-        phases_remaining=agent.get_phases_remaining() if not is_complete else [],
+        phases_remaining=list(agent.phases_remaining) if not is_complete else [],
     )
 
 
-@router.post("/sessions/{session_id}/finish")
+@router.post(
+    "/sessions/{session_id}/finish",
+    dependencies=[
+        Depends(
+            rate_limit_dep(
+                key="llm",
+                limit=DEFAULT_LLM_RATE_LIMIT_PER_MINUTE,
+            )
+        )
+    ],
+)
 async def finish_interview(session_id: int, db: Session = Depends(get_db)):
     """提前结束面试并生成报告。"""
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
@@ -170,7 +193,10 @@ async def finish_interview(session_id: int, db: Session = Depends(get_db)):
         return {"session_id": session_id, "status": "already_completed"}
 
     llm = LLMClient.from_db(db)
-    await _generate_and_persist_report(session, llm, db)
+    try:
+        await generate_and_persist_report(session, llm, db)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"报告生成失败: {e}") from e
     return {
         "session_id": session_id,
         "status": SessionStatus.COMPLETED.value,
