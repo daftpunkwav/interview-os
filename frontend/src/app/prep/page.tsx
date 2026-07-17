@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
-import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import { PREP_QUICK_PROMPTS } from "@/config/prepPrompts";
 import type { Resume } from "@/types";
@@ -219,34 +218,32 @@ export default function PrepPage() {
           ) : (
             <>
               <div className="flex items-center justify-between text-xs text-[var(--muted)] mb-2 px-1 shrink-0">
-                <span>辅导进行中 · {messages.length} 条消息</span>
-                <span>Token 约 {tokenUsage}</span>
+                <span className="chip chip-green !text-[11px]">辅导中 · {messages.length} 条</span>
+                <span className="font-mono tabular-nums">Token ≈ {tokenUsage || 0}</span>
               </div>
               <div
                 ref={chatScrollRef}
-                className="flex-1 min-h-0 overflow-y-auto border border-[var(--border)] rounded-xl p-4 space-y-4 mb-3 bg-[var(--card)]"
+                className="flex-1 min-h-0 overflow-y-auto surface-card p-4 space-y-3.5 mb-3"
               >
                 {messages.map((m) => (
                   <div
                     key={m.id}
-                    className={`flex gap-3 ${m.role === "user" ? "flex-row-reverse" : ""}`}
+                    className={`flex gap-2.5 ${m.role === "user" ? "flex-row-reverse" : ""}`}
                   >
                     <div
                       className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                        m.role === "user" ? "bg-brand-600" : "bg-gray-200"
+                        m.role === "user"
+                          ? "bg-[var(--brand)] text-white"
+                          : "bg-[var(--brand-soft)] text-[var(--brand-deep)]"
                       }`}
                     >
-                      {m.role === "user" ? (
-                        <User size={14} className="text-white" />
-                      ) : (
-                        <Bot size={14} className="text-gray-600" />
-                      )}
+                      {m.role === "user" ? <User size={14} /> : <Bot size={14} />}
                     </div>
                     <div
-                      className={`max-w-[88%] px-4 py-2.5 rounded-2xl text-sm ${
+                      className={`max-w-[88%] px-3.5 py-2.5 rounded-[var(--radius-lg)] text-sm leading-relaxed ${
                         m.role === "user"
-                          ? "bg-brand-600 text-white rounded-br-md leading-relaxed"
-                          : "bg-gray-100 text-gray-800 rounded-bl-md"
+                          ? "bg-[var(--brand)] text-white rounded-br-sm"
+                          : "bg-[var(--popover)] text-[var(--foreground)] border border-[var(--border)] rounded-bl-sm"
                       }`}
                     >
                       {m.role === "assistant" ? (
@@ -255,7 +252,7 @@ export default function PrepPage() {
                         ) : m.streaming ? (
                           <span className="flex items-center gap-2 text-[var(--muted)]">
                             <Loader2 className="animate-spin" size={14} />
-                            思考中...
+                            思考中…
                           </span>
                         ) : null
                       ) : (
@@ -268,32 +265,32 @@ export default function PrepPage() {
               </div>
               <div className="flex gap-2 shrink-0">
                 <input
-                  className="flex-1 px-4 py-3 rounded-xl border border-[var(--border)] text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 transition-all bg-white"
+                  className="field-input !h-11 flex-1"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-                  placeholder="问我任何面试相关问题..."
+                  placeholder="问我任何面试相关问题…"
                   disabled={loading}
                 />
-                <motion.button
+                <button
+                  type="button"
                   onClick={handleSend}
                   disabled={loading}
-                  className="px-5 py-3 rounded-xl bg-brand-600 text-white disabled:opacity-50"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                  className="btn-primary !w-11 !px-0 shrink-0"
+                  aria-label="发送"
                 >
                   {loading ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
-                </motion.button>
+                </button>
               </div>
             </>
           )}
         </div>
 
         {/* 右侧：上下文与快捷操作 */}
-        <div className="hidden lg:flex flex-col gap-4 min-h-0 overflow-y-auto pr-0.5">
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
-            <h2 className="font-semibold text-sm mb-3 flex items-center gap-2">
-              <FileText size={16} className="text-brand-600" />
+        <div className="hidden lg:flex flex-col gap-3 min-h-0 overflow-y-auto pr-0.5">
+          <div className="surface-card p-4">
+            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 tracking-tight">
+              <FileText size={15} className="text-[var(--brand)]" />
               关联简历
             </h2>
             {selectedResume ? (
@@ -304,17 +301,14 @@ export default function PrepPage() {
                   {selectedResume.score != null && ` · 评分 ${selectedResume.score}`}
                 </p>
                 {selectedResume.parsed_profile.summary && (
-                  <p className="text-xs text-[var(--muted)] mt-2 leading-relaxed line-clamp-3">
+                  <p className="text-xs text-[var(--text-secondary)] mt-2 leading-relaxed line-clamp-3">
                     {selectedResume.parsed_profile.summary}
                   </p>
                 )}
                 {selectedResume.parsed_profile.skills.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-3">
+                  <div className="flex flex-wrap gap-1 mt-3">
                     {selectedResume.parsed_profile.skills.slice(0, 8).map((s) => (
-                      <span
-                        key={s}
-                        className="text-xs px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-100"
-                      >
+                      <span key={s} className="chip chip-blue !text-[11px]">
                         {s}
                       </span>
                     ))}
@@ -322,23 +316,23 @@ export default function PrepPage() {
                 )}
               </>
             ) : (
-              <p className="text-sm text-[var(--muted)]">未关联简历，将进行通用面试辅导</p>
+              <p className="text-sm text-[var(--muted)]">未关联简历，将进行通用辅导</p>
             )}
           </div>
 
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
-            <h2 className="font-semibold text-sm mb-3 flex items-center gap-2">
-              <Zap size={16} className="text-amber-500" />
+          <div className="surface-card p-4">
+            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 tracking-tight">
+              <Zap size={15} className="text-[var(--g-yellow)]" />
               快捷提问
             </h2>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {QUICK_PROMPTS.map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
                   onClick={() => handleQuickPrompt(prompt)}
                   disabled={loading}
-                  className="w-full text-left text-xs px-3 py-2.5 rounded-xl border border-[var(--border)] hover:border-brand-300 hover:bg-brand-50/50 transition-colors disabled:opacity-50 leading-relaxed"
+                  className="w-full text-left text-xs px-3 py-2.5 rounded-[var(--radius)] border border-[var(--border)] hover:border-[var(--brand)]/40 hover:bg-[var(--brand-softer)] transition-colors disabled:opacity-50 leading-relaxed text-[var(--text-secondary)]"
                 >
                   {prompt}
                 </button>
@@ -346,33 +340,37 @@ export default function PrepPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
-            <h2 className="font-semibold text-sm mb-3 flex items-center gap-2">
-              <MessageSquare size={16} className="text-brand-600" />
+          <div className="surface-card p-4">
+            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 tracking-tight">
+              <MessageSquare size={15} className="text-[var(--brand)]" />
               会话状态
             </h2>
-            <div className="grid grid-cols-2 gap-3 text-center">
-              <div className="rounded-xl bg-slate-50 py-3">
-                <p className="text-xl font-bold text-brand-600">{prepSessionId ? messages.length : 0}</p>
-                <p className="text-xs text-[var(--muted)] mt-0.5">消息数</p>
+            <div className="grid grid-cols-2 gap-2 text-center">
+              <div className="rounded-lg bg-[var(--popover)] py-3">
+                <p className="text-xl font-semibold text-[var(--brand)] tabular-nums">
+                  {prepSessionId ? messages.length : 0}
+                </p>
+                <p className="text-[11px] text-[var(--muted)] mt-0.5">消息数</p>
               </div>
-              <div className="rounded-xl bg-slate-50 py-3">
-                <p className="text-xl font-bold text-brand-600">{tokenUsage || "—"}</p>
-                <p className="text-xs text-[var(--muted)] mt-0.5">Token</p>
+              <div className="rounded-lg bg-[var(--popover)] py-3">
+                <p className="text-xl font-semibold text-[var(--brand)] tabular-nums">
+                  {tokenUsage || "—"}
+                </p>
+                <p className="text-[11px] text-[var(--muted)] mt-0.5">Token</p>
               </div>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
-            <h2 className="font-semibold text-sm mb-3 flex items-center gap-2">
-              <Lightbulb size={16} className="text-brand-600" />
+          <div className="surface-card p-4">
+            <h2 className="text-sm font-semibold mb-2.5 flex items-center gap-2 tracking-tight">
+              <Lightbulb size={15} className="text-[var(--brand)]" />
               使用提示
             </h2>
             <ul className="text-xs text-[var(--muted)] space-y-2 leading-relaxed">
               <li>· 可要求 Agent 搜索真实面经并提炼考点</li>
-              <li>· 描述目标公司与岗位，获得更有针对性的模拟题</li>
-              <li>· 回答练习后请教练点评，识别表达与内容漏洞</li>
-              <li>· 支持 Markdown 格式回复，流式输出实时显示</li>
+              <li>· 描述目标公司与岗位，获得针对性模拟题</li>
+              <li>· 回答后请教练点评，识别表达漏洞</li>
+              <li>· 支持 Markdown 流式回复</li>
             </ul>
           </div>
         </div>

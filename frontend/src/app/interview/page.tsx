@@ -169,17 +169,17 @@ export default function InterviewSetupPage() {
             </div>
 
             <div className="surface-card p-3.5">
-              <label className="block text-xs font-medium mb-2 text-slate-700">目标公司</label>
+              <label className="field-label !text-xs !mb-2">目标公司</label>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-1.5">
                 {options.companies.map((c) => (
                   <button
                     key={c.id}
                     type="button"
                     onClick={() => setConfig({ ...config, company: c.id })}
-                    className={`px-2 py-2 rounded-xl border text-center text-xs font-medium ${
+                    className={`px-2 py-2 rounded-[var(--radius)] border text-center text-xs font-medium transition-colors ${
                       config.company === c.id
-                        ? "border-brand-500 bg-brand-50 text-brand-700 shadow-sm shadow-brand-500/10"
-                        : "border-[var(--border)] bg-white hover:border-brand-300 hover:bg-brand-50/40"
+                        ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-ink)]"
+                        : "border-[var(--border)] bg-white hover:border-[var(--brand)]/40 hover:bg-[var(--brand-softer)]"
                     }`}
                   >
                     {c.name}
@@ -191,17 +191,17 @@ export default function InterviewSetupPage() {
             <div className="surface-card p-3.5">
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-end">
                 <div>
-                  <label className="block text-xs font-medium mb-2 text-slate-700">面试官性格</label>
+                  <label className="field-label !text-xs !mb-2">面试官性格</label>
                   <div className="flex flex-wrap gap-1.5">
                     {options.personalities.map((p) => (
                       <button
                         key={p.id}
                         type="button"
                         onClick={() => setConfig({ ...config, personality: p.id })}
-                        className={`px-3 py-1.5 rounded-xl text-xs border font-medium ${
+                        className={`px-3 py-1.5 rounded-[var(--radius)] text-xs border font-medium transition-colors ${
                           config.personality === p.id
-                            ? "border-brand-500 bg-brand-50 text-brand-700"
-                            : "border-[var(--border)] bg-white hover:border-brand-300"
+                            ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-ink)]"
+                            : "border-[var(--border)] bg-white hover:border-[var(--brand)]/40"
                         }`}
                       >
                         {p.name}
@@ -210,7 +210,7 @@ export default function InterviewSetupPage() {
                   </div>
                 </div>
                 <div className="lg:w-48">
-                  <label className="block text-xs font-medium mb-2 text-slate-700">
+                  <label className="field-label !text-xs !mb-2">
                     严厉 {config.strictness}/10 · {strictnessLabel}
                   </label>
                   <input
@@ -219,7 +219,7 @@ export default function InterviewSetupPage() {
                     max={10}
                     value={config.strictness}
                     onChange={(e) => setConfig({ ...config, strictness: Number(e.target.value) })}
-                    className="w-full accent-brand-600 h-2"
+                    className="w-full accent-brand-500 h-2"
                   />
                 </div>
               </div>
@@ -350,11 +350,11 @@ function Select({ label, value, options, labels, onChange }: {
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium mb-1">{label}</label>
+      <label className="field-label !text-xs !mb-1">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-2.5 py-2 rounded-xl border border-[var(--border)] bg-white text-xs focus:outline-none focus:ring-2 focus:ring-brand-300/60 focus:border-brand-300"
+        className="field-input !h-9 !text-xs"
       >
         {options.map((o, i) => (
           <option key={o} value={o}>{labels?.[i] || o}</option>
@@ -377,8 +377,8 @@ function PreviewRow({
     <div className="flex items-start gap-1.5">
       <Icon size={12} className="text-[var(--muted)] mt-0.5 shrink-0" />
       <div className="min-w-0">
-        <span className="text-[10px] text-slate-400">{label}</span>
-        <p className="font-medium text-slate-800 leading-snug break-words">{value}</p>
+        <span className="text-[10px] text-[var(--muted)]">{label}</span>
+        <p className="text-[12px] font-medium text-[var(--foreground)] leading-snug break-words">{value}</p>
       </div>
     </div>
   );

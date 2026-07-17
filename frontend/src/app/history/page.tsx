@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import type { InterviewSession } from "@/types";
 import {
@@ -49,16 +48,21 @@ export default function HistoryPage() {
     [sessions, selectedId],
   );
 
-  const stats = useMemo(() => ({
-    total: sessions.length,
-    completed: sessions.filter((s) => s.status === "completed").length,
-    active: sessions.filter((s) => s.status === "active").length,
-    avgScore: (() => {
-      const scored = sessions.filter((s) => s.overall_score != null);
-      if (scored.length === 0) return null;
-      return Math.round(scored.reduce((sum, s) => sum + (s.overall_score ?? 0), 0) / scored.length);
-    })(),
-  }), [sessions]);
+  const stats = useMemo(
+    () => ({
+      total: sessions.length,
+      completed: sessions.filter((s) => s.status === "completed").length,
+      active: sessions.filter((s) => s.status === "active").length,
+      avgScore: (() => {
+        const scored = sessions.filter((s) => s.overall_score != null);
+        if (scored.length === 0) return null;
+        return Math.round(
+          scored.reduce((sum, s) => sum + (s.overall_score ?? 0), 0) / scored.length,
+        );
+      })(),
+    }),
+    [sessions],
+  );
 
   return (
     <div className="page-shell">
@@ -68,172 +72,179 @@ export default function HistoryPage() {
         </div>
         <div>
           <h1 className="page-title">面试记录</h1>
-          <p className="page-desc">回顾你的每一次模拟面试</p>
+          <p className="page-desc">回顾每一次模拟面试与报告</p>
         </div>
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-[var(--muted)]">
-          <Loader2 className="animate-spin" size={18} /> 加载中...
+        <div className="flex items-center gap-2 text-sm text-[var(--muted)] py-16 justify-center">
+          <Loader2 className="animate-spin text-[var(--brand)]" size={18} /> 加载记录…
         </div>
       ) : loadError ? (
         <LoadError message={loadError} onRetry={load} />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
-          {/* 左侧列表 */}
-          <div className="space-y-3">
-            {sessions.map((s) => (
-              <motion.button
-                key={s.id}
-                type="button"
-                onClick={() => setSelectedId(s.id)}
-                className={`w-full text-left border rounded-xl p-4 bg-[var(--card)] transition-all ${
-                  selectedId === s.id
-                    ? "border-brand-500 ring-2 ring-brand-500/15 shadow-sm"
-                    : "border-[var(--border)] hover:border-brand-300"
-                }`}
-                whileHover={{ y: -1 }}
-                transition={{ duration: 0.15 }}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium">{s.role} · {s.level}</span>
-                      <StatusBadge status={s.status} />
-                    </div>
-                    <div className="text-sm text-[var(--muted)] mt-0.5">
-                      {s.company} · {s.workflow_type} · {new Date(s.created_at).toLocaleString("zh-CN")}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    {s.overall_score != null && (
-                      <span className="text-xl font-bold text-brand-600">{s.overall_score}</span>
-                    )}
-                    {s.status === "completed" && (
-                      <Link
-                        href={`/report/${s.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-xs px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 flex items-center gap-1"
-                      >
-                        <FileText size={12} />
-                        查看报告
-                      </Link>
-                    )}
-                    {s.status === "active" && (
-                      <Link
-                        href={`/interview/${s.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-xs px-2.5 py-1 rounded-lg border border-brand-300 text-brand-700 hover:bg-brand-50 flex items-center gap-1"
-                      >
-                        <Play size={12} />
-                        继续
-                      </Link>
-                    )}
-                  </div>
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-6 items-start">
+          <div className="surface-card overflow-hidden">
+            <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between">
+              <h2 className="text-sm font-semibold tracking-tight">全部场次</h2>
+              <span className="chip chip-gray">{stats.total} 场</span>
+            </div>
+
+            {sessions.length === 0 ? (
+              <div className="empty-state !py-14">
+                <div className="empty-state-icon">
+                  <BarChart3 size={24} />
                 </div>
-              </motion.button>
-            ))}
-            {sessions.length === 0 && (
-              <p className="text-center text-[var(--muted)] py-12">
-                暂无面试记录，开始你的第一次模拟面试吧
-              </p>
+                <p className="text-sm mb-4">暂无面试记录</p>
+                <Link href="/interview" className="btn-primary !h-9">
+                  <Play size={14} />
+                  开始模拟面试
+                </Link>
+              </div>
+            ) : (
+              <ul className="divide-y divide-[var(--border)]">
+                {sessions.map((s) => {
+                  const active = selectedId === s.id;
+                  return (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(s.id)}
+                        className={`w-full text-left px-4 py-3.5 flex items-start gap-3 transition-colors ${
+                          active ? "bg-[var(--brand-softer)]" : "hover:bg-[#fafbfc]"
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium text-[var(--foreground)]">
+                              {s.role} · {s.level}
+                            </span>
+                            <StatusBadge status={s.status} />
+                          </div>
+                          <p className="text-xs text-[var(--muted)] mt-1">
+                            {s.company} · {s.workflow_type} ·{" "}
+                            {new Date(s.created_at).toLocaleString("zh-CN")}
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          {s.overall_score != null && (
+                            <p className="text-lg font-semibold text-[var(--brand)] tabular-nums leading-none">
+                              {s.overall_score}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
 
-          {/* 右侧详情 */}
-          <div className="lg:sticky lg:top-6 space-y-4">
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
-              <h2 className="font-semibold text-sm mb-3 flex items-center gap-2">
-                <TrendingUp size={16} className="text-brand-600" />
+          <aside className="xl:sticky xl:top-6 space-y-3">
+            <div className="surface-card p-5">
+              <h2 className="text-sm font-semibold mb-3.5 flex items-center gap-2 tracking-tight">
+                <TrendingUp size={15} className="text-[var(--brand)]" />
                 数据概览
               </h2>
-              <div className="grid grid-cols-2 gap-3 text-center">
-                <div className="rounded-xl bg-slate-50 py-3">
-                  <p className="text-2xl font-bold text-brand-600">{stats.total}</p>
-                  <p className="text-xs text-[var(--muted)] mt-0.5">总场次</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 py-3">
-                  <p className="text-2xl font-bold text-green-600">{stats.completed}</p>
-                  <p className="text-xs text-[var(--muted)] mt-0.5">已完成</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 py-3">
-                  <p className="text-2xl font-bold text-blue-600">{stats.active}</p>
-                  <p className="text-xs text-[var(--muted)] mt-0.5">进行中</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 py-3">
-                  <p className="text-2xl font-bold text-brand-600">{stats.avgScore ?? "—"}</p>
-                  <p className="text-xs text-[var(--muted)] mt-0.5">平均分</p>
-                </div>
+              <div className="grid grid-cols-2 gap-2">
+                <StatCell value={stats.total} label="总场次" />
+                <StatCell value={stats.completed} label="已完成" accent="green" />
+                <StatCell value={stats.active} label="进行中" accent="blue" />
+                <StatCell value={stats.avgScore ?? "—"} label="平均分" />
               </div>
             </div>
 
-            {selected ? (
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
-                <h2 className="font-semibold text-sm mb-4">场次详情</h2>
-                <div className="space-y-2.5 text-sm">
-                  <DetailRow label="岗位" value={`${selected.role} · ${selected.level}`} />
-                  <DetailRow label="公司" value={selected.company} />
-                  <DetailRow label="类型" value={selected.workflow_type} />
-                  <DetailRow label="状态" value={<StatusBadge status={selected.status} />} />
-                  <DetailRow
-                    label="时间"
-                    value={new Date(selected.created_at).toLocaleString("zh-CN")}
-                  />
-                  {selected.overall_score != null && (
-                    <DetailRow label="综合评分" value={<span className="font-bold text-brand-600 text-lg">{selected.overall_score}</span>} />
-                  )}
-                  {selected.current_phase && selected.status === "active" && (
-                    <DetailRow label="当前阶段" value={selected.current_phase} />
-                  )}
-                </div>
+            <div className="surface-card p-5">
+              {selected ? (
+                <>
+                  <h2 className="text-sm font-semibold mb-3.5 tracking-tight">场次详情</h2>
+                  <dl className="space-y-2.5 text-sm">
+                    <DetailRow label="岗位" value={`${selected.role} · ${selected.level}`} />
+                    <DetailRow label="公司" value={selected.company} />
+                    <DetailRow label="类型" value={selected.workflow_type} />
+                    <DetailRow label="状态" value={<StatusBadge status={selected.status} />} />
+                    <DetailRow
+                      label="时间"
+                      value={new Date(selected.created_at).toLocaleString("zh-CN")}
+                    />
+                    {selected.overall_score != null && (
+                      <DetailRow
+                        label="综合评分"
+                        value={
+                          <span className="font-semibold text-[var(--brand)] text-base tabular-nums">
+                            {selected.overall_score}
+                          </span>
+                        }
+                      />
+                    )}
+                    {selected.current_phase && selected.status === "active" && (
+                      <DetailRow label="当前阶段" value={selected.current_phase} />
+                    )}
+                  </dl>
 
-                <div className="mt-5 pt-4 border-t border-[var(--border)] space-y-2">
-                  {selected.status === "completed" ? (
-                    <Link
-                      href={`/report/${selected.id}`}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
-                    >
-                      <FileText size={16} />
-                      查看面试报告
-                      <ExternalLink size={14} />
-                    </Link>
-                  ) : selected.status === "active" ? (
-                    <Link
-                      href={`/interview/${selected.id}`}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
-                    >
-                      <Play size={16} />
-                      继续面试
-                    </Link>
-                  ) : (
-                    <p className="text-xs text-[var(--muted)] text-center">该场次尚未开始</p>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
-                <p className="text-sm text-[var(--muted)]">选择一条记录查看详情</p>
-              </div>
-            )}
-          </div>
+                  <div className="mt-5 pt-4 border-t border-[var(--border)]">
+                    {selected.status === "completed" ? (
+                      <Link href={`/report/${selected.id}`} className="btn-primary w-full">
+                        <FileText size={16} />
+                        查看报告
+                        <ExternalLink size={14} />
+                      </Link>
+                    ) : selected.status === "active" ? (
+                      <Link href={`/interview/${selected.id}`} className="btn-primary w-full">
+                        <Play size={16} />
+                        继续面试
+                      </Link>
+                    ) : (
+                      <p className="text-xs text-[var(--muted)] text-center py-1">该场次尚未开始</p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-[var(--muted)] text-center py-6">选择一条记录查看详情</p>
+              )}
+            </div>
+          </aside>
         </div>
       )}
     </div>
   );
 }
 
+function StatCell({
+  value,
+  label,
+  accent,
+}: {
+  value: string | number;
+  label: string;
+  accent?: "green" | "blue";
+}) {
+  const color =
+    accent === "green"
+      ? "text-[var(--g-green)]"
+      : accent === "blue"
+        ? "text-[var(--brand)]"
+        : "text-[var(--brand)]";
+  return (
+    <div className="rounded-lg bg-[var(--popover)] py-3 text-center">
+      <p className={`text-xl font-semibold tabular-nums ${color}`}>{value}</p>
+      <p className="text-[11px] text-[var(--muted)] mt-0.5">{label}</p>
+    </div>
+  );
+}
+
 function StatusBadge({ status }: { status: string }) {
   const config = {
-    completed: { icon: CheckCircle2, text: "已完成", className: "bg-green-50 text-green-700" },
-    active: { icon: Clock, text: "进行中", className: "bg-blue-50 text-blue-700" },
-    pending: { icon: Circle, text: "待开始", className: "bg-gray-50 text-gray-600" },
+    completed: { icon: CheckCircle2, text: "已完成", className: "chip-green" },
+    active: { icon: Clock, text: "进行中", className: "chip-blue" },
+    pending: { icon: Circle, text: "待开始", className: "chip-gray" },
   };
   const c = config[status as keyof typeof config] || config.pending;
   const Icon = c.icon;
-
   return (
-    <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${c.className}`}>
-      <Icon size={12} />
+    <span className={`chip ${c.className}`}>
+      <Icon size={11} />
       {c.text}
     </span>
   );
@@ -242,8 +253,8 @@ function StatusBadge({ status }: { status: string }) {
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <span className="text-[var(--muted)] shrink-0">{label}</span>
-      <span className="text-right font-medium text-slate-800">{value}</span>
+      <span className="text-xs text-[var(--muted)] shrink-0 pt-0.5">{label}</span>
+      <span className="text-right text-[13px] font-medium text-[var(--foreground)]">{value}</span>
     </div>
   );
 }
