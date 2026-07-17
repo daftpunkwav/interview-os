@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.constants import DEFAULT_LLM_PROTOCOL
+from app.core.prompts import strip_emojis
 from app.core.security import (
     UnsafeURLError,
     is_safe_http_url,
@@ -41,12 +42,14 @@ def _extract_message_text(msg: dict[str, Any] | None) -> str:
     - 标准 ``content`` 字符串
     - 部分厂商把正文放在 ``reasoning_content`` / ``reasoning``
     - content 为 list（多段 text）
+
+    出站前剥离 emoji，避免模型无视 system 约束。
     """
     if not msg or not isinstance(msg, dict):
         return ""
     content = msg.get("content")
     if isinstance(content, str) and content.strip():
-        return content
+        return strip_emojis(content)
     if isinstance(content, list):
         parts: list[str] = []
         for p in content:
@@ -56,12 +59,14 @@ def _extract_message_text(msg: dict[str, Any] | None) -> str:
                 parts.append(p)
         joined = "".join(parts).strip()
         if joined:
-            return joined
+            return strip_emojis(joined)
     for key in ("reasoning_content", "reasoning", "output_text"):
         val = msg.get(key)
         if isinstance(val, str) and val.strip():
-            return val
-    return content if isinstance(content, str) else ""
+            return strip_emojis(val)
+    if isinstance(content, str):
+        return strip_emojis(content)
+    return ""
 
 
 async def _retry_request(
@@ -372,12 +377,17 @@ class LLMClient:
                                     if not reasoning_open:
                                         yield "<think>"
                                         reasoning_open = True
-                                    yield reasoning
+                                    # 思考过程同样禁止 emoji
+                                    cleaned_r = strip_emojis(reasoning)
+                                    if cleaned_r:
+                                        yield cleaned_r
                                 if isinstance(token, str) and token:
                                     if reasoning_open:
                                         yield "</think>"
                                         reasoning_open = False
-                                    yield token
+                                    cleaned = strip_emojis(token)
+                                    if cleaned:
+                                        yield cleaned
                             except (json.JSONDecodeError, KeyError, IndexError):
                                 continue
                         if reasoning_open:
