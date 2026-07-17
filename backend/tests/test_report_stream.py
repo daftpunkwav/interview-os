@@ -44,9 +44,10 @@ def _make_completed_session(db) -> int:
 
 
 def test_report_stream_emits_token_and_done(db) -> None:
+    """单次 LLM（chat_json）：token 为 JSON 伪流分片，done 与落库同一份报告。"""
     sid = _make_completed_session(db)
     fake = FakeLLMClient(
-        tokens=["a", "b", "c"],
+        tokens=["should-not-be-used"],
         json_payload={
             "overall_score": 80,
             "score_breakdown": {
@@ -81,6 +82,11 @@ def test_report_stream_emits_token_and_done(db) -> None:
     types = [c["type"] for c in chunks]
     assert "token" in types
     assert "done" in types
+    # 不得再走自由文本 stream（双次 LLM 的历史路径）
+    assert fake.stream_calls == []
+
+    token_text = "".join(c["content"] for c in chunks if c["type"] == "token")
+    assert '"overall_score": 80' in token_text or '"overall_score":80' in token_text
 
     done = next(c for c in chunks if c["type"] == "done")
     assert "report" in done
