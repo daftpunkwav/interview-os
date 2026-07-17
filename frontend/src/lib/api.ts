@@ -111,6 +111,8 @@ async function parseErrorResponse(res: Response): Promise<string> {
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+/** 深度评价 / 长 LLM 任务：模型推理 + 长 JSON 常需 1–3 分钟 */
+const LLM_HEAVY_TIMEOUT_MS = 180_000;
 
 async function request<T>(
   path: string,
@@ -119,7 +121,11 @@ async function request<T>(
   const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, signal: externalSignal, ...rest } = options;
   // 组合外部 signal 与超时 signal，任一触发即取消。
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(new Error("request timeout")), timeoutMs);
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort(new Error("request timeout"));
+  }, timeoutMs);
   const onExternalAbort = () => controller.abort(externalSignal?.reason);
   if (externalSignal) {
     if (externalSignal.aborted) {
@@ -137,7 +143,13 @@ async function request<T>(
     });
   } catch (e) {
     if (controller.signal.aborted) {
-      throw new ApiError("请求超时或被取消", 0);
+      if (timedOut) {
+        throw new ApiError(
+          `请求超时（${Math.round(timeoutMs / 1000)}s）。深度评价等 LLM 任务较慢，请稍后重试或检查模型/网络`,
+          0,
+        );
+      }
+      throw new ApiError("请求已取消", 0);
     }
     throw new ApiError("无法连接后端服务，请确认 backend 已在 localhost:8000 启动", 0);
   } finally {
@@ -248,7 +260,10 @@ export const api = {
   deleteResume: (id: number) =>
     request<{ ok: boolean; id: number }>(`/v1/resume/${id}`, { method: "DELETE" }),
   analyzeResume: (id: number) =>
-    request<ResumeAnalysis>(`/v1/resume/${id}/analyze`, { method: "POST" }),
+    request<ResumeAnalysis>(`/v1/resume/${id}/analyze`, {
+      method: "POST",
+      timeoutMs: LLM_HEAVY_TIMEOUT_MS,
+    }),
 
   /* 面试准备 */
   createPrepSession: (data: {

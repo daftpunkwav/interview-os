@@ -223,8 +223,9 @@ class LLMClient:
         headers = self._headers()
 
         # pin DNS：校验后固定 IP 建连，避免重绑定 TOCTOU
+        # 深度评价等长 JSON 任务常超过 60s（尤其开启 reasoning 时）
         async with make_pinned_async_client(
-            self.api_base, allow_local=_is_local_allowed(), timeout=60.0
+            self.api_base, allow_local=_is_local_allowed(), timeout=180.0
         ) as client:
             try:
                 resp = await _retry_request(
@@ -431,6 +432,21 @@ class LLMClient:
                 "请确认模型支持 Chat Completions 文本输出（当前可能使用了仅推理/空 content 的模型）。"
             )
         text = content if isinstance(content, str) else str(content)
+        text = text.strip()
+        # 剥离模型思考块，避免 JSON 解析被 <think> 污染
+        for open_t, close_t in (
+            ("<think>", "</think>"),
+            ("<thinking>", "</thinking>"),
+        ):
+            while True:
+                lo = text.lower().find(open_t)
+                if lo < 0:
+                    break
+                hi = text.lower().find(close_t, lo + len(open_t))
+                if hi < 0:
+                    text = text[:lo] + text[lo + len(open_t) :]
+                    break
+                text = text[:lo] + text[hi + len(close_t) :]
         text = text.strip()
         # 剥离 ```json ... ``` 围栏
         if text.startswith("```"):

@@ -111,6 +111,7 @@ export default function ResumePage() {
   const handleAnalyze = async (id: number) => {
     setError("");
     setAnalyzingId(id);
+    toast.info("正在生成深度评价，通常需要 30–120 秒，请稍候…");
     try {
       const data = await api.analyzeResume(id);
       await load();
