@@ -476,7 +476,13 @@ class LLMClient:
         """测试 API 连通性。"""
         try:
             reply = await self.chat(
-                [{"role": "user", "content": "请回复：连接成功"}],
+                [
+                    {
+                        "role": "system",
+                        "content": "只用纯文字回复，禁止任何 emoji 表情符号。",
+                    },
+                    {"role": "user", "content": "请回复：连接成功"},
+                ],
                 temperature=0,
             )
             return True, reply[:100]

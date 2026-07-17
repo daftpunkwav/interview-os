@@ -15,6 +15,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.prompts import with_agent_output_rules
 from app.models import InterviewSession, Resume, UserProfile
 from app.schemas import CandidateProfile, InterviewConfig, InterviewReport, ScoreBreakdown
 from app.services.company.knowledge import get_company_context
@@ -103,7 +104,7 @@ LinkedIn：{linkedin or '—'}
 请围绕上述方向深入追问至少一个问题，避免重复已经讨论过的角度。
 """
 
-    return f"""你是 InterviewOS 的 AI 面试官，正在进行一场模拟面试。
+    body = f"""你是 InterviewOS 的 AI 面试官，正在进行一场模拟面试。
 
 {personality}
 {style}
@@ -146,9 +147,10 @@ LinkedIn：{linkedin or '—'}
 7. 反问环节时，扮演公司代表回答候选人的问题
 8. 总结阶段给出简要口头评价，然后写 [INTERVIEW_COMPLETE]
 9. 工具结果仅供你内部使用，不要整段朗读 JSON；用自然口语引用关键事实
-10. 可在回复中使用情绪标记：[emotion:smile] / [emotion:serious] / [emotion:neutral]
+10. 可在回复中使用情绪标记：[emotion:smile] / [emotion:serious] / [emotion:neutral]（仅此 ASCII 标记，禁止 emoji）
 
 请开始当前阶段的面试。"""
+    return with_agent_output_rules(body)
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +419,7 @@ class InterviewAgent:
                 "role": "system",
                 "content": (
                     f"进入新阶段：{phase.name}（{phase.description}）。"
-                    "请开始本阶段提问。"
+                    "请开始本阶段提问。回复禁止使用 emoji 表情。"
                 ),
             })
 
@@ -427,7 +429,7 @@ class InterviewAgent:
 # ---------------------------------------------------------------------------
 
 
-REPORT_SYSTEM_PROMPT = """你是一位资深面试评估专家。根据面试对话记录，生成结构化评估报告。
+REPORT_SYSTEM_PROMPT = with_agent_output_rules("""你是一位资深面试评估专家。根据面试对话记录，生成结构化评估报告。
 
 返回 JSON 格式：
 {
@@ -450,7 +452,7 @@ REPORT_SYSTEM_PROMPT = """你是一位资深面试评估专家。根据面试对
   "face_analysis_summary": "临场状态评价",
   "presence_moments": ["紧张时刻描述"]
 }
-只返回 JSON。"""
+只返回 JSON。文本字段中禁止使用 emoji。""")
 
 
 def build_report_messages(

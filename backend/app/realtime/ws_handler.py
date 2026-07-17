@@ -529,12 +529,15 @@ class InterviewWSHandler:
             if m.get("role") == "system":
                 system_ctx = str(m.get("content", ""))[:4000]
                 break
+        from app.core.prompts import with_agent_output_rules
+
         messages = [
             {
                 "role": "system",
-                "content": (
+                "content": with_agent_output_rules(
                     "你是面试辅导助手。根据候选人背景，为面试官的问题生成简洁参考回答提纲。\n"
-                    "要求：3-5 个要点，每点一行，以「•」开头；结合简历具体经历；不要冗长；不要替候选人捏造未提及的项目细节。"
+                    "要求：3-5 个要点，每点一行，以「•」开头；结合简历具体经历；不要冗长；"
+                    "不要替候选人捏造未提及的项目细节。"
                 ),
             },
             {
