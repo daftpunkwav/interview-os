@@ -35,6 +35,38 @@ def test_pin_public_host(monkeypatch: pytest.MonkeyPatch) -> None:
     assert t.pinned_ip == "93.184.216.34"
 
 
+def test_pin_single_resolve_no_toctou(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pin 只调用一次 _resolve_all，且用该次结果校验（无二次 DNS）。"""
+    calls: list[str] = []
+
+    def _once(host: str):
+        calls.append(host)
+        return [ipaddress.ip_address("93.184.216.34")]
+
+    monkeypatch.setattr("app.core.security._resolve_all", _once)
+    t = pin_safe_http_url("https://example.com/v1", allow_local=False)
+    assert len(calls) == 1
+    assert t.pinned_ip == "93.184.216.34"
+
+
+def test_allow_local_rejects_mixed_loopback_and_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """allow_local 不得因首个 loopback 放行夹带 metadata 的多 A 记录。"""
+    from app.core.security import is_safe_http_url
+
+    monkeypatch.setattr(
+        "app.core.security._resolve_all",
+        lambda host: [
+            ipaddress.ip_address("127.0.0.1"),
+            ipaddress.ip_address("169.254.169.254"),
+        ],
+    )
+    assert is_safe_http_url("http://evil.example/v1", allow_local=True) is False
+    with pytest.raises(UnsafeURLError):
+        pin_safe_http_url("http://evil.example/v1", allow_local=True)
+
+
 @pytest.mark.asyncio
 async def test_transport_rewrites_host_to_pinned_ip(
     monkeypatch: pytest.MonkeyPatch,
