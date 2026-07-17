@@ -38,6 +38,8 @@ export function useInterviewWS(
   const [turnState, setTurnState] = useState<TurnState>("IDLE");
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [connectionState, setConnectionState] = useState<WSConnectionState>("connecting");
+  /** 手动重连令牌：递增后触发 effect 重建 WebSocket */
+  const [reconnectKey, setReconnectKey] = useState(0);
   const maxRetries = options?.maxRetries ?? 5;
 
   // 通过 ref 同步 handlers，避免每次 render 重建导致 effect 触发重连
@@ -86,6 +88,8 @@ export function useInterviewWS(
     retryCountRef.current = 0;
     setReconnectAttempt(0);
     setConnectionState("connecting");
+    // 递增 key 以触发 effect 关闭旧连接并建立新 WebSocket
+    setReconnectKey((k) => k + 1);
   }, []);
 
   useEffect(() => {
@@ -161,9 +165,9 @@ export function useInterviewWS(
         wsRef.current = null;
       }
     };
-    // handlers 通过 ref 间接引用，effect 仅依赖 sessionId / maxRetries
+    // handlers 通过 ref 间接引用；reconnectKey 供 retryNow 强制重建连接
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, maxRetries]);
+  }, [sessionId, maxRetries, reconnectKey]);
 
   return {
     connected,
