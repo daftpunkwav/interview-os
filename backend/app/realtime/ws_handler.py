@@ -28,7 +28,11 @@ from app.core.logging import get_trace_id, set_trace_id
 from app.database import SessionLocal
 from app.models import InterviewSession, LLMSettings
 from app.realtime.events import TurnState
-from app.services.interview.agent import InterviewAgent, strip_markers
+from app.services.interview.agent import (
+    InterviewAgent,
+    generate_and_persist_report,
+    strip_markers,
+)
 from app.services.interview.events import EventKind, StreamEvent
 from app.services.interview.runner import InterviewRunner
 from app.services.llm.client import LLMClient
@@ -43,6 +47,8 @@ _HEARTBEAT_TIMEOUT_SEC: float = 30.0
 _HEARTBEAT_MAX_MISSES: int = 3
 # audio_buffer 字节上限（按 base64 后的 raw pcm 估算）；超过强制刷 turn_end
 _AUDIO_BUFFER_MAX_BYTES: int = 5 * 1024 * 1024  # 5 MB
+# 与 HTTP InterviewMessageRequest.image_base64 对齐的视觉帧长度上限
+_IMAGE_BASE64_MAX_LEN: int = 300_000
 
 
 class _SentenceTTSQueue:
@@ -82,31 +88,34 @@ class _SentenceTTSQueue:
         if self._queue.qsize() >= self._MAX_QUEUE_SIZE:
             try:
                 self._queue.get_nowait()
+                self._queue.task_done()
                 self._dropped_count += 1
             except asyncio.QueueEmpty:
                 pass
         await self._queue.put(sentence.strip())
 
     async def flush_remainder(self, sentence: str) -> None:
-        """回合结束时把残留 buffer 入队，并等待队列清空。"""
+        """回合结束时把残留 buffer 入队，并等待队列全部处理完。"""
         if sentence.strip():
             await self.enqueue(sentence)
-        # 等待当前任务完成
-        async with self._lock:
-            pass
+        # join：等 worker 对每个 put 调用 task_done，真正排空队列
+        await self._queue.join()
 
     async def _worker(self) -> None:
         while True:
             item = await self._queue.get()
-            if item is None:
-                return
-            async with self._lock:
-                audio_b64 = await synthesize_to_base64(item, settings.tts_voice)
-                if audio_b64:
-                    try:
-                        await self._send("tts_audio", data=audio_b64, sentence=item)
-                    except Exception as e:
-                        logger.warning("TTS 发送失败: %s", e)
+            try:
+                if item is None:
+                    return
+                async with self._lock:
+                    audio_b64 = await synthesize_to_base64(item, settings.tts_voice)
+                    if audio_b64:
+                        try:
+                            await self._send("tts_audio", data=audio_b64, sentence=item)
+                        except Exception as e:
+                            logger.warning("TTS 发送失败: %s", e)
+            finally:
+                self._queue.task_done()
 
 
 class InterviewWSHandler:
@@ -363,6 +372,14 @@ class InterviewWSHandler:
         assert self.runner is not None
         face = data.get("face_analysis") or self.orchestrator.snapshot.face_analysis
         image_b64 = data.get("image_base64")
+        # 与 HTTP 一致：超大 base64 会撑爆内存/LLM 账单，丢弃图像并记日志
+        if isinstance(image_b64, str) and len(image_b64) > _IMAGE_BASE64_MAX_LEN:
+            logger.warning(
+                "WS image_base64 超限 sid=%s len=%d，已丢弃",
+                self.session_id,
+                len(image_b64),
+            )
+            image_b64 = None
         self.orchestrator.snapshot.last_user_text = text
         self.orchestrator.snapshot.merge_face(face)
 
@@ -399,6 +416,20 @@ class InterviewWSHandler:
                 await self._tts_queue.flush_remainder("")
                 if event.is_complete:
                     await self.set_turn(TurnState.IDLE)
+                    # 自然结束时同步生成报告，避免前端跳转报告页 404
+                    try:
+                        if self.llm is not None:
+                            await generate_and_persist_report(session, self.llm, db)
+                    except Exception as e:
+                        logger.exception(
+                            "面试自然结束但报告生成失败 sid=%s: %s",
+                            self.session_id,
+                            e,
+                        )
+                        await self.send(
+                            "error",
+                            message="报告生成失败，请点击「结束面试」重试",
+                        )
                 else:
                     await self.set_turn(TurnState.USER_SPEAKING)
             elif event.kind == EventKind.ERROR:
