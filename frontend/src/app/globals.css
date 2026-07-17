@@ -8,30 +8,30 @@
  */
 
 :root {
-  /* 表面 */
-  --background: #f8fafc;
-  --foreground: #0e1115;
+  /* 表面 · 主内容区浅灰白 */
+  --background: #f8f9fa;
+  --foreground: #202124;
   --card: #ffffff;
   --card-elevated: #ffffff;
-  --popover: #f9f9fa;
+  --popover: #f1f3f4;
 
   /* 边框 / 分割 */
-  --border: #ebebeb;
-  --border-strong: #d2d6dc;
-  --input: #e2e3e4;
+  --border: #e8eaed;
+  --border-strong: #dadce0;
+  --input: #dadce0;
 
   /* 文本层级 */
-  --muted: #7f8d9f;
-  --muted-soft: #a0aab8;
-  --text-secondary: #333942;
+  --muted: #5f6368;
+  --muted-soft: #80868b;
+  --text-secondary: #3c4043;
 
   /* 品牌 · Google Blue */
   --brand: #4285f4;
   --brand-strong: #1a73e8;
-  --brand-deep: #0043ad;
-  --brand-soft: #dbeafe;
-  --brand-softer: #e8f0fe;
-  --brand-ink: #003e8f;
+  --brand-deep: #1967d2;
+  --brand-soft: #e8f0fe;
+  --brand-softer: #f1f6fe;
+  --brand-ink: #174ea6;
 
   /* Google 四色（点缀，克制使用） */
   --g-blue: #4285f4;
@@ -50,9 +50,11 @@
   --danger-soft: #fce8e6;
   --danger-ink: #c5221f;
 
-  /* 侧栏 */
-  --sidebar: #f0f6ff;
-  --sidebar-border: #e7eaef;
+  /* 侧栏 · 纯白与主区同色系，靠细分隔线区分 */
+  --sidebar: #ffffff;
+  --sidebar-border: #e8eaed;
+  --sidebar-hover: #f1f3f4;
+  --sidebar-active: #e8f0fe;
   --sidebar-width: 256px;
   --sidebar-collapsed: 72px;
 

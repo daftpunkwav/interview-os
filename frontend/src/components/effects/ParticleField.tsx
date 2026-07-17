@@ -25,7 +25,7 @@ export function ParticleField() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const colors = ["#4c6ef5", "#748ffc", "#91a7ff", "#5c7cfa", "#364fc7"];
+    const colors = ["#4285f4", "#8ab4f8", "#34a853", "#fbbc05", "#ea4335"];
 
     function resize() {
       if (!canvas) return;

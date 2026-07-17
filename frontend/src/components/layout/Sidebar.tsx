@@ -70,10 +70,10 @@ function NavContent({
             >
               <div
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm relative group",
+                  "flex items-center gap-3 px-3 py-2.5 rounded-full text-sm relative group transition-colors",
                   isActive
-                    ? "bg-[var(--brand-soft)] text-[var(--brand-ink)] font-medium"
-                    : "text-[var(--text-secondary)] hover:bg-white/70 hover:text-[var(--foreground)]",
+                    ? "bg-[var(--sidebar-active)] text-[var(--brand-ink)] font-medium"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--foreground)]",
                 )}
               >
                 <Icon
@@ -102,7 +102,7 @@ function NavContent({
 
       {/* 底部状态 */}
       {!collapsed && (
-        <div className="mx-3 mb-3 px-3 py-3 rounded-lg bg-white/60 border border-[var(--sidebar-border)]">
+        <div className="mx-3 mb-3 px-3 py-3 rounded-xl bg-[var(--sidebar-hover)] border border-transparent">
           <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--g-green)] opacity-40" />
@@ -191,7 +191,7 @@ export function Sidebar() {
       {/* 桌面侧栏 */}
       <motion.aside
         className={cn(
-          "hidden lg:flex border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] flex-col shrink-0 relative sticky top-0 h-screen z-20",
+          "hidden lg:flex border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] flex-col shrink-0 relative sticky top-0 h-screen z-20 shadow-[1px_0_0_0_rgba(60,64,67,0.04)]",
           collapsed ? "w-[72px]" : "w-64",
         )}
         initial={false}
