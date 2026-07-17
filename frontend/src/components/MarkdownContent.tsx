@@ -79,57 +79,78 @@ const components: Components = {
 };
 
 /**
- * 将「空格/制表符分列」的伪表格转为 GFM pipe 表格。
- *
- * 模型常输出：
- *   优先级    动作    目的
- *   P0    补充…    让…
- * 而不是 | 优先级 | 动作 | 目的 |
+ * 规范化模型输出的表格，避免：
+ * - 空格/Tab 分列无法渲染
+ * - 行间夹杂 ``--- --- ---`` 被当成水平线 / 多表头
+ * - 错误地在每一行数据前插入分隔行
  */
 export function normalizeLooseTables(src: string): string {
-  if (!src || src.includes("|")) {
-    // 已有 pipe 表格时，只做轻量修复：补充分隔行（若缺失）
-    return ensureGfmTableSeparators(src);
-  }
+  if (!src) return src;
+  // 先丢掉「整行都是 ---」的垃圾分隔（模型/旧逻辑常见）
+  const cleaned = src
+    .split("\n")
+    .filter((line) => !isJunkSeparatorLine(line))
+    .join("\n");
 
+  if (cleaned.includes("|")) {
+    return ensureGfmTableSeparators(cleaned);
+  }
+  return convertLooseColumnBlocks(cleaned);
+}
+
+/** 整行仅为破折号/冒号/管道/空白 → 无信息量的伪分隔行 */
+function isJunkSeparatorLine(line: string): boolean {
+  const t = line.trim();
+  if (!t) return false;
+  // --- 或 --- --- --- 或 |---|---| 或 | --- | --- |
+  if (/^[\s|:\-]+$/.test(t) && /-/.test(t)) return true;
+  return false;
+}
+
+function convertLooseColumnBlocks(src: string): string {
   const lines = src.split("\n");
   const out: string[] = [];
   let i = 0;
 
   while (i < lines.length) {
     const line = lines[i] ?? "";
-    // 至少 2 列：用 2+ 空格或 tab 分列
     const cols = splitLooseColumns(line);
-    if (cols.length < 2) {
+    if (cols.length < 2 || isDashOnlyCells(cols)) {
       out.push(line);
       i += 1;
       continue;
     }
 
-    // 收集连续多列行
     const block: string[][] = [cols];
     let j = i + 1;
     while (j < lines.length) {
       const next = lines[j] ?? "";
       if (!next.trim()) break;
+      if (isJunkSeparatorLine(next)) {
+        j += 1; // 跳过行间 ---，继续拼同一张表
+        continue;
+      }
       const nextCols = splitLooseColumns(next);
-      // 列数允许 ±1 浮动，但至少 2 列
       if (nextCols.length < 2) break;
+      if (isDashOnlyCells(nextCols)) {
+        j += 1;
+        continue;
+      }
       if (Math.abs(nextCols.length - cols.length) > 1) break;
       block.push(nextCols);
       j += 1;
     }
 
-    // 至少 2 行才当表格（表头 + 数据）
     if (block.length >= 2) {
       const width = Math.max(...block.map((r) => r.length));
       const pad = (row: string[]) => {
         const r = [...row];
         while (r.length < width) r.push("");
-        return r;
+        return r.slice(0, width);
       };
       const header = pad(block[0]!);
       out.push(`| ${header.join(" | ")} |`);
+      // 分隔行只输出一次
       out.push(`| ${header.map(() => "---").join(" | ")} |`);
       for (let k = 1; k < block.length; k += 1) {
         out.push(`| ${pad(block[k]!).join(" | ")} |`);
@@ -145,50 +166,91 @@ export function normalizeLooseTables(src: string): string {
   return out.join("\n");
 }
 
+function isDashOnlyCells(cols: string[]): boolean {
+  return cols.length > 0 && cols.every((c) => /^:?-{1,}:?$/.test(c.trim()));
+}
+
 function splitLooseColumns(line: string): string[] {
   const t = line.trim();
   if (!t) return [];
-  // 制表符优先
   if (t.includes("\t")) {
     return t.split(/\t+/).map((c) => c.trim()).filter(Boolean);
   }
-  // 2 个及以上空格
   if (/\s{2,}/.test(t)) {
     return t.split(/\s{2,}/).map((c) => c.trim()).filter(Boolean);
   }
   return [];
 }
 
-/** 若存在 | 行但缺分隔行，自动插入 --- */
+/**
+ * 对已有 pipe 表格：仅在「表头后紧跟数据行且缺少分隔行」时插入一行 ---。
+ * 不会在每一行数据之间重复插入。
+ */
 function ensureGfmTableSeparators(src: string): string {
   const lines = src.split("\n");
   const out: string[] = [];
-  for (let i = 0; i < lines.length; i += 1) {
+  let i = 0;
+
+  while (i < lines.length) {
     const line = lines[i] ?? "";
     out.push(line);
-    const next = lines[i + 1] ?? "";
-    if (
-      isPipeRow(line) &&
-      !isSeparatorRow(line) &&
-      isPipeRow(next) &&
-      !isSeparatorRow(next)
-    ) {
-      // 当前是表头，下一行是数据且无分隔行
-      const cols = line.split("|").filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
-      const n = Math.max(cols.length, 1);
-      out.push(`| ${Array.from({ length: n }, () => "---").join(" | ")} |`);
+
+    if (isPipeRow(line) && !isSeparatorRow(line)) {
+      const next = lines[i + 1] ?? "";
+      // 已是合法 GFM：表头 + 分隔行
+      if (isSeparatorRow(next)) {
+        i += 1;
+        continue;
+      }
+      // 表头后直接是数据行 → 补一次分隔
+      if (isPipeRow(next) && !isSeparatorRow(next)) {
+        const n = countPipeColumns(line);
+        out.push(`| ${Array.from({ length: n }, () => "---").join(" | ")} |`);
+        // 后续连续 pipe 数据行原样输出，不再插入
+        i += 1;
+        while (i < lines.length) {
+          const row = lines[i] ?? "";
+          if (!isPipeRow(row) || isSeparatorRow(row)) break;
+          // 跳过夹在数据行之间的垃圾分隔
+          out.push(row);
+          i += 1;
+          // 偷看下一行是否是 junk separator（已在入口 filter，这里防 | --- |）
+          while (i < lines.length && isJunkSeparatorLine(lines[i] ?? "")) {
+            i += 1;
+          }
+        }
+        continue;
+      }
     }
+    i += 1;
   }
+
   return out.join("\n");
+}
+
+function countPipeColumns(line: string): number {
+  const parts = line.trim().split("|").map((p) => p.trim());
+  // 去掉首尾因 |a|b| 产生的空段
+  const cells = parts.filter((p, idx) => {
+    if (idx === 0 && p === "") return false;
+    if (idx === parts.length - 1 && p === "") return false;
+    return true;
+  });
+  return Math.max(cells.length, 1);
 }
 
 function isPipeRow(line: string): boolean {
   const t = line.trim();
-  return t.startsWith("|") && t.includes("|", 1);
+  return t.includes("|") && (t.startsWith("|") || /\|.+\|/.test(t));
 }
 
 function isSeparatorRow(line: string): boolean {
-  return /^\s*\|?\s*:?-{3,}/.test(line.trim());
+  const t = line.trim();
+  if (!t) return false;
+  // | --- | :---: | ---: |
+  if (/^\|?(\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/.test(t)) return true;
+  if (/^:?-{3,}:?(\s+|:?-{3,}:?)+$/.test(t)) return true;
+  return false;
 }
 
 export function MarkdownContent({
