@@ -20,9 +20,12 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.constants import (
+    DEFAULT_LLM_RATE_LIMIT_PER_MINUTE,
+    DEFAULT_RATE_LIMIT_PER_MINUTE,
     RESUME_ALLOWED_EXTENSIONS,
     RESUME_MAX_UPLOAD_BYTES,
 )
+from app.core.ratelimit import rate_limit_dep
 from app.core.security import (
     assert_within_dir,
     sanitize_filename,
@@ -91,7 +94,18 @@ def _sniff_extension(head: bytes, ext: str) -> bool:
     return any(head.startswith(sig) for sig in sigs)
 
 
-@router.post("/upload", response_model=ResumeResponse)
+@router.post(
+    "/upload",
+    response_model=ResumeResponse,
+    dependencies=[
+        Depends(
+            rate_limit_dep(
+                key="upload",
+                limit=DEFAULT_RATE_LIMIT_PER_MINUTE,
+            )
+        )
+    ],
+)
 async def upload_resume(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -304,7 +318,17 @@ def delete_resume(resume_id: int, db: Session = Depends(get_db)):
     return {"ok": True, "id": resume_id}
 
 
-@router.post("/{resume_id}/analyze")
+@router.post(
+    "/{resume_id}/analyze",
+    dependencies=[
+        Depends(
+            rate_limit_dep(
+                key="llm",
+                limit=DEFAULT_LLM_RATE_LIMIT_PER_MINUTE,
+            )
+        )
+    ],
+)
 async def analyze_resume(resume_id: int, db: Session = Depends(get_db)):
     r = db.query(Resume).filter(Resume.id == resume_id).first()
     if not r:

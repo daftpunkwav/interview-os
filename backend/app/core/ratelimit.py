@@ -116,6 +116,17 @@ def check_rate_limit(
         bucket.last_access = now
 
 
+def rate_limit_dep(*, key: str, limit: int, window_seconds: int = 60):
+    """返回可挂到 FastAPI ``dependencies=`` 的限流 Depends 回调。"""
+
+    def _dep(request: Request) -> None:
+        check_rate_limit(
+            request, key=key, limit=limit, window_seconds=window_seconds
+        )
+
+    return _dep
+
+
 def reset_rate_limit(key: str | None = None) -> None:
     """清空限流状态，仅用于测试。"""
     with _LOCK:

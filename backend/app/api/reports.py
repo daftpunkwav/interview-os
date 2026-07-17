@@ -15,7 +15,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.constants import SessionStatus
+from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, SessionStatus
+from app.core.ratelimit import rate_limit_dep
 from app.core.security import redact_api_key
 from app.database import get_db
 from app.models import GrowthRecord, InterviewSession
@@ -30,6 +31,20 @@ router = APIRouter()
 _SSE_ERR_GENERIC = "报告生成失败，请稍后重试"
 
 
+def _safe_json_list(raw: str | None, *, field: str, record_id: int) -> list:
+    """解析成长记录 JSON 列表；坏数据降级为 []，避免整列表 500。"""
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, TypeError):
+        logger.warning(
+            "GrowthRecord.%s 解析失败 id=%s，已降级为空列表", field, record_id
+        )
+        return []
+
+
 @router.get("/growth/history")
 def get_growth_history(db: Session = Depends(get_db)):
     records = db.query(GrowthRecord).order_by(GrowthRecord.created_at.desc()).limit(20).all()
@@ -37,8 +52,10 @@ def get_growth_history(db: Session = Depends(get_db)):
         {
             "id": r.id,
             "session_id": r.session_id,
-            "weak_skills": json.loads(r.weak_skills),
-            "training_plan": json.loads(r.training_plan),
+            "weak_skills": _safe_json_list(r.weak_skills, field="weak_skills", record_id=r.id),
+            "training_plan": _safe_json_list(
+                r.training_plan, field="training_plan", record_id=r.id
+            ),
             "created_at": r.created_at,
         }
         for r in records
@@ -53,7 +70,17 @@ def get_system_growth_insights():
     return get_system_insights(limit=15)
 
 
-@router.get("/{session_id}/stream")
+@router.get(
+    "/{session_id}/stream",
+    dependencies=[
+        Depends(
+            rate_limit_dep(
+                key="llm",
+                limit=DEFAULT_LLM_RATE_LIMIT_PER_MINUTE,
+            )
+        )
+    ],
+)
 async def get_report_stream(session_id: int, db: Session = Depends(get_db)):
     """流式返回报告。前端可增量渲染，JSON 解析由前端负责。
 

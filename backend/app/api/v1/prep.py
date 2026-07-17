@@ -12,7 +12,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.agents.prep.agent import PrepAgent
-from app.core.constants import SessionStatus
+from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, SessionStatus
+from app.core.ratelimit import rate_limit_dep
 from app.core.security import redact_api_key
 from app.database import get_db
 from app.models import PrepSession
@@ -53,7 +54,17 @@ async def create_prep_session(body: PrepCreateRequest, db: Session = Depends(get
     return {"id": session.id}
 
 
-@router.post("/sessions/{session_id}/message")
+@router.post(
+    "/sessions/{session_id}/message",
+    dependencies=[
+        Depends(
+            rate_limit_dep(
+                key="llm",
+                limit=DEFAULT_LLM_RATE_LIMIT_PER_MINUTE,
+            )
+        )
+    ],
+)
 async def prep_message(session_id: int, body: PrepMessageRequest, db: Session = Depends(get_db)):
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:
@@ -66,7 +77,17 @@ async def prep_message(session_id: int, body: PrepMessageRequest, db: Session = 
     return {"reply": reply, "token_usage": session.token_usage}
 
 
-@router.post("/sessions/{session_id}/message/stream")
+@router.post(
+    "/sessions/{session_id}/message/stream",
+    dependencies=[
+        Depends(
+            rate_limit_dep(
+                key="llm",
+                limit=DEFAULT_LLM_RATE_LIMIT_PER_MINUTE,
+            )
+        )
+    ],
+)
 async def prep_message_stream(session_id: int, body: PrepMessageRequest, db: Session = Depends(get_db)):
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:
