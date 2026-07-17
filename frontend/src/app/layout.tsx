@@ -1,13 +1,21 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { DM_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AppShell } from "@/components/layout/AppShell";
 import { Toaster } from "@/components/Toast";
 
-const inter = Inter({
+const dmSans = DM_Sans({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-dm-sans",
   display: "swap",
+  weight: ["400", "500", "600", "700"],
+});
+
+const jetbrains = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains",
+  display: "swap",
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
@@ -17,7 +25,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f6f7fb",
+  themeColor: "#4285f4",
   width: "device-width",
   initialScale: 1,
 };
@@ -26,7 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh-CN">
       <body
-        className={`${inter.variable} font-sans antialiased text-slate-900 bg-[var(--background)]`}
+        className={`${dmSans.variable} ${jetbrains.variable} font-sans antialiased text-[var(--foreground)] bg-[var(--background)]`}
       >
         <AppShell>{children}</AppShell>
         <Toaster />

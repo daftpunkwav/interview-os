@@ -151,14 +151,14 @@ export default function PrepPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 max-w-6xl mx-auto w-full h-full flex flex-col min-h-0 overflow-hidden">
-      <div className="flex items-center gap-3 mb-4 shrink-0">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-          <BookOpen className="text-white" size={20} />
+    <div className="page-shell !max-w-6xl h-full flex flex-col min-h-0 overflow-hidden !pb-4">
+      <div className="page-header !mb-4 shrink-0">
+        <div className="icon-badge">
+          <BookOpen size={20} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold">面试准备</h1>
-          <p className="text-sm text-[var(--muted)]">ReAct 辅导 Agent — 简历分析、面经搜索、主动出题</p>
+          <h1 className="page-title">面试准备</h1>
+          <p className="page-desc">ReAct 辅导 Agent — 简历分析、面经搜索、主动出题</p>
         </div>
       </div>
 
@@ -166,13 +166,13 @@ export default function PrepPage() {
         {/* 左侧：对话主区 */}
         <div className="flex flex-col min-h-0 overflow-hidden">
           {!prepSessionId ? (
-            <div className="flex-1 min-h-0 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-8 flex flex-col justify-center overflow-hidden">
+            <div className="flex-1 min-h-0 surface-card p-8 flex flex-col justify-center overflow-hidden">
               <div className="max-w-md mx-auto w-full space-y-5">
                 <div className="text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mx-auto mb-4">
-                    <Sparkles className="text-white" size={28} />
+                  <div className="w-16 h-16 rounded-[var(--radius-lg)] bg-[var(--brand-soft)] text-[var(--brand-deep)] flex items-center justify-center mx-auto mb-4">
+                    <Sparkles size={28} />
                   </div>
-                  <h2 className="text-lg font-semibold">开始你的面试辅导</h2>
+                  <h2 className="text-lg font-semibold tracking-tight">开始你的面试辅导</h2>
                   <p className="text-sm text-[var(--muted)] mt-1">
                     关联简历后，AI 教练将基于你的背景进行针对性辅导
                   </p>
@@ -180,9 +180,9 @@ export default function PrepPage() {
 
                 {resumes.length > 0 ? (
                   <div>
-                    <label className="block text-sm font-medium mb-2">关联简历</label>
+                    <label className="field-label">关联简历</label>
                     <select
-                      className="w-full px-3 py-2.5 rounded-xl border border-[var(--border)] bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
+                      className="field-input !h-11"
                       value={resumeId ?? ""}
                       onChange={(e) => setResumeId(Number(e.target.value))}
                     >
@@ -194,27 +194,26 @@ export default function PrepPage() {
                     </select>
                   </div>
                 ) : (
-                  <p className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-center">
+                  <div className="alert alert-warning text-center !block">
                     暂无简历，可先去「简历管理」上传，也可直接开始通用辅导
-                  </p>
+                  </div>
                 )}
 
                 {prepError && (
-                  <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-center">
+                  <div className="alert alert-error text-center !block">
                     {prepError}
-                  </p>
+                  </div>
                 )}
 
-                <motion.button
+                <button
+                  type="button"
                   onClick={startPrep}
                   disabled={starting}
-                  className="w-full px-6 py-3 rounded-xl bg-brand-600 text-white text-sm font-medium shadow-lg shadow-brand-500/25 flex items-center justify-center gap-2 disabled:opacity-60"
-                  whileHover={{ scale: starting ? 1 : 1.02, y: starting ? 0 : -1 }}
-                  whileTap={{ scale: starting ? 1 : 0.98 }}
+                  className="btn-primary w-full !h-11"
                 >
                   {starting ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
                   {starting ? "正在连接…" : "开始辅导"}
-                </motion.button>
+                </button>
               </div>
             </div>
           ) : (

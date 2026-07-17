@@ -31,11 +31,9 @@ function NavContent({
   return (
     <>
       {/* Logo */}
-      <div className="p-4 border-b border-[var(--border)] flex items-center justify-between overflow-hidden min-h-[72px]">
-        <Link href="/" onClick={onNavigate} className="flex items-center gap-3 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shrink-0 shadow-sm shadow-brand-500/30">
-            <span className="text-white text-sm font-bold">I</span>
-          </div>
+      <div className="px-4 py-5 flex items-center justify-between overflow-hidden min-h-[72px]">
+        <Link href="/" onClick={onNavigate} className="flex items-center gap-3 min-w-0 group">
+          <span className="g-logo-dot shadow-sm" aria-hidden />
           <AnimatePresence initial={false}>
             {!collapsed && (
               <motion.div
@@ -43,9 +41,9 @@ function NavContent({
                 initial={{ opacity: 0, width: 0 }}
                 animate={{ opacity: 1, width: "auto" }}
                 exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: 0.18 }}
               >
-                <h1 className="text-base font-bold text-brand-700 whitespace-nowrap tracking-tight">
+                <h1 className="text-[17px] font-semibold text-[var(--foreground)] whitespace-nowrap tracking-tight">
                   InterviewOS
                 </h1>
                 <p className="text-[11px] text-[var(--muted)] whitespace-nowrap">
@@ -58,7 +56,7 @@ function NavContent({
       </div>
 
       {/* 导航 */}
-      <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 px-3 pb-3 space-y-0.5 overflow-y-auto" aria-label="主导航">
         {NAV_ITEMS.filter((item) => !item.hidden).map(({ href, label, icon: Icon }) => {
           const isActive = isNavActive(pathname, href);
           return (
@@ -68,28 +66,24 @@ function NavContent({
               onClick={onNavigate}
               className="block"
               title={collapsed ? label : undefined}
+              aria-current={isActive ? "page" : undefined}
             >
               <div
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm relative group",
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm relative group",
                   isActive
-                    ? "bg-brand-50 text-brand-700 font-medium shadow-sm"
-                    : "text-[var(--muted)] hover:bg-slate-50 hover:text-slate-800",
+                    ? "bg-[var(--brand-soft)] text-[var(--brand-ink)] font-medium"
+                    : "text-[var(--text-secondary)] hover:bg-white/70 hover:text-[var(--foreground)]",
                 )}
               >
-                {isActive && (
-                  <motion.div
-                    className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-brand-500 rounded-r-full"
-                    layoutId="activeIndicator"
-                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                  />
-                )}
-
                 <Icon
                   size={18}
+                  strokeWidth={isActive ? 2.25 : 1.75}
                   className={cn(
                     "shrink-0 transition-colors",
-                    isActive ? "text-brand-600" : "text-slate-400 group-hover:text-slate-600",
+                    isActive
+                      ? "text-[var(--brand)]"
+                      : "text-[var(--muted)] group-hover:text-[var(--text-secondary)]",
                   )}
                 />
 
@@ -98,9 +92,7 @@ function NavContent({
                 )}
 
                 {href === "/interview" && !collapsed && (
-                  <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-brand-100 text-brand-600 rounded-full font-medium">
-                    Hot
-                  </span>
+                  <span className="chip chip-blue ml-auto !px-1.5 !py-0 !text-[10px]">Hot</span>
                 )}
               </div>
             </Link>
@@ -110,9 +102,12 @@ function NavContent({
 
       {/* 底部状态 */}
       {!collapsed && (
-        <div className="p-4 border-t border-[var(--border)] text-xs text-[var(--muted)]">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+        <div className="mx-3 mb-3 px-3 py-3 rounded-lg bg-white/60 border border-[var(--sidebar-border)]">
+          <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--g-green)] opacity-40" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--g-green)]" />
+            </span>
             <span>开源 · BYOK · 本地优先</span>
           </div>
         </div>
@@ -126,12 +121,10 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // 路由变化时关闭移动端抽屉
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
 
-  // 移动端打开时锁定滚动
   useEffect(() => {
     if (!mobileOpen) return;
     const prev = document.body.style.overflow;
@@ -144,20 +137,18 @@ export function Sidebar() {
   return (
     <>
       {/* 移动端顶栏 */}
-      <div className="lg:hidden sticky top-0 z-30 flex items-center gap-3 px-4 h-14 border-b border-[var(--border)] bg-[var(--card)]/95 backdrop-blur-md">
+      <div className="lg:hidden sticky top-0 z-30 flex items-center gap-3 px-4 h-14 border-b border-[var(--border)] bg-white/95 backdrop-blur-md">
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
-          className="w-9 h-9 rounded-lg border border-[var(--border)] flex items-center justify-center text-slate-600 hover:bg-slate-50"
+          className="btn-ghost !w-9 !h-9"
           aria-label="打开导航"
         >
           <Menu size={18} />
         </button>
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-md bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center">
-            <span className="text-white text-xs font-bold">I</span>
-          </div>
-          <span className="font-semibold text-brand-700">InterviewOS</span>
+          <span className="g-logo-dot-sm" aria-hidden />
+          <span className="font-semibold text-[var(--foreground)]">InterviewOS</span>
         </Link>
       </div>
 
@@ -165,7 +156,7 @@ export function Sidebar() {
       <AnimatePresence>
         {mobileOpen && (
           <motion.div
-            className="lg:hidden fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[2px]"
+            className="lg:hidden fixed inset-0 z-40 bg-black/40"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -178,16 +169,16 @@ export function Sidebar() {
       <AnimatePresence>
         {mobileOpen && (
           <motion.aside
-            className="lg:hidden fixed inset-y-0 left-0 z-50 w-72 bg-[var(--card)] border-r border-[var(--border)] flex flex-col shadow-xl"
+            className="lg:hidden fixed inset-y-0 left-0 z-50 w-72 bg-[var(--sidebar)] border-r border-[var(--sidebar-border)] flex flex-col shadow-elevate"
             initial={{ x: -288 }}
             animate={{ x: 0 }}
             exit={{ x: -288 }}
-            transition={{ type: "spring", stiffness: 380, damping: 36 }}
+            transition={{ type: "spring", stiffness: 400, damping: 36 }}
           >
             <button
               type="button"
               onClick={() => setMobileOpen(false)}
-              className="absolute right-3 top-4 w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              className="absolute right-3 top-4 btn-ghost !w-8 !h-8"
               aria-label="关闭导航"
             >
               <X size={18} />
@@ -200,25 +191,23 @@ export function Sidebar() {
       {/* 桌面侧栏 */}
       <motion.aside
         className={cn(
-          "hidden lg:flex border-r border-[var(--border)] bg-[var(--card)] flex-col shrink-0 relative sticky top-0 h-screen z-20",
-          collapsed ? "w-16" : "w-60",
+          "hidden lg:flex border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] flex-col shrink-0 relative sticky top-0 h-screen z-20",
+          collapsed ? "w-[72px]" : "w-64",
         )}
         initial={false}
-        animate={{ width: collapsed ? 64 : 240 }}
-        transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+        animate={{ width: collapsed ? 72 : 256 }}
+        transition={{ duration: 0.25, ease: [0.2, 0, 0, 1] }}
       >
         <NavContent collapsed={collapsed} />
 
-        <motion.button
+        <button
           type="button"
-          className="absolute -right-3 top-[4.5rem] w-6 h-6 rounded-full bg-[var(--card)] border border-[var(--border)] shadow-sm flex items-center justify-center text-[var(--muted)] hover:text-brand-600 hover:border-brand-300 z-20"
+          className="absolute -right-3 top-[4.75rem] w-6 h-6 rounded-full bg-white border border-[var(--border)] shadow-sm flex items-center justify-center text-[var(--muted)] hover:text-[var(--brand)] hover:border-brand-300 z-20"
           onClick={() => setCollapsed(!collapsed)}
-          whileHover={{ scale: 1.08 }}
-          whileTap={{ scale: 0.95 }}
           aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
         >
           {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </motion.button>
+        </button>
       </motion.aside>
     </>
   );

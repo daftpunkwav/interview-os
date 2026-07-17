@@ -71,14 +71,14 @@ export default function GrowthPage() {
     totalInterviews === 0 ? "待启动" : totalInterviews < 3 ? "起步阶段" : totalInterviews < 6 ? "持续成长" : "进阶提升";
 
   return (
-    <div className="p-6 lg:p-8 max-w-6xl mx-auto w-full">
-      <div className="flex items-center gap-3 mb-8">
-        <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow-lg shadow-orange-500/20">
-          <TrendingUp className="text-white" size={22} />
+    <div className="page-shell">
+      <div className="page-header !mb-8">
+        <div className="icon-badge !bg-[#fef7e0] !text-[#b06000]">
+          <TrendingUp size={20} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold">成长追踪</h1>
-          <p className="text-sm text-[var(--muted)]">
+          <h1 className="page-title">成长追踪</h1>
+          <p className="page-desc">
             系统记录你的面试表现，识别薄弱项并生成个性化训练计划。
           </p>
         </div>

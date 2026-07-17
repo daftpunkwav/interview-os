@@ -61,14 +61,14 @@ export default function HistoryPage() {
   }), [sessions]);
 
   return (
-    <div className="p-6 lg:p-8 max-w-6xl mx-auto w-full">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-          <BarChart3 className="text-white" size={20} />
+    <div className="page-shell">
+      <div className="page-header">
+        <div className="icon-badge !bg-[#dbeafe] !text-[#0043ad]">
+          <BarChart3 size={20} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold">面试记录</h1>
-          <p className="text-sm text-[var(--muted)]">回顾你的每一次模拟面试</p>
+          <h1 className="page-title">面试记录</h1>
+          <p className="page-desc">回顾你的每一次模拟面试</p>
         </div>
       </div>
 

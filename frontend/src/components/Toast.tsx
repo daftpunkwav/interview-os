@@ -80,10 +80,10 @@ export const toast = {
 };
 
 const ICONS: Record<ToastKind, ReactNode> = {
-  info: <Info className="text-sky-500" />,
-  success: <CheckCircle2 className="text-emerald-500" />,
-  warning: <AlertTriangle className="text-amber-500" />,
-  error: <XCircle className="text-rose-500" />,
+  info: <Info className="text-[var(--g-blue)]" size={18} />,
+  success: <CheckCircle2 className="text-[var(--g-green)]" size={18} />,
+  warning: <AlertTriangle className="text-[var(--g-yellow)]" size={18} />,
+  error: <XCircle className="text-[var(--g-red)]" size={18} />,
 };
 
 export function Toaster() {
@@ -129,11 +129,11 @@ function ToastView({ item }: { item: ToastItem }) {
     };
   }, [item.persist, close]);
 
-  const kindBorder: Record<ToastKind, string> = {
-    info: "border-sky-100",
-    success: "border-emerald-100",
-    warning: "border-amber-100",
-    error: "border-rose-100",
+  const kindAccent: Record<ToastKind, string> = {
+    info: "border-l-[var(--g-blue)]",
+    success: "border-l-[var(--g-green)]",
+    warning: "border-l-[var(--g-yellow)]",
+    error: "border-l-[var(--g-red)]",
   };
 
   return (
@@ -142,17 +142,17 @@ function ToastView({ item }: { item: ToastItem }) {
       initial={{ opacity: 0, y: -8, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, x: 24, scale: 0.98 }}
-      className={`pointer-events-auto bg-white/95 border ${kindBorder[item.kind]} rounded-xl shadow-lg shadow-slate-900/8 p-3.5 flex items-start gap-3 backdrop-blur-md`}
+      className={`pointer-events-auto bg-white border border-[var(--border)] border-l-4 ${kindAccent[item.kind]} rounded-[var(--radius)] shadow-elevate p-3.5 flex items-start gap-3`}
       role="status"
     >
       <div className="mt-0.5 shrink-0">{ICONS[item.kind]}</div>
-      <p className="flex-1 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
+      <p className="flex-1 text-sm text-[var(--foreground)] whitespace-pre-wrap leading-relaxed">
         {item.message}
       </p>
       <button
         type="button"
         onClick={close}
-        className="text-slate-400 hover:text-slate-700 shrink-0 p-0.5 rounded-md hover:bg-slate-100"
+        className="btn-ghost !w-7 !h-7 shrink-0"
         aria-label="关闭"
       >
         <X size={14} />

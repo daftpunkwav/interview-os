@@ -86,15 +86,15 @@ export default function ProfilePage() {
   const completionPct = Math.round((completion / 12) * 100);
 
   return (
-    <div className="p-6 lg:p-8 max-w-6xl mx-auto w-full">
+    <div className="page-shell">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <User className="text-white" size={22} />
+        <div className="page-header !mb-0">
+          <div className="icon-badge">
+            <User size={20} />
           </div>
           <div>
-            <h1 className="text-2xl font-bold">个人档案</h1>
-            <p className="text-sm text-[var(--muted)]">
+            <h1 className="page-title">个人档案</h1>
+            <p className="page-desc">
               本地存储，无需注册。信息用于个性化面试问题生成。
             </p>
           </div>

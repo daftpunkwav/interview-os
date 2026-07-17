@@ -11,47 +11,37 @@ import {
   Zap,
   Shield,
   BarChart3,
+  BookOpen,
+  TrendingUp,
 } from "lucide-react";
 import {
-  ParticleField,
-  FluidBackground,
   FadeInView,
   StaggerContainer,
   StaggerItem,
-  MagneticButton,
   AnimatedCounter,
 } from "@/components/effects";
 
 const STEPS = [
   {
-    step: "1",
+    step: "01",
     title: "配置 BYOK",
-    desc: "接入你的 LLM API Key",
+    desc: "接入你的 LLM API Key，密钥本地加密存储",
     href: "/settings",
     icon: Settings,
-    color: "from-blue-500/10 to-indigo-500/10",
-    iconColor: "text-blue-500",
-    bgColor: "bg-blue-50",
   },
   {
-    step: "2",
+    step: "02",
     title: "上传简历",
-    desc: "AI 自动解析职业档案",
+    desc: "AI 解析职业档案，生成多维度评价",
     href: "/resume",
     icon: FileText,
-    color: "from-emerald-500/10 to-teal-500/10",
-    iconColor: "text-emerald-500",
-    bgColor: "bg-emerald-50",
   },
   {
-    step: "3",
+    step: "03",
     title: "开始面试",
-    desc: "选择公司与岗位，模拟真实面试",
+    desc: "选择公司与岗位，体验真实模拟面试",
     href: "/interview",
     icon: Mic,
-    color: "from-violet-500/10 to-purple-500/10",
-    iconColor: "text-violet-500",
-    bgColor: "bg-violet-50",
   },
 ];
 
@@ -59,235 +49,164 @@ const FEATURES = [
   {
     icon: Sparkles,
     title: "动态问题生成",
-    desc: "基于简历实时出题",
-    color: "text-amber-500",
-    bg: "bg-amber-50",
+    desc: "基于简历与岗位实时出题",
+    tone: "blue" as const,
   },
   {
     icon: Zap,
     title: "深度追问",
-    desc: "发现模糊回答主动追问",
-    color: "text-rose-500",
-    bg: "bg-rose-50",
+    desc: "模糊回答时主动深挖细节",
+    tone: "red" as const,
   },
   {
     icon: Shield,
     title: "企业风格模拟",
-    desc: "字节/腾讯/阿里等",
-    color: "text-cyan-500",
-    bg: "bg-cyan-50",
+    desc: "字节 / 腾讯 / 阿里 / Google 等",
+    tone: "yellow" as const,
   },
   {
     icon: BarChart3,
     title: "多 Workflow",
-    desc: "技术面/HR面/管理岗",
-    color: "text-indigo-500",
-    bg: "bg-indigo-50",
+    desc: "技术面 · HR 面 · 管理岗",
+    tone: "green" as const,
   },
   {
     icon: Mic,
     title: "视频面试",
-    desc: "摄像头 + 语音交互",
-    color: "text-violet-500",
-    bg: "bg-violet-50",
+    desc: "摄像头 + 语音实时交互",
+    tone: "blue" as const,
+  },
+  {
+    icon: BookOpen,
+    title: "面试准备",
+    desc: "ReAct 教练辅导与面经搜索",
+    tone: "green" as const,
   },
   {
     icon: FileText,
     title: "面试报告",
     desc: "能力分析与训练计划",
-    color: "text-emerald-500",
-    bg: "bg-emerald-50",
+    tone: "yellow" as const,
   },
   {
-    icon: TrendingUpIcon,
+    icon: TrendingUp,
     title: "成长追踪",
-    desc: "记录薄弱项持续优化",
-    color: "text-orange-500",
-    bg: "bg-orange-50",
-  },
-  {
-    icon: Settings,
-    title: "BYOK",
-    desc: "自带 API Key，数据本地",
-    color: "text-slate-500",
-    bg: "bg-slate-50",
+    desc: "弱项记录，跨面试持续优化",
+    tone: "red" as const,
   },
 ];
 
-function TrendingUpIcon({ className, size }: { className?: string; size?: number }) {
-  return (
-    <svg
-      width={size || 24}
-      height={size || 24}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-      <polyline points="17 6 23 6 23 12" />
-    </svg>
-  );
-}
+const TONE_STYLES = {
+  blue: { bg: "bg-[#dbeafe]", color: "text-[#0043ad]" },
+  red: { bg: "bg-[#fce8e6]", color: "text-[#c5221f]" },
+  yellow: { bg: "bg-[#fef7e0]", color: "text-[#b06000]" },
+  green: { bg: "bg-[#e6f4ea]", color: "text-[#137333]" },
+};
 
 const STATS = [
-  { value: 50, suffix: "+", label: "企业风格" },
-  { value: 1000, suffix: "+", label: "面试题库" },
-  { value: 99, suffix: "%", label: "准确率" },
-  { value: 0, suffix: "", label: "数据泄露", prefix: "零" },
+  { value: 50, suffix: "+", label: "企业风格", prefix: "" },
+  { value: 1000, suffix: "+", label: "面试题库", prefix: "" },
+  { value: 99, suffix: "%", label: "本地可用", prefix: "" },
+  { value: 0, suffix: "", label: "数据外传", prefix: "零" },
 ];
 
 export default function HomePage() {
   return (
-    <div className="relative min-h-screen overflow-hidden">
-      {/* 流体背景 */}
-      <FluidBackground />
+    <div className="min-h-full">
+      {/* Hero · Google 渐变浅底 */}
+      <section className="relative border-b border-[var(--border)] bg-gradient-to-br from-[#f8fbff] via-[#eef3fb] to-[#f0f6ff] overflow-hidden">
+        {/* 极淡网格，非粒子轰炸 */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.35]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 1px 1px, rgba(66,133,244,0.12) 1px, transparent 0)",
+            backgroundSize: "28px 28px",
+          }}
+        />
+        <div className="relative page-shell !max-w-5xl pt-10 sm:pt-14 pb-14 sm:pb-20">
+          <FadeInView>
+            <div className="block-tag mb-6">
+              <Sparkles size={14} className="text-[var(--brand)]" />
+              AI 驱动的真实面试模拟 · 开源 · BYOK
+            </div>
 
-      {/* 粒子效果层 */}
-      <div className="absolute inset-0 pointer-events-none">
-        <ParticleField />
-      </div>
+            <h1 className="text-[clamp(2rem,5vw,3.5rem)] font-bold tracking-tight leading-[1.12] text-[var(--foreground)] max-w-3xl">
+              让每一次练习
+              <br />
+              都接近<span className="text-brand-grad">真实面试</span>
+            </h1>
 
-      {/* 内容层 */}
-      <div className="relative z-10 p-5 sm:p-8 max-w-5xl mx-auto">
-        {/* Hero 区域 */}
-        <FadeInView className="mb-12 sm:mb-16 text-center pt-4 sm:pt-8">
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{
-              duration: 0.8,
-              ease: [0.34, 1.56, 0.64, 1],
-            }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-50 text-brand-600 text-sm font-medium mb-6 border border-brand-100 shadow-sm"
-          >
-            <Sparkles size={16} />
-            <span>AI 驱动的真实面试模拟系统</span>
-          </motion.div>
+            <p className="mt-5 text-base sm:text-lg text-[var(--text-secondary)] max-w-xl leading-relaxed">
+              上传简历、选择目标公司，开启沉浸式模拟面试。
+              本地优先存储，密钥由你掌控。
+            </p>
 
-          <motion.h1
-            className="text-4xl sm:text-5xl md:text-6xl font-bold mb-4 tracking-tight"
-            initial={{ y: 30, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 0.7, delay: 0.1, ease: [0.25, 0.1, 0.25, 1] }}
-          >
-            <span className="bg-gradient-to-r from-brand-700 via-brand-500 to-brand-600 bg-clip-text text-transparent">
-              InterviewOS
-            </span>
-          </motion.h1>
-
-          <motion.p
-            className="text-lg sm:text-xl text-[var(--muted)] max-w-2xl mx-auto leading-relaxed"
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-          >
-            上传简历、选择目标公司、开启沉浸式模拟面试
-            <br />
-            <span className="text-base">让每一次练习都接近真实</span>
-          </motion.p>
-
-          <motion.div
-            className="mt-8 flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center items-stretch sm:items-center"
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.3 }}
-          >
-            <MagneticButton
-              renderAs="a"
-              href="/interview"
-              className="px-8 py-3 bg-brand-600 text-white rounded-xl font-medium shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 hover:bg-brand-700"
-              strength={0.2}
-            >
-              <span className="flex items-center justify-center gap-2">
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link href="/interview" className="btn-primary !h-12 !px-6 !text-[15px]">
                 立即开始
                 <ArrowRight size={18} />
-              </span>
-            </MagneticButton>
-            <MagneticButton
-              renderAs="a"
-              href="/resume"
-              className="px-8 py-3 border border-[var(--border)] bg-[var(--card)] rounded-xl font-medium hover:border-brand-300 shadow-sm"
-              strength={0.15}
-            >
-              上传简历
-            </MagneticButton>
-          </motion.div>
-        </FadeInView>
+              </Link>
+              <Link href="/resume" className="btn-secondary !h-12 !px-6 !text-[15px]">
+                上传简历
+              </Link>
+              <Link href="/prep" className="btn-tertiary !h-12 !px-4 !text-[15px]">
+                面试准备
+                <ArrowRight size={16} />
+              </Link>
+            </div>
+          </FadeInView>
+        </div>
+      </section>
 
-        {/* 数据展示 */}
-        <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-16">
+      <div className="page-shell !max-w-5xl -mt-8 relative z-10">
+        {/* KPI 卡片 */}
+        <StaggerContainer className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-14">
           {STATS.map((stat) => (
             <StaggerItem key={stat.label}>
-              <div className="text-center p-6 rounded-2xl bg-[var(--card)] border border-[var(--border)] hover:border-brand-200 hover:shadow-lg hover:shadow-brand-500/5 transition-all duration-500">
-                <div className="text-3xl font-bold text-brand-600 mb-1">
-                  {stat.prefix && <span>{stat.prefix}</span>}
+              <div className="surface-card p-5 text-center hover:shadow-elevate transition-shadow">
+                <div className="text-2xl sm:text-3xl font-semibold text-[var(--brand)] tracking-tight tabular-nums">
+                  {stat.prefix}
                   <AnimatedCounter value={stat.value} suffix={stat.suffix} />
                 </div>
-                <div className="text-sm text-[var(--muted)]">{stat.label}</div>
+                <div className="mt-1 text-xs sm:text-sm text-[var(--muted)]">{stat.label}</div>
               </div>
             </StaggerItem>
           ))}
         </StaggerContainer>
 
-        {/* 步骤卡片 */}
-        <FadeInView className="mb-16">
-          <h2 className="text-2xl font-bold text-center mb-8">三步开启面试之旅</h2>
-          <StaggerContainer className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {STEPS.map((item, index) => (
+        {/* 三步流程 */}
+        <FadeInView className="mb-14">
+          <div className="flex items-end justify-between mb-6 gap-4">
+            <div>
+              <span className="block-tag mb-3">流程</span>
+              <h2 className="text-xl sm:text-2xl font-semibold tracking-tight">
+                三步开启面试之旅
+              </h2>
+            </div>
+          </div>
+          <StaggerContainer className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {STEPS.map((item) => (
               <StaggerItem key={item.step}>
-                <Link href={item.href} className="group block">
-                  <motion.div
-                    className="relative p-6 rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden"
-                    whileHover={{ y: -4, scale: 1.02 }}
-                    transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-                  >
-                    {/* 渐变背景 */}
-                    <div
-                      className={`absolute inset-0 bg-gradient-to-br ${item.color} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}
-                    />
-
-                    <div className="relative z-10">
-                      <div className="flex items-center justify-between mb-4">
-                        <span
-                          className={`text-xs font-medium ${item.iconColor} ${item.bgColor} px-3 py-1 rounded-full`}
-                        >
-                          步骤 {item.step}
-                        </span>
-                        <motion.div
-                          whileHover={{ rotate: 15, scale: 1.1 }}
-                          transition={{ type: "spring", stiffness: 300 }}
-                        >
-                          <item.icon
-                            size={22}
-                            className="text-[var(--muted)] group-hover:text-brand-600 transition-colors"
-                          />
-                        </motion.div>
+                <Link href={item.href} className="group block h-full">
+                  <div className="surface-card-hover h-full p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="font-mono text-xs font-medium text-[var(--muted)] tracking-wider">
+                        {item.step}
+                      </span>
+                      <div className="w-10 h-10 rounded-lg bg-[var(--brand-soft)] text-[var(--brand-deep)] flex items-center justify-center group-hover:bg-[var(--brand)] group-hover:text-white transition-colors">
+                        <item.icon size={18} />
                       </div>
-                      <h3 className="font-semibold text-lg mb-2 group-hover:text-brand-700 transition-colors">
-                        {item.title}
-                      </h3>
-                      <p className="text-sm text-[var(--muted)]">{item.desc}</p>
-
-                      {/* 箭头指示 */}
-                      <motion.div
-                        className="mt-4 flex items-center text-sm text-brand-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                        initial={{ x: -10 }}
-                        whileHover={{ x: 0 }}
-                      >
-                        <span>立即开始</span>
-                        <ArrowRight size={14} className="ml-1" />
-                      </motion.div>
                     </div>
-
-                    {/* 步骤连接线 */}
-                    {index < STEPS.length - 1 && (
-                      <div className="hidden md:block absolute top-1/2 -right-3 w-6 h-px bg-gradient-to-r from-[var(--border)] to-transparent" />
-                    )}
-                  </motion.div>
+                    <h3 className="font-semibold text-[15px] mb-1.5 group-hover:text-[var(--brand-deep)] transition-colors">
+                      {item.title}
+                    </h3>
+                    <p className="text-sm text-[var(--muted)] leading-relaxed">{item.desc}</p>
+                    <div className="mt-4 flex items-center text-sm font-medium text-[var(--brand)] opacity-0 group-hover:opacity-100 transition-opacity">
+                      进入
+                      <ArrowRight size={14} className="ml-1" />
+                    </div>
+                  </div>
                 </Link>
               </StaggerItem>
             ))}
@@ -295,56 +214,60 @@ export default function HomePage() {
         </FadeInView>
 
         {/* 核心能力 */}
-        <FadeInView>
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-8">
-            <h2 className="text-2xl font-bold mb-2 text-center">核心能力</h2>
-            <p className="text-[var(--muted)] text-center mb-8">
-              全链路 AI 驱动，打造真实面试体验
-            </p>
+        <FadeInView className="mb-14">
+          <div className="surface-card p-6 sm:p-8">
+            <div className="text-center mb-8">
+              <span className="block-tag mb-3">能力</span>
+              <h2 className="text-xl sm:text-2xl font-semibold tracking-tight">核心能力</h2>
+              <p className="mt-2 text-sm text-[var(--muted)]">
+                全链路 AI 驱动，打造接近真实的面试体验
+              </p>
+            </div>
 
-            <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {FEATURES.map((feat) => (
-                <StaggerItem key={feat.title}>
-                  <motion.div
-                    className="p-5 rounded-xl border border-transparent hover:border-[var(--border)] hover:bg-gray-50/50 transition-all duration-300"
-                    whileHover={{ y: -2 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <div
-                      className={`w-10 h-10 rounded-lg ${feat.bg} flex items-center justify-center mb-3`}
-                    >
-                      <feat.icon size={20} className={feat.color} />
+            <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {FEATURES.map((feat) => {
+                const tone = TONE_STYLES[feat.tone];
+                return (
+                  <StaggerItem key={feat.title}>
+                    <div className="p-4 rounded-lg border border-transparent hover:border-[var(--border)] hover:bg-[#fafbfc] transition-colors h-full">
+                      <div
+                        className={`w-10 h-10 rounded-lg ${tone.bg} flex items-center justify-center mb-3`}
+                      >
+                        <feat.icon size={18} className={tone.color} />
+                      </div>
+                      <h3 className="font-semibold text-sm mb-1">{feat.title}</h3>
+                      <p className="text-xs text-[var(--muted)] leading-relaxed">{feat.desc}</p>
                     </div>
-                    <h3 className="font-semibold mb-1">{feat.title}</h3>
-                    <p className="text-sm text-[var(--muted)]">{feat.desc}</p>
-                  </motion.div>
-                </StaggerItem>
-              ))}
+                  </StaggerItem>
+                );
+              })}
             </StaggerContainer>
           </div>
         </FadeInView>
 
-        {/* CTA 区域 */}
-        <FadeInView className="mt-16 text-center">
-          <motion.div
-            className="p-8 rounded-2xl bg-gradient-to-br from-brand-600 to-brand-700 text-white"
-            whileHover={{ scale: 1.01 }}
-            transition={{ duration: 0.3 }}
-          >
-            <h3 className="text-2xl font-bold mb-3">准备好迎接下一场面试了吗？</h3>
-            <p className="text-brand-100 mb-6">每一次练习，都是向 offer 更近一步</p>
-            <MagneticButton
-              renderAs="a"
-              href="/interview"
-              className="px-8 py-3 bg-white text-brand-600 rounded-xl font-medium shadow-lg"
-              strength={0.2}
-            >
-              <span className="flex items-center gap-2">
+        {/* CTA */}
+        <FadeInView className="mb-8">
+          <div className="relative overflow-hidden rounded-[var(--radius-xl)] bg-gradient-to-br from-[#4285f4] via-[#1a73e8] to-[#0043ad] p-8 sm:p-10 text-white shadow-glow">
+            <div
+              className="pointer-events-none absolute -right-16 -top-16 w-56 h-56 rounded-full opacity-20"
+              style={{ background: "radial-gradient(circle, #fff 0%, transparent 70%)" }}
+            />
+            <div className="relative">
+              <h3 className="text-xl sm:text-2xl font-semibold tracking-tight mb-2">
+                准备好迎接下一场面试了吗？
+              </h3>
+              <p className="text-white/80 text-sm sm:text-base mb-6 max-w-md">
+                每一次练习，都是向 offer 更近一步
+              </p>
+              <Link
+                href="/interview"
+                className="inline-flex items-center gap-2 h-11 px-6 rounded-[var(--radius)] bg-white text-[var(--brand)] text-sm font-medium hover:bg-[#f8fbff] shadow-md"
+              >
                 开始模拟面试
-                <ArrowRight size={18} />
-              </span>
-            </MagneticButton>
-          </motion.div>
+                <ArrowRight size={16} />
+              </Link>
+            </div>
+          </div>
         </FadeInView>
       </div>
     </div>

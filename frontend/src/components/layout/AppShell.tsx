@@ -35,9 +35,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <motion.div
           key={pathname}
           className={isFixedHeightPage ? "h-full min-h-0" : undefined}
-          initial={{ opacity: 0, y: 4 }}
+          initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.22, ease: [0.25, 0.1, 0.25, 1] }}
+          transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
         >
           {children}
         </motion.div>

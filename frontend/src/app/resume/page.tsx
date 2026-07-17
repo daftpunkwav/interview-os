@@ -103,14 +103,14 @@ export default function ResumePage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 max-w-6xl mx-auto w-full">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-          <FileText className="text-white" size={20} />
+    <div className="page-shell">
+      <div className="page-header">
+        <div className="icon-badge !bg-[#e6f4ea] !text-[#137333]">
+          <FileText size={20} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold">简历管理</h1>
-          <p className="text-sm text-[var(--muted)]">
+          <h1 className="page-title">简历管理</h1>
+          <p className="page-desc">
             支持 PDF、Word、Markdown 格式。AI 将自动解析为职业知识档案。
           </p>
         </div>

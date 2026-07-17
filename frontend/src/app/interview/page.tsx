@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import { toast } from "@/components/Toast";
 import type { Options, Resume, InterviewConfig } from "@/types";
@@ -110,31 +109,27 @@ export default function InterviewSetupPage() {
   };
 
   const startButton = (fullWidth = false) => (
-    <motion.button
+    <button
       type="button"
-      className={`shrink-0 px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-medium shadow-lg shadow-brand-500/25 hover:bg-brand-700 flex items-center justify-center gap-2 disabled:opacity-60 ${
-        fullWidth ? "w-full" : ""
-      }`}
-      whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
+      className={`btn-primary shrink-0 ${fullWidth ? "w-full" : ""}`}
       onClick={handleStart}
       disabled={creating || loading || !!loadError}
     >
       {creating ? <Loader2 className="animate-spin" size={18} /> : <Play size={18} />}
       开始模拟面试
-    </motion.button>
+    </button>
   );
 
   return (
-    <div className="h-full flex flex-col overflow-hidden p-4 sm:p-5 lg:p-6 max-w-6xl mx-auto w-full">
+    <div className="h-full flex flex-col overflow-hidden page-shell !py-4 sm:!py-5">
       <div className="flex items-center justify-between gap-4 mb-4 shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shrink-0 shadow-md shadow-brand-500/25">
-            <Sparkles className="text-white" size={18} />
+        <div className="page-header !mb-0 min-w-0">
+          <div className="icon-badge shrink-0">
+            <Sparkles size={18} />
           </div>
           <div className="min-w-0">
-            <h1 className="text-xl font-bold leading-tight tracking-tight">配置模拟面试</h1>
-            <p className="text-xs text-[var(--muted)] mt-0.5">定制你的专属面试体验</p>
+            <h1 className="page-title !text-xl">配置模拟面试</h1>
+            <p className="page-desc !text-xs">定制你的专属面试体验</p>
           </div>
         </div>
         <div className="hidden sm:block">

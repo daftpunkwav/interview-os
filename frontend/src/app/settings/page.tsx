@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import { LLM_PROVIDERS } from "@/config/providers";
 import type { LLMSettings } from "@/types";
@@ -81,14 +80,14 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="p-8 max-w-2xl">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center">
-          <Settings2 className="text-white" size={20} />
+    <div className="page-shell !max-w-2xl">
+      <div className="page-header">
+        <div className="icon-badge">
+          <Settings2 size={20} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold">BYOK 设置</h1>
-          <p className="text-sm text-[var(--muted)]">
+          <h1 className="page-title">BYOK 设置</h1>
+          <p className="page-desc">
             Bring Your Own Key — 使用你自己的 LLM API，数据完全本地存储。
           </p>
         </div>
@@ -106,22 +105,21 @@ export default function SettingsPage() {
         <>
       <div className="space-y-4 mt-6">
         <div>
-            <label className="block text-sm font-medium mb-2">服务商</label>
+            <label className="field-label">服务商</label>
             <div className="flex flex-wrap gap-2">
               {LLM_PROVIDERS.map((p) => (
-                <motion.button
+                <button
+                  type="button"
                   key={p.id}
                   onClick={() => handleProviderChange(p.id)}
-                  className={`px-3 py-1.5 rounded-lg text-sm border transition-all ${
+                  className={`px-3 py-1.5 rounded-[var(--radius)] text-sm border transition-all ${
                     settings.provider === p.id
-                      ? "border-brand-500 bg-brand-50 text-brand-700 shadow-sm"
-                      : "border-[var(--border)] hover:border-brand-300"
+                      ? "border-brand-500 bg-brand-50 text-brand-800 font-medium shadow-sm"
+                      : "border-[var(--border)] text-[var(--text-secondary)] hover:border-brand-300 hover:bg-brand-50/40"
                   }`}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
                 >
                   {p.name}
-                </motion.button>
+                </button>
               ))}
             </div>
           </div>
@@ -142,9 +140,9 @@ export default function SettingsPage() {
         </div>
 
         <div>
-            <label className="block text-sm font-medium mb-1.5">API 协议</label>
+            <label className="field-label">API 协议</label>
             <select
-              className="input"
+              className="field-input"
               value={settings.protocol || "openai_chat"}
               onChange={(e) => setSettings({ ...settings, protocol: e.target.value })}
             >
@@ -155,9 +153,9 @@ export default function SettingsPage() {
           </div>
 
         <div>
-            <label className="block text-sm font-medium mb-1.5">思考等级 (reasoning_effort)</label>
+            <label className="field-label">思考等级 (reasoning_effort)</label>
             <select
-              className="input"
+              className="field-input"
               value={settings.reasoning_effort || "medium"}
               onChange={(e) => setSettings({ ...settings, reasoning_effort: e.target.value })}
             >
@@ -184,56 +182,28 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="mt-6 flex items-center gap-3">
-        <motion.button
-          onClick={handleSave}
-          disabled={saving}
-          className="btn-primary flex items-center gap-2"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-        >
+      <div className="mt-6 flex items-center gap-3 flex-wrap">
+        <button type="button" onClick={handleSave} disabled={saving} className="btn-primary">
           {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
           保存
-        </motion.button>
-        <motion.button
-          onClick={handleTest}
-          disabled={testing}
-          className="btn-secondary flex items-center gap-2"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-        >
+        </button>
+        <button type="button" onClick={handleTest} disabled={testing} className="btn-secondary">
           {testing ? <Loader2 className="animate-spin" size={16} /> : <Zap size={16} />}
           测试连接
-        </motion.button>
-        {msg && (
-          <motion.span
-            className="text-sm text-green-600"
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
-            {msg}
-          </motion.span>
-        )}
+        </button>
+        {msg && <span className="text-sm text-[var(--success-ink)] font-medium">{msg}</span>}
       </div>
 
       {testResult && (
-        <motion.div
-          className={`mt-4 p-3 rounded-lg text-sm flex items-start gap-2 ${testResult.success ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
+        <div
+          className={`alert mt-4 ${testResult.success ? "alert-success" : "alert-error"}`}
         >
-          {testResult.success ? <CheckCircle size={16} className="mt-0.5" /> : <XCircle size={16} className="mt-0.5" />}
+          {testResult.success ? <CheckCircle size={16} className="mt-0.5 shrink-0" /> : <XCircle size={16} className="mt-0.5 shrink-0" />}
           <span>{testResult.message}</span>
-        </motion.div>
+        </div>
       )}
         </>
       ) : null}
-
-      <style jsx global>{`
-        .input { @apply w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-300; }
-        .btn-primary { @apply px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors; }
-        .btn-secondary { @apply px-4 py-2 rounded-lg border border-[var(--border)] text-sm font-medium hover:bg-gray-50 disabled:opacity-50 transition-colors; }
-      `}</style>
     </div>
   );
 }
@@ -243,8 +213,8 @@ function Field({ label, value, onChange, type = "text", placeholder }: {
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium mb-1.5">{label}</label>
-      <input className="input" type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+      <label className="field-label">{label}</label>
+      <input className="field-input" type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
     </div>
   );
 }
