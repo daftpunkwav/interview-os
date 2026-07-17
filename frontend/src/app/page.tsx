@@ -86,21 +86,21 @@ export default function HomePage() {
   return (
     <div className="min-h-full relative overflow-x-hidden">
       {/* ========== Hero ========== */}
-      <section className="relative border-b border-[var(--border)] overflow-hidden">
-        {/* 底色 + 流体 + 粒子 */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#f8fbff] via-[#f1f5fb] to-[#f8fafc]" />
-        <FluidBackground />
-        <div className="absolute inset-0 opacity-40 pointer-events-none">
-          <ParticleField />
+      <section className="relative border-b border-[var(--border)] overflow-hidden min-h-[min(88vh,820px)]">
+        {/* 底色 + 非线性流体 + 粒子场 */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#eef4ff] via-[#f5f8fc] to-[#f8f9fa]" />
+        <FluidBackground className="opacity-100" />
+        <div className="absolute inset-0 opacity-70 pointer-events-none">
+          <ParticleField density={1.15} />
         </div>
-        {/* 网格点阵 */}
+        {/* 网格点阵（顶部浓、向下淡出） */}
         <div
-          className="pointer-events-none absolute inset-0 opacity-[0.4]"
+          className="pointer-events-none absolute inset-0 opacity-[0.35]"
           style={{
             backgroundImage:
-              "radial-gradient(circle at 1px 1px, rgba(66,133,244,0.14) 1px, transparent 0)",
-            backgroundSize: "32px 32px",
-            maskImage: "linear-gradient(180deg, black 40%, transparent 100%)",
+              "radial-gradient(circle at 1px 1px, rgba(66,133,244,0.16) 1px, transparent 0)",
+            backgroundSize: "28px 28px",
+            maskImage: "linear-gradient(180deg, black 30%, transparent 92%)",
           }}
         />
 
