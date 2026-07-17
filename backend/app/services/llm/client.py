@@ -314,25 +314,55 @@ class LLMClient:
         payload = self._build_payload(messages, temperature, stream=True, tools=tools)
         headers = self._headers()
 
+        # 建连阶段对 429/5xx 与瞬时网络错误重试；一旦开始读流体则不再整段重放
+        max_retries = 3
+        backoff = 0.5
+        last_exc: Exception | None = None
         async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST", url, headers=headers, json=payload
-            ) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
+            for attempt in range(max_retries + 1):
+                try:
+                    async with client.stream(
+                        "POST", url, headers=headers, json=payload
+                    ) as resp:
+                        if resp.status_code == 429 or resp.status_code >= 500:
+                            last_exc = httpx.HTTPStatusError(
+                                f"transient {resp.status_code}",
+                                request=resp.request,
+                                response=resp,
+                            )
+                            if attempt < max_retries:
+                                await asyncio.sleep(backoff * (2 ** attempt))
+                                continue
+                            resp.raise_for_status()
+                        resp.raise_for_status()
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            data_str = line[6:].strip()
+                            if data_str == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(data_str)
+                                delta = chunk["choices"][0].get("delta", {})
+                                token = delta.get("content", "")
+                                if token:
+                                    yield token
+                            except (json.JSONDecodeError, KeyError, IndexError):
+                                continue
+                        return
+                except (
+                    httpx.ConnectError,
+                    httpx.ReadTimeout,
+                    httpx.WriteError,
+                    httpx.RemoteProtocolError,
+                ) as e:
+                    last_exc = e
+                    if attempt < max_retries:
+                        await asyncio.sleep(backoff * (2 ** attempt))
                         continue
-                    data_str = line[6:].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data_str)
-                        delta = chunk["choices"][0].get("delta", {})
-                        token = delta.get("content", "")
-                        if token:
-                            yield token
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        continue
+                    raise
+            if last_exc is not None:
+                raise last_exc
 
     async def chat_json(
         self,
