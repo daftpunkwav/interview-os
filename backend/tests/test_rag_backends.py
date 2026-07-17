@@ -262,9 +262,9 @@ def test_llm_client_embed_uses_dedicated_embeddings_base(monkeypatch) -> None:
             captured["url"] = url
             return _StubResp()
 
-    import httpx
+    import app.services.llm.client as llm_mod
 
-    monkeypatch.setattr(httpx, "AsyncClient", _StubClient)
+    monkeypatch.setattr(llm_mod, "make_pinned_async_client", lambda *a, **kw: _StubClient())
     # 重置 settings 缓存,让本次测试读到独立 embeddings base
     get_settings.cache_clear()
 
@@ -273,6 +273,8 @@ def test_llm_client_embed_uses_dedicated_embeddings_base(monkeypatch) -> None:
     monkeypatch.setenv("LLM_EMBEDDINGS_BASE", "https://api.siliconflow.cn/v1")
     monkeypatch.setenv("LLM_EMBEDDINGS_KEY", "sk-emb")
     monkeypatch.setenv("LLM_EMBEDDINGS_MODEL", "BAAI/bge-m3")
+    # 放行 pin 前的 is_safe_http_url（测试不走真实 DNS pin）
+    monkeypatch.setattr(llm_mod, "is_safe_http_url", lambda *a, **kw: True)
 
     llm = LLMClient(api_base="https://api.openai.com/v1", api_key="sk-chat", model="gpt-4o")
     import asyncio
@@ -309,9 +311,10 @@ def test_llm_client_embed_falls_back_to_chat_base_when_no_override(monkeypatch) 
             captured["url"] = url
             return _StubResp()
 
-    import httpx
+    import app.services.llm.client as llm_mod
 
-    monkeypatch.setattr(httpx, "AsyncClient", _StubClient)
+    monkeypatch.setattr(llm_mod, "make_pinned_async_client", lambda *a, **kw: _StubClient())
+    monkeypatch.setattr(llm_mod, "is_safe_http_url", lambda *a, **kw: True)
     get_settings.cache_clear()
     monkeypatch.delenv("LLM_EMBEDDINGS_BASE", raising=False)
     monkeypatch.delenv("LLM_EMBEDDINGS_KEY", raising=False)

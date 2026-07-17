@@ -52,7 +52,7 @@ async def test_chat_4xx_no_retry(monkeypatch: pytest.MonkeyPatch) -> None:
         "400", request=MagicMock(), response=fake_resp
     )
     http_client.post = AsyncMock(return_value=fake_resp)
-    with patch("app.services.llm.client.httpx.AsyncClient") as ac:
+    with patch("app.services.llm.client.make_pinned_async_client") as ac:
         ac.return_value.__aenter__.return_value = http_client
         ac.return_value.__aexit__.return_value = False
         with pytest.raises(httpx.HTTPStatusError):
@@ -82,7 +82,7 @@ async def test_chat_429_retries_then_returns(monkeypatch: pytest.MonkeyPatch) ->
             succ,
         ]
     )
-    with patch("app.services.llm.client.httpx.AsyncClient") as ac:
+    with patch("app.services.llm.client.make_pinned_async_client") as ac:
         ac.return_value.__aenter__.return_value = http_client
         ac.return_value.__aexit__.return_value = False
         with patch("app.services.llm.client.asyncio.sleep", new=AsyncMock()):
@@ -110,7 +110,7 @@ async def test_chat_allows_loopback_in_dev(monkeypatch: pytest.MonkeyPatch) -> N
     succ.raise_for_status = MagicMock()
     http_client = AsyncMock()
     http_client.post = AsyncMock(return_value=succ)
-    with patch("app.services.llm.client.httpx.AsyncClient") as ac:
+    with patch("app.services.llm.client.make_pinned_async_client") as ac:
         ac.return_value.__aenter__.return_value = http_client
         ac.return_value.__aexit__.return_value = False
         text = await client.chat([{"role": "user", "content": "hi"}])
