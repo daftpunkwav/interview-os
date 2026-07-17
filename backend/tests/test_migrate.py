@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import pytest
 from sqlalchemy import create_engine, inspect, text
 
 from app.core.migrate import MIGRATIONS, _column_name_from_stmt, run_migrations
@@ -41,53 +40,110 @@ def test_column_name_extraction() -> None:
 
 
 def test_run_migrations_is_idempotent() -> None:
-    """运行两次迁移：第二次应为空（验证幂等），不报 DuplicateColumn。"""
-    eng = _fresh_engine()
-    first = run_migrations(eng)
-    second = run_migrations(eng)
-    # 第一遍改了 k 列（prep_sessions.status）；第二遍必须 0 改动
-    assert "prep_sessions" in first  # status 列是 Base 模型缺、迁移补的
-    assert "prep_sessions" not in second  # 第二次空跑
-    for table, _ in MIGRATIONS.items():
-        if table not in first:
-            assert table not in second
+    """运行两次迁移：第二次应为空（验证幂等），不报 DuplicateColumn。
 
-
-def test_run_migrations_skips_missing_table() -> None:
-    """如果迁移清单里的表不存在（开发期不慎删除模型），不应 crash。"""
-    eng = _fresh_engine()
+    使用合成表 + 临时注入 MIGRATIONS，避免依赖「模型缺列、迁移补齐」的漂移假设
+    （当模型已包含全部列时 create_all 后 applied 会为空）。
+    """
+    eng = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        future=True,
+    )
     with eng.begin() as conn:
-        conn.execute(text("DROP TABLE resumes"))
-    # 不抛异常
-    applied = run_migrations(eng)
-    assert "resumes" not in applied
-    # 其它表仍正常完成
-    assert "prep_sessions" in applied
-
-
-def test_failed_alter_silently_continues_other_tables() -> None:
-    """对单张表注入一条不合法 SQL：该表迁移失败被吞掉；其他表正常完成。"""
-    eng = _fresh_engine()
+        conn.execute(text("CREATE TABLE _mig_test (id INTEGER PRIMARY KEY)"))
 
     from app.core import migrate
 
-    bad_table = "llm_settings"
-    original_stmts = list(migrate.MIGRATIONS[bad_table])
-    # 故意造一条针对已存在列 ADD 的 SQL，会触发 duplicate column 错误
-    migrate.MIGRATIONS[bad_table] = [
-        "ALTER TABLE llm_settings ADD COLUMN protocol VARCHAR(50) DEFAULT 'openai_chat'"
-    ]
+    original = dict(migrate.MIGRATIONS)
+    migrate.MIGRATIONS = {
+        "_mig_test": [
+            "ALTER TABLE _mig_test ADD COLUMN foo VARCHAR(20) DEFAULT ''",
+            "ALTER TABLE _mig_test ADD COLUMN bar INTEGER DEFAULT 0",
+        ]
+    }
+    try:
+        first = run_migrations(eng)
+        second = run_migrations(eng)
+        assert "_mig_test" in first
+        assert len(first["_mig_test"]) == 2
+        assert "_mig_test" not in second
+        cols = {c["name"] for c in inspect(eng).get_columns("_mig_test")}
+        assert "foo" in cols and "bar" in cols
+    finally:
+        migrate.MIGRATIONS = original
+
+
+def test_run_migrations_skips_missing_table() -> None:
+    """如果迁移清单里的表不存在，不应 crash；其它表仍可完成。"""
+    eng = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        future=True,
+    )
+    with eng.begin() as conn:
+        conn.execute(text("CREATE TABLE _mig_ok (id INTEGER PRIMARY KEY)"))
+
+    from app.core import migrate
+
+    original = dict(migrate.MIGRATIONS)
+    migrate.MIGRATIONS = {
+        "_mig_missing": [
+            "ALTER TABLE _mig_missing ADD COLUMN x VARCHAR(10) DEFAULT ''",
+        ],
+        "_mig_ok": [
+            "ALTER TABLE _mig_ok ADD COLUMN y VARCHAR(10) DEFAULT ''",
+        ],
+    }
+    try:
+        applied = run_migrations(eng)
+        assert "_mig_missing" not in applied
+        assert "_mig_ok" in applied
+    finally:
+        migrate.MIGRATIONS = original
+
+
+def test_failed_alter_silently_continues_other_tables() -> None:
+    """对单张表注入不合法 SQL：该表失败被吞掉；其他表正常完成。"""
+    eng = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        future=True,
+    )
+    with eng.begin() as conn:
+        conn.execute(text("CREATE TABLE _mig_bad (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE _mig_good (id INTEGER PRIMARY KEY)"))
+
+    from app.core import migrate
+
+    original = dict(migrate.MIGRATIONS)
+    migrate.MIGRATIONS = {
+        "_mig_bad": [
+            # 故意语法错误，触发 OperationalError
+            "ALTER TABLE _mig_bad ADD COLUMN !!!",
+        ],
+        "_mig_good": [
+            "ALTER TABLE _mig_good ADD COLUMN ok VARCHAR(10) DEFAULT ''",
+        ],
+    }
     try:
         applied = run_migrations(eng)
     finally:
-        migrate.MIGRATIONS[bad_table] = original_stmts
+        migrate.MIGRATIONS = original
 
-    # 该表迁移失败:不会出现在 applied（迁移器吞了异常、整张表回滚）
-    assert bad_table not in applied
-    # 其它表正常完成
-    assert "prep_sessions" in applied
-    # resumes:Base.create_all 已建好所有列,无需 ADD,自然不在 applied,但其它表能跑证明隔离成功
-    # 同时验证数据库里 llm_settings.protocol 仍然为初始的 DEFAULT 'openai_chat'
-    insp = inspect(eng)
-    cols = {c["name"]: c for c in insp.get_columns(bad_table)}
-    assert "protocol" in cols
+    assert "_mig_bad" not in applied
+    assert "_mig_good" in applied
+    cols = {c["name"] for c in inspect(eng).get_columns("_mig_good")}
+    assert "ok" in cols
+
+
+def test_base_model_migrations_are_noop_when_schema_current() -> None:
+    """当 Base.metadata 已包含 MIGRATIONS 中全部列时，迁移应为空操作。"""
+    eng = _fresh_engine()
+    applied = run_migrations(eng)
+    # 二次运行仍为空
+    applied2 = run_migrations(eng)
+    assert applied2 == {}
+    # 首次也可能为空（模型已与迁移清单对齐）；若有旧库缺列才有 applied
+    for table in applied:
+        assert table in MIGRATIONS

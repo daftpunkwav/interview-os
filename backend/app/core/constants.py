@@ -173,7 +173,7 @@ DEFAULT_LLM_RATE_LIMIT_PER_MINUTE = 10
 
 # ── HTTP 头 / 安全 ────────────────────────────────────────
 
-API_KEY_ENCRYPTION_VERSION = "enc:v1"
+API_KEY_ENCRYPTION_VERSION = "enc:v2"
 TRACE_ID_HEADER = "X-Trace-Id"
 
 
