@@ -131,6 +131,58 @@ class TestSetTurn:
         )
 
 
+class TestSessionConnectionMutex:
+    @pytest.mark.asyncio
+    async def test_claim_kicks_previous_handler(self) -> None:
+        """新连接 claim 同一 session 时应标记并关闭旧连接。"""
+        from app.realtime import ws_handler as ws_mod
+
+        ws_mod.reset_session_registry_for_tests()
+        old_ws = _make_mock_ws()
+        new_ws = _make_mock_ws()
+        old_ws.close = AsyncMock()
+        new_ws.close = AsyncMock()
+
+        old_h = ws_mod.InterviewWSHandler(old_ws, session_id=42)
+        new_h = ws_mod.InterviewWSHandler(new_ws, session_id=42)
+
+        await ws_mod.claim_session_connection(old_h)
+        assert old_h._superseded is False
+        assert ws_mod._active_handlers[42] is old_h
+
+        await ws_mod.claim_session_connection(new_h)
+        assert old_h._superseded is True
+        assert new_h._superseded is False
+        assert ws_mod._active_handlers[42] is new_h
+        old_ws.close.assert_awaited()
+        # 旧连接应收到 error 提示
+        sent = [c.args[0] for c in old_ws.send_json.call_args_list]
+        assert any(e.get("type") == "error" for e in sent)
+
+        # 释放被顶替的旧 handler 不应误删新连接
+        await ws_mod.release_session_connection(old_h)
+        assert ws_mod._active_handlers[42] is new_h
+
+        await ws_mod.release_session_connection(new_h)
+        assert 42 not in ws_mod._active_handlers
+
+    @pytest.mark.asyncio
+    async def test_different_sessions_independent(self) -> None:
+        from app.realtime import ws_handler as ws_mod
+
+        ws_mod.reset_session_registry_for_tests()
+        h1 = ws_mod.InterviewWSHandler(_make_mock_ws(), session_id=1)
+        h2 = ws_mod.InterviewWSHandler(_make_mock_ws(), session_id=2)
+        await ws_mod.claim_session_connection(h1)
+        await ws_mod.claim_session_connection(h2)
+        assert h1._superseded is False
+        assert h2._superseded is False
+        assert ws_mod._active_handlers[1] is h1
+        assert ws_mod._active_handlers[2] is h2
+        await ws_mod.release_session_connection(h1)
+        await ws_mod.release_session_connection(h2)
+
+
 class TestTraceId:
     @pytest.mark.asyncio
     async def test_handle_sets_trace_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
