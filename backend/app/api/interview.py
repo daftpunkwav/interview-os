@@ -1,6 +1,7 @@
 """面试会话 API。"""
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,6 +25,7 @@ from app.services.interview.runner import InterviewRunner
 from app.services.llm.client import LLMClient
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # 强类型 ChatMessage 列表校验（防御存储层历史脏数据）
 _CHAT_MSG_ADAPTER: TypeAdapter[list[ChatMessage]] = TypeAdapter(list[ChatMessage])
@@ -158,14 +160,19 @@ async def send_message(
         try:
             await generate_and_persist_report(session, llm, db)
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"报告生成失败: {e}") from e
+            # 对外通用文案，细节仅日志（防上游异常泄漏）
+            logger.exception("报告生成失败 sid=%s", session_id)
+            raise HTTPException(
+                status_code=502, detail="报告生成失败，请稍后重试"
+            ) from e
 
     return InterviewMessageResponse(
         session_id=session_id,
         message=ChatMessage(role="assistant", content=reply, timestamp=datetime.now(timezone.utc)),
         current_phase=session.current_phase,
         is_complete=is_complete,
-        phases_remaining=list(agent.phases_remaining) if not is_complete else [],
+        # phases_remaining 是方法，必须调用
+        phases_remaining=list(agent.phases_remaining()) if not is_complete else [],
     )
 
 
@@ -196,7 +203,10 @@ async def finish_interview(session_id: int, db: Session = Depends(get_db)):
     try:
         await generate_and_persist_report(session, llm, db)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"报告生成失败: {e}") from e
+        logger.exception("报告生成失败 sid=%s", session_id)
+        raise HTTPException(
+            status_code=502, detail="报告生成失败，请稍后重试"
+        ) from e
     return {
         "session_id": session_id,
         "status": SessionStatus.COMPLETED.value,
