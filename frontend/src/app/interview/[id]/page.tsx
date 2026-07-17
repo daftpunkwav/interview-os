@@ -42,7 +42,16 @@ export default function InterviewRoomPage() {
   const showOutlineRef = useRef(showOutline);
   const sendRef = useRef<(p: ClientEvent) => boolean>(() => false);
 
-  const { connected, turnState, connectionState, send, on, retryNow } = useInterviewWS(sessionId);
+  const {
+    connected,
+    everConnected,
+    turnState,
+    connectionState,
+    reconnectAttempt,
+    send,
+    on,
+    retryNow,
+  } = useInterviewWS(sessionId);
   const { playBase64Mp3, setOnSpeakingChange } = useTTSPlayer();
 
 
@@ -219,38 +228,40 @@ export default function InterviewRoomPage() {
     IDLE: "待命",
   };
 
-  if (!connected) {
-    if (connectionState === "failed") {
-      return (
-        <div className="h-screen flex flex-col items-center justify-center gap-4 bg-gray-950 text-gray-200 px-6 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
-            <WifiOff className="text-rose-400" size={26} />
-          </div>
-          <div>
-            <p className="text-base font-medium">无法连接到面试服务</p>
-            <p className="text-sm text-gray-500 mt-1.5 max-w-sm">
-              已尝试 5 次仍失败，请确认后端已启动（默认 :8000）或检查网络
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-3 mt-1">
-            <button
-              type="button"
-              onClick={() => retryNow()}
-              className="px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 shadow-lg shadow-brand-500/20"
-            >
-              重新连接
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push("/interview")}
-              className="px-5 py-2.5 rounded-xl border border-white/10 text-sm text-gray-300 hover:bg-white/5"
-            >
-              返回配置
-            </button>
-          </div>
+  // 首次连接失败：整页错误；曾连上后断线：保留房间 UI，避免摄像头卸载闪屏
+  if (!everConnected && connectionState === "failed") {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center gap-4 bg-gray-950 text-gray-200 px-6 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
+          <WifiOff className="text-rose-400" size={26} />
         </div>
-      );
-    }
+        <div>
+          <p className="text-base font-medium">无法连接到面试服务</p>
+          <p className="text-sm text-gray-500 mt-1.5 max-w-sm">
+            已尝试 5 次仍失败，请确认后端已启动（默认 :8000）或检查网络
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-3 mt-1">
+          <button
+            type="button"
+            onClick={() => retryNow()}
+            className="px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 shadow-lg shadow-brand-500/20"
+          >
+            重新连接
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push("/interview")}
+            className="px-5 py-2.5 rounded-xl border border-white/10 text-sm text-gray-300 hover:bg-white/5"
+          >
+            返回配置
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!everConnected && !connected) {
     return (
       <div className="h-screen flex flex-col items-center justify-center gap-3 bg-gray-950 text-gray-400">
         <Loader2 className="animate-spin text-brand-400" size={28} />
@@ -262,7 +273,31 @@ export default function InterviewRoomPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-950 text-white">
+    <div className="h-screen flex flex-col bg-gray-950 text-white relative">
+      {/* 断线重连条：不卸载主 UI / 摄像头 */}
+      {!connected && (
+        <div className="absolute inset-x-0 top-0 z-30 flex items-center justify-center gap-2 px-3 py-2 bg-amber-500/95 text-amber-950 text-xs font-medium shadow-md">
+          {connectionState === "failed" ? (
+            <>
+              <WifiOff size={14} />
+              连接已断开
+              <button
+                type="button"
+                onClick={() => retryNow()}
+                className="ml-2 underline underline-offset-2"
+              >
+                重试
+              </button>
+            </>
+          ) : (
+            <>
+              <Loader2 size={14} className="animate-spin" />
+              连接中断，正在重连…
+              {reconnectAttempt > 0 ? `（第 ${reconnectAttempt} 次）` : ""}
+            </>
+          )}
+        </div>
+      )}
       <header className="flex items-center justify-between gap-3 px-3 sm:px-4 py-2.5 border-b border-white/10 bg-black/50 backdrop-blur-sm shrink-0">
         <div className="flex items-center gap-2 sm:gap-3 text-sm min-w-0">
           <span className="font-medium text-white/90 shrink-0">面试 #{sessionId}</span>

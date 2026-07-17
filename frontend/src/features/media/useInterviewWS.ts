@@ -17,12 +17,10 @@ export type WSConnectionState = "connecting" | "open" | "reconnecting" | "failed
 /**
  * 与后端 ``/api/v1/ws/interview/{id}`` 双向通信的强类型 Hook。
  *
- * - 回调参数基于 ``Extract<ServerEvent, { type: K }>`` 推导，协议变更会
- *   触发 TS 编译错误，避免前端静默吞没字段。
- * - handler 通过 props 传入，effect 内通过 ref 同步最新闭包，避免
- *   handler 引用变化时频繁重连 WS。
- * - 自动指数退避重连（最多 5 次），并暴露 ``connectionState`` /
- *   ``cancel()`` 便于页面主动断开。
+ * - 回调参数基于 ``Extract<ServerEvent, { type: K }>`` 推导。
+ * - handler 经 ref 同步，避免 handler 变化导致重连。
+ * - 连接世代号 + 实例比对，防止 React Strict Mode / cleanup 竞态
+ *   触发「旧 onclose 误重连 → 服务端踢旧 → 闪屏循环」。
  */
 export function useInterviewWS(
   sessionId: number,
@@ -33,16 +31,17 @@ export function useInterviewWS(
   const handlersRef = useRef<Record<string, (msg: ServerEvent) => void>>({});
   const retryTimerRef = useRef<number | null>(null);
   const retryCountRef = useRef(0);
-  const cancelledRef = useRef(false);
+  /** effect 世代：cleanup 时递增，旧连接回调全部失效 */
+  const generationRef = useRef(0);
   const [connected, setConnected] = useState(false);
+  /** 是否曾成功连上过（用于页面层区分「首次连接」与「短暂断线」） */
+  const [everConnected, setEverConnected] = useState(false);
   const [turnState, setTurnState] = useState<TurnState>("IDLE");
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [connectionState, setConnectionState] = useState<WSConnectionState>("connecting");
-  /** 手动重连令牌：递增后触发 effect 重建 WebSocket */
   const [reconnectKey, setReconnectKey] = useState(0);
   const maxRetries = options?.maxRetries ?? 5;
 
-  // 通过 ref 同步 handlers，避免每次 render 重建导致 effect 触发重连
   useEffect(() => {
     if (handlers) {
       const next: Record<string, (msg: ServerEvent) => void> = {};
@@ -66,56 +65,93 @@ export function useInterviewWS(
     return false;
   }, []);
 
-  const cancel = useCallback(() => {
-    cancelledRef.current = true;
+  const clearRetryTimer = useCallback(() => {
     if (retryTimerRef.current !== null) {
       window.clearTimeout(retryTimerRef.current);
       retryTimerRef.current = null;
     }
-    if (wsRef.current) {
+  }, []);
+
+  const cancel = useCallback(() => {
+    generationRef.current += 1;
+    clearRetryTimer();
+    const ws = wsRef.current;
+    wsRef.current = null;
+    if (ws) {
       try {
-        wsRef.current.close();
+        ws.close(1000, "client_cancel");
       } catch {
         /* noop */
       }
-      wsRef.current = null;
     }
     setConnected(false);
     setConnectionState("connecting");
-  }, []);
+  }, [clearRetryTimer]);
 
   const retryNow = useCallback(() => {
     retryCountRef.current = 0;
     setReconnectAttempt(0);
     setConnectionState("connecting");
-    // 递增 key 以触发 effect 关闭旧连接并建立新 WebSocket
     setReconnectKey((k) => k + 1);
   }, []);
 
   useEffect(() => {
-    cancelledRef.current = false;
+    // 本 effect 实例的世代；cleanup 后旧回调对比失败即退出
+    const generation = ++generationRef.current;
     retryCountRef.current = 0;
+    clearRetryTimer();
+
+    const isCurrent = () => generationRef.current === generation;
 
     const connect = () => {
-      if (cancelledRef.current) return;
+      if (!isCurrent()) return;
+
+      // 关闭同 effect 内残留 socket，避免并行双连
+      const prev = wsRef.current;
+      if (prev) {
+        try {
+          prev.onclose = null;
+          prev.onerror = null;
+          prev.onmessage = null;
+          prev.close(1000, "replace");
+        } catch {
+          /* noop */
+        }
+        if (wsRef.current === prev) wsRef.current = null;
+      }
+
       const wsBase = getEnv().WS_BASE;
       const url = `${wsBase}/api/v1/ws/interview/${sessionId}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        if (cancelledRef.current) {
-          ws.close();
+        if (!isCurrent() || wsRef.current !== ws) {
+          try {
+            ws.close(1000, "stale");
+          } catch {
+            /* noop */
+          }
           return;
         }
         retryCountRef.current = 0;
         setReconnectAttempt(0);
         setConnected(true);
+        setEverConnected(true);
         setConnectionState("open");
       };
-      ws.onclose = () => {
-        if (cancelledRef.current) return;
+
+      ws.onclose = (ev) => {
+        // 仅当前世代 + 当前 socket 才处理；防止 Strict Mode 旧连接误重连
+        if (!isCurrent() || wsRef.current !== ws) return;
+        wsRef.current = null;
         setConnected(false);
+
+        // 主动关闭 / 被正常替换：不重连
+        if (ev.code === 1000 && (ev.reason === "client_cancel" || ev.reason === "replace" || ev.reason === "stale")) {
+          return;
+        }
+
         retryCountRef.current += 1;
         if (retryCountRef.current > maxRetries) {
           setConnectionState("failed");
@@ -124,20 +160,32 @@ export function useInterviewWS(
         setReconnectAttempt(retryCountRef.current);
         setConnectionState("reconnecting");
         const delay = Math.min(1000 * 2 ** (retryCountRef.current - 1), 8000);
-        retryTimerRef.current = window.setTimeout(connect, delay);
+        clearRetryTimer();
+        retryTimerRef.current = window.setTimeout(() => {
+          if (isCurrent()) connect();
+        }, delay);
       };
+
       ws.onerror = () => {
-        ws.close();
+        // 交给 onclose 统一处理重连，避免双通道
+        try {
+          ws.close();
+        } catch {
+          /* noop */
+        }
       };
+
       ws.onmessage = (ev) => {
+        if (!isCurrent() || wsRef.current !== ws) return;
         try {
           const msg = JSON.parse(ev.data) as ServerEvent;
           if (msg.type === "turn_state") {
             setTurnState(msg.state);
           }
-          // 心跳响应：服务端发 server_ping，5s 内必须回 pong，否则累计失败。
           if (msg.type === "server_ping") {
-            ws.send(JSON.stringify({ type: "pong", t: msg.t }));
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "pong", t: msg.t }));
+            }
             return;
           }
           const handler = handlersRef.current[msg.type];
@@ -151,26 +199,27 @@ export function useInterviewWS(
     connect();
 
     return () => {
-      cancelledRef.current = true;
-      if (retryTimerRef.current !== null) {
-        window.clearTimeout(retryTimerRef.current);
-        retryTimerRef.current = null;
-      }
-      if (wsRef.current) {
+      // 使本 effect 内所有回调失效
+      generationRef.current += 1;
+      clearRetryTimer();
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws) {
         try {
-          wsRef.current.close();
+          ws.onclose = null;
+          ws.onerror = null;
+          ws.onmessage = null;
+          ws.close(1000, "client_cancel");
         } catch {
           /* noop */
         }
-        wsRef.current = null;
       }
     };
-    // handlers 通过 ref 间接引用；reconnectKey 供 retryNow 强制重建连接
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, maxRetries, reconnectKey]);
+  }, [sessionId, maxRetries, reconnectKey, clearRetryTimer]);
 
   return {
     connected,
+    everConnected,
     turnState,
     reconnectAttempt,
     connectionState,

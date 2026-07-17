@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 const SCENES: Record<string, string> = {
   meeting_room: "/scenes/meeting_room.svg",
@@ -76,7 +76,6 @@ export function InterviewerAvatar({
 }: InterviewerAvatarProps) {
   const [mouthOpen, setMouthOpen] = useState(0);
   const [blink, setBlink] = useState(1);
-  const animRef = useRef<number | null>(null);
   const profile = AVATAR_PROFILES[avatarId] || AVATAR_PROFILES.professional_male!;
 
   useEffect(() => {
@@ -84,13 +83,13 @@ export function InterviewerAvatar({
       setMouthOpen(0);
       return;
     }
-    const tick = () => {
+    // 约 12fps 更新口型，避免每帧 setState 造成整卡闪烁感
+    const id = window.setInterval(() => {
       setMouthOpen(0.15 + Math.random() * 0.85);
-      animRef.current = requestAnimationFrame(tick);
-    };
-    animRef.current = requestAnimationFrame(tick);
+    }, 80);
     return () => {
-      if (animRef.current) cancelAnimationFrame(animRef.current);
+      window.clearInterval(id);
+      setMouthOpen(0);
     };
   }, [speaking]);
 
