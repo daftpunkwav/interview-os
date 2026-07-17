@@ -41,25 +41,27 @@ const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 /**
  * 解析流式接口最终 URL。
  *
- * - 浏览器 + STREAM_API_BASE 指向本机：返回同源相对路径，经 Next rewrite，
- *   避免 ``localhost:3000`` → ``127.0.0.1:8000`` 的跨域/PNA 导致 Failed to fetch。
- * - 其他情况：拼绝对地址直连后端（生产分离部署）。
+ * 流式必须尽量**直连后端**，避免 Next rewrite 缓冲导致「一次性吐出」。
+ * 本机场景把 STREAM_API_BASE 的 hostname 对齐到页面 hostname
+ * （localhost ↔ 127.0.0.1），降低 CORS / PNA 失败概率。
  */
 function resolveStreamUrl(apiPath: string): string {
   const path = apiPath.startsWith("/") ? apiPath : `/${apiPath}`;
   const base = getEnv().STREAM_API_BASE;
-  if (typeof window !== "undefined") {
-    try {
-      const host = new URL(base).hostname.toLowerCase();
-      if (LOOPBACK_HOSTS.has(host)) {
-        return path;
-      }
-    } catch {
-      // base 非法时退回同源路径，至少不跨域
-      return path;
-    }
+  if (typeof window === "undefined") {
+    return `${base}${path}`;
   }
-  return `${base}${path}`;
+  try {
+    const u = new URL(base);
+    const pageHost = window.location.hostname.toLowerCase();
+    if (LOOPBACK_HOSTS.has(u.hostname) && LOOPBACK_HOSTS.has(pageHost)) {
+      // 与页面同源 loopback 名，便于 CORS Origin 与后端白名单一致
+      u.hostname = pageHost === "[::1]" || pageHost === "::1" ? "localhost" : pageHost;
+    }
+    return `${u.origin}${path}`;
+  } catch {
+    return `${base}${path}`;
+  }
 }
 
 /* ====================================================================== */

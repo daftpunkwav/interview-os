@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { api } from "@/lib/api";
 import { PREP_QUICK_PROMPTS } from "@/config/prepPrompts";
 import type { Resume } from "@/types";
-import { StreamingReveal } from "@/components/StreamingReveal";
+import { ThinkAnswerMessage } from "@/components/ThinkAnswerMessage";
 import {
   Send,
   Loader2,
@@ -247,13 +247,11 @@ export default function PrepPage() {
                       }`}
                     >
                       {m.role === "assistant" ? (
-                        m.content ? (
-                          <StreamingReveal content={m.content} streaming={!!m.streaming} />
-                        ) : m.streaming ? (
-                          <span className="flex items-center gap-2 text-[var(--muted)]">
-                            <Loader2 className="animate-spin" size={14} />
-                            思考中…
-                          </span>
+                        m.content || m.streaming ? (
+                          <ThinkAnswerMessage
+                            content={m.content}
+                            streaming={!!m.streaming}
+                          />
                         ) : null
                       ) : (
                         m.content

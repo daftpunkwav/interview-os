@@ -347,6 +347,9 @@ class LLMClient:
                                 continue
                             resp.raise_for_status()
                         resp.raise_for_status()
+                        # 部分厂商（MiniMax 等）把思考放在 reasoning_content，
+                        # 正文在 content；统一包进 <think> 标签，前端可折叠展示。
+                        reasoning_open = False
                         async for line in resp.aiter_lines():
                             if not line.startswith("data: "):
                                 continue
@@ -356,11 +359,28 @@ class LLMClient:
                             try:
                                 chunk = json.loads(data_str)
                                 delta = chunk["choices"][0].get("delta", {})
-                                token = delta.get("content", "")
-                                if token:
+                                if not isinstance(delta, dict):
+                                    continue
+                                reasoning = (
+                                    delta.get("reasoning_content")
+                                    or delta.get("reasoning")
+                                    or ""
+                                )
+                                token = delta.get("content") or ""
+                                if isinstance(reasoning, str) and reasoning:
+                                    if not reasoning_open:
+                                        yield "<think>"
+                                        reasoning_open = True
+                                    yield reasoning
+                                if isinstance(token, str) and token:
+                                    if reasoning_open:
+                                        yield "</think>"
+                                        reasoning_open = False
                                     yield token
                             except (json.JSONDecodeError, KeyError, IndexError):
                                 continue
+                        if reasoning_open:
+                            yield "</think>"
                         return
                 except (
                     httpx.ConnectError,
