@@ -29,5 +29,7 @@ class InterviewOrchestrator:
                 "你可以从印象最深的一点开始说起。",
                 "需要我换个角度提问吗？或者你先讲讲相关背景？",
             ]
-        idx = min(strictness, len(templates) - 1)
-        return templates[idx % len(templates)]
+        # 把 1-10 的严格度均匀映射到模板索引：
+        # 1-4 -> 0（最温和/最克制），5-8 -> 1，9-10 -> 2（最直接/最施压）
+        idx = max(0, min((strictness - 1) // 4, len(templates) - 1))
+        return templates[idx]
