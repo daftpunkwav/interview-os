@@ -96,8 +96,10 @@ DEFAULT_PERSONALITY = Personality.PROFESSIONAL
 
 
 class InterviewStyle(StrEnum):
+    GUIDED = "guided"
     DEEP_DIVE = "deep_dive"
-    CONCISE = "concise"
+    CONTINUOUS = "continuous"
+    CHALLENGING = "challenging"
 
 
 DEFAULT_INTERVIEW_STYLE = InterviewStyle.DEEP_DIVE

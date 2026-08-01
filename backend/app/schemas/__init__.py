@@ -165,7 +165,7 @@ class InterviewConfig(BaseModel):
     workflow_type: Literal["technical", "hr", "management"] = "technical"
     personality: Literal["gentle", "professional", "pressure", "hr", "expert"] = DEFAULT_PERSONALITY
     strictness: int = Field(default=3, ge=1, le=10)
-    interview_style: Literal["deep_dive", "concise"] = DEFAULT_INTERVIEW_STYLE
+    interview_style: Literal["guided", "deep_dive", "continuous", "challenging"] = DEFAULT_INTERVIEW_STYLE
     resume_id: int | None = None
     avatar_id: str = "professional_male"
     scene_id: str = "meeting_room"

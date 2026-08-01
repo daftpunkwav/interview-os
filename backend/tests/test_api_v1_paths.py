@@ -43,3 +43,28 @@ def test_health_unchanged(monkeypatch) -> None:
         r = c.get("/health")
         assert r.status_code == 200
         assert r.json()["status"] == "ok"
+
+
+def test_interview_style_options_match_schema(monkeypatch) -> None:
+    """options API 暴露的 interview_style id 必须与 InterviewConfig schema 一致。
+
+    回归 S-05：曾出现 options 暴露 4 种但 schema 仅允许 2 种，导致前端
+    选择 guided/continuous/challenging 后提交 422。
+    """
+    from app.api.options import INTERVIEW_STYLES
+    from app.schemas import InterviewConfig
+
+    option_ids = {s["id"] for s in INTERVIEW_STYLES}
+    # 从 schema 字段类型注解提取允许的字面量集合
+    style_field = InterviewConfig.model_fields["interview_style"]
+    # Literal 注解的 __args__ 即允许值
+    allowed = set(style_field.annotation.__args__)
+    assert option_ids == allowed, (
+        f"options({option_ids}) 与 schema({allowed}) 的 interview_style 不一致"
+    )
+    # 每个 option id 都应能成功构造 InterviewConfig（不抛 ValidationError）
+    for style_id in option_ids:
+        InterviewConfig(
+            role="后端工程师", level="中级", company="bytedance",
+            interview_style=style_id,
+        )
