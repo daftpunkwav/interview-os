@@ -531,6 +531,9 @@ def test_stream_turn_records_weak_point_on_followup(db) -> None:
     # 追问触发后应有至少一条薄弱线索，且标注了 category
     assert weak, f"weak_points 不应为空: {state}"
     assert any("vague" in w for w in weak)
+    # 真实追问类别应记录到 followup_clues（供系统学习统计）
+    clues = state.get("followup_clues") or []
+    assert "vague" in clues, f"followup_clues 应包含 vague: {clues}"
 
 
 def test_build_opening_prompt_includes_system_learning(db, monkeypatch) -> None:

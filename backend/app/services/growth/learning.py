@@ -33,6 +33,7 @@ def _load() -> dict[str, Any]:
         return {
             "version": 1,
             "followup_category_hits": {},
+            "tool_call_counts": {},
             "company_session_counts": {},
             "role_session_counts": {},
             "avg_scores_by_company": {},
@@ -84,12 +85,18 @@ def record_interview_learning(
     except json.JSONDecodeError:
         state = {}
 
-    # 追问工具轨迹
-    hits = data.setdefault("followup_category_hits", {})
+    # 追问类别统计（来自 followup_clues，记录 vague/missing_data/tech_hole/off_topic）
+    cat_hits = data.setdefault("followup_category_hits", {})
+    for clue in state.get("followup_clues") or []:
+        if isinstance(clue, str) and clue:
+            cat_hits[clue] = int(cat_hits.get(clue, 0)) + 1
+
+    # 工具调用统计（来自 tool_trace，记录 github_get_readme 等工具命中次数）
+    tool_counts = data.setdefault("tool_call_counts", {})
     for item in state.get("tool_trace") or []:
         tool = item.get("tool") if isinstance(item, dict) else None
         if tool:
-            hits[tool] = int(hits.get(tool, 0)) + 1
+            tool_counts[tool] = int(tool_counts.get(tool, 0)) + 1
 
     # 有效追问线索（薄弱点）
     probes = data.setdefault("effective_probes", [])
@@ -134,6 +141,7 @@ def get_system_insights(limit: int = 10) -> dict[str, Any]:
         "role_session_counts": data.get("role_session_counts") or {},
         "avg_scores_by_company": avg_scores,
         "followup_category_hits": data.get("followup_category_hits") or {},
+        "tool_call_counts": data.get("tool_call_counts") or {},
         "recent_probes": probes,
         "updated_at": data.get("updated_at"),
         "github_token_configured": bool(get_settings().github_token),

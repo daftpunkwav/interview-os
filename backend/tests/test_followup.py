@@ -68,3 +68,47 @@ def test_suggested_probe_is_non_empty_when_followup() -> None:
     sig = analyze("可能差不多吧", question="自我介绍")
     assert sig.suggested_probe
     assert len(sig.suggested_probe) > 5
+
+
+def test_missing_data_skipped_in_reverse_qa_phase() -> None:
+    """反问环节不应触发 missing_data（候选人提问无需量化数据）。"""
+    sig = analyze(
+        "我想了解一下贵公司的技术栈和团队协作方式，以及新人培养机制。",
+        question="现在你可以向我提问",
+        phase_id="reverse_qa",
+    )
+    assert not sig.needs_followup
+
+
+def test_tech_hole_skipped_in_summary_phase() -> None:
+    """总结环节不应触发 tech_hole。"""
+    sig = analyze(
+        "面试官做了总结评价，感谢候选人的时间。",
+        question="请做总结",
+        tech_domains=["Python", "FastAPI"],
+        phase_id="summary",
+    )
+    assert not sig.needs_followup
+
+
+def test_missing_data_still_triggers_in_technical_phase() -> None:
+    """考察类阶段（project_deep_dive）仍应正常触发 missing_data。"""
+    sig = analyze(
+        "我们对这个接口进行了完整的性能优化工作，从架构设计到代码实现"
+        "都做了深入的改进，整体效果非常好。",
+        question="请说说性能优化的效果",
+        phase_id="project_deep_dive",
+    )
+    assert sig.needs_followup
+    assert sig.category == "missing_data"
+
+
+def test_vague_still_triggers_in_reverse_qa_phase() -> None:
+    """模糊词在任何阶段都应触发（包括反问环节）。"""
+    sig = analyze(
+        "大概可能就是想了解一下公司情况吧",
+        question="你想了解什么",
+        phase_id="reverse_qa",
+    )
+    assert sig.needs_followup
+    assert sig.category == "vague"

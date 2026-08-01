@@ -357,6 +357,7 @@ export const api = {
       role_session_counts: Record<string, number>;
       avg_scores_by_company: Record<string, number | null>;
       followup_category_hits: Record<string, number>;
+      tool_call_counts: Record<string, number>;
       recent_probes: { company?: string; role?: string; point?: string; session_id?: number }[];
       updated_at?: string | null;
       github_token_configured?: boolean;

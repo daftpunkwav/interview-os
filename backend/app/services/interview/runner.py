@@ -376,6 +376,7 @@ class InterviewRunner:
                 user_text,
                 question=last_question,
                 tech_domains=tech_domains,
+                phase_id=self.agent.current_phase().id,
             )
             if signal.needs_followup:
                 self.agent.messages.append({
@@ -389,6 +390,11 @@ class InterviewRunner:
                 self.agent.note_weak_point(
                     f"[{signal.category}] {signal.suggested_probe}"
                 )
+                # 记录真实追问类别（区别于 tool_trace 的工具名统计）
+                clues = self.agent.agent_state.setdefault("followup_clues", [])
+                clues.append(signal.category)
+                if len(clues) > 60:
+                    del clues[:-60]
                 # 不再原样打印 user_text，避免 PII 进入日志
                 logger.info(
                     "追问信号: session=%s cat=%s len=%d",

@@ -26,6 +26,12 @@ HAS_QUANT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# 非考察类阶段：在这些阶段 missing_data / tech_hole 规则不适用。
+# 反问环节候选人在提问、总结环节在做评价、寒暄/自我介绍无需量化数据。
+_NON_TECHNICAL_PHASES: frozenset[str] = frozenset({
+    "identity_check", "self_intro", "reverse_qa", "summary",
+})
+
 
 @dataclass(frozen=True)
 class FollowupSignal:
@@ -43,10 +49,18 @@ def analyze(
     answer: str,
     question: str = "",
     tech_domains: list[str] | None = None,
+    *,
+    phase_id: str = "",
 ) -> FollowupSignal:
     """根据回答内容、当前问题与候选人技术栈，判定追问信号。
 
     优先级：off_topic > vague > missing_data > tech_hole。
+
+    Args:
+        phase_id: 当前面试阶段 id。在反问/总结/寒暄阶段，技术性追问规则
+            （missing_data / tech_hole）会被跳过，避免在候选人提问环节
+            反向要求其"给出量化数据"等不合时宜的引导。vague / off_topic
+            仍然生效，因为模糊或跑题在任何阶段都值得引导。
     """
     text = (answer or "").strip()
     if not text:
@@ -56,7 +70,10 @@ def analyze(
 
     lower = text.lower()
 
-    # 0. vague：模糊词优先于 off_topic —— 模糊词本身就是追问信号，即使话题未明显跑偏
+    # 技术性规则仅在考察类阶段生效；反问/总结/寒暄阶段跳过
+    skip_tech_rules = phase_id in _NON_TECHNICAL_PHASES
+
+    # 0. vague：模糊词优先于 off_topic -- 模糊词本身就是追问信号，即使话题未明显跑偏
     vague_hits = sum(1 for term in VAGUE_TERMS if term in text)
     if vague_hits >= 2:
         return FollowupSignal(
@@ -80,6 +97,10 @@ def analyze(
                 "off_topic",
                 "候选人回答偏离了问题方向，请礼貌地把话题拉回原问题，并追问核心要点。",
             )
+
+    # 以下为技术性规则，在反问/总结等阶段跳过
+    if skip_tech_rules:
+        return _NO_SIGNAL
 
     # 2. missing_data：较长回答但完全没有量化数据
     if len(text) >= 40 and not HAS_QUANT_PATTERN.search(text):
