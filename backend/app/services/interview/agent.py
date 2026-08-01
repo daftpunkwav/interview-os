@@ -334,31 +334,27 @@ class InterviewAgent:
             config, candidate, company_ctx, self.workflow, phase, profile
         ) + self._memory_section()
 
-    def build_turn_prompt(
-        self,
-        db: Session,
-        followup_probe: str | None = None,
-    ) -> str:
-        """构建常规回合系统提示（如果 messages 已有 system prompt 则复用，否则重建）。"""
-        # 保留已有的 system prompt 头部；仅在缺失时重建
-        existing_system = next(
-            (m for m in self.messages if m.get("role") == "system"), None
-        )
-        if existing_system is None:
-            config = self.get_config()
-            candidate = self.get_candidate(db)
-            profile = self.get_user_profile(db)
-            company_ctx = get_company_context(config.company)
-            return build_system_prompt(
-                config,
-                candidate,
-                company_ctx,
-                self.workflow,
-                self.current_phase(),
-                profile,
-                followup_probe=followup_probe,
-            )
-        return existing_system["content"]
+    def refresh_system_memory(self) -> None:
+        """刷新 system prompt 头部中的结构化记忆段落。
+
+        每回合调用，使 asked_questions / weak_points / github_findings 的最新值
+        反映到 system prompt，避免长会话压缩后重复提问、遗漏薄弱点追踪。
+
+        仅替换 ``messages[0]`` 的 system content 中的记忆段落，不重建整个 prompt，
+        避免每回合重跑 DB 查询（候选人档案/公司知识仅在开场构建一次）。
+        """
+        if not self.messages or self.messages[0].get("role") != "system":
+            return
+        content = self.messages[0].get("content", "")
+        if not isinstance(content, str):
+            return
+        # 移除旧的记忆段落（含其前的空行），再追加最新值
+        marker = "## 会话结构化记忆（请勿重复已问问题）"
+        if marker in content:
+            content = content.split(marker)[0].rstrip()
+        memory = self._memory_section()
+        if memory:
+            self.messages[0]["content"] = content + "\n\n" + memory
 
     # ---- 状态推进 ----------------------------------------------------------
 

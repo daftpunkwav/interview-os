@@ -385,13 +385,22 @@ class InterviewRunner:
                         f"{signal.suggested_probe}"
                     ),
                 })
+                # 追问触发即记录薄弱线索，供自我成长与去重使用
+                self.agent.note_weak_point(
+                    f"[{signal.category}] {signal.suggested_probe}"
+                )
                 # 不再原样打印 user_text，避免 PII 进入日志
                 logger.info(
                     "追问信号: session=%s cat=%s len=%d",
                     self.session.id, signal.category, len(user_text),
                 )
 
-            # 2.5 RAG 检索：从企业知识库检索与当前问题/回答相关的文档片段
+            # 2.5 刷新 system prompt 中的结构化记忆段落：
+            # 使 asked_questions / weak_points / github_findings 反映最新值，
+            # 避免长会话压缩后重复提问、丢失薄弱点追踪。
+            self.agent.refresh_system_memory()
+
+            # 2.6 RAG 检索：从企业知识库检索与当前问题/回答相关的文档片段
             rag_msg = await self._maybe_retrieve_rag(
                 query=f"{last_question} {user_text}".strip(),
             )

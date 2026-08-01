@@ -447,7 +447,87 @@ def test_agent_public_methods_no_longer_underscore(db) -> None:
         "mark_active", "mark_completed",
         "record_user_text", "record_assistant_text",
         "advance_phase_if_needed",
-        "build_opening_prompt", "build_turn_prompt",
+        "build_opening_prompt", "refresh_system_memory",
         "set_questions_in_phase", "reset_messages",
     }
     assert public.issubset(set(dir(InterviewAgent)))
+
+
+def test_refresh_system_memory_updates_asked_questions(db) -> None:
+    """每回合刷新 system prompt 中的结构化记忆，使 asked_questions 反映最新值。"""
+    from app.services.interview.agent import InterviewAgent
+
+    session = _make_session(db)
+    session.messages = json.dumps([
+        {"role": "system", "content": "你是面试官"},
+    ], ensure_ascii=False)
+    db.commit()
+    db.refresh(session)
+
+    llm = FakeLLMClient(tokens=["好。"])
+    agent = InterviewAgent(session, llm)
+    # 模拟开场后已问过一个问题
+    agent.agent_state.setdefault("asked_questions", [])
+    agent.agent_state["asked_questions"].append("请介绍一下你的 Redis 缓存设计方案")
+    agent.refresh_system_memory()
+
+    system_content = agent.messages[0]["content"]
+    assert "会话结构化记忆" in system_content
+    assert "Redis 缓存设计方案" in system_content
+
+
+def test_refresh_system_memory_replaces_old_memory(db) -> None:
+    """刷新应替换旧记忆段落而非重复追加。"""
+    from app.services.interview.agent import InterviewAgent
+
+    session = _make_session(db)
+    session.messages = json.dumps([
+        {"role": "system", "content": (
+            "你是面试官\n\n"
+            "## 会话结构化记忆（请勿重复已问问题）\n"
+            "已问问题摘要：\n- 旧问题A"
+        )},
+    ], ensure_ascii=False)
+    db.commit()
+    db.refresh(session)
+
+    agent = InterviewAgent(session, FakeLLMClient())
+    agent.agent_state.setdefault("asked_questions", [])
+    agent.agent_state["asked_questions"] = ["新问题B"]
+    agent.refresh_system_memory()
+
+    system_content = agent.messages[0]["content"]
+    # 旧记忆应被替换：不再包含旧问题A，应包含新问题B
+    assert "旧问题A" not in system_content
+    assert "新问题B" in system_content
+    # 不应出现两段记忆标记
+    assert system_content.count("## 会话结构化记忆") == 1
+
+
+def test_stream_turn_records_weak_point_on_followup(db) -> None:
+    """追问触发时应记录薄弱线索到 agent_state.weak_points。"""
+    session = _make_session(db)
+    session.messages = json.dumps([
+        {"role": "system", "content": "你是面试官"},
+        {"role": "assistant", "content": "请描述一次性能优化经历"},
+    ])
+    db.commit()
+    db.refresh(session)
+
+    llm = FakeLLMClient(tokens=["好的。"])
+    runner = InterviewRunner(session, llm)
+
+    import asyncio
+
+    async def run():
+        async for _ in runner.stream_turn("差不多就是这样吧", db):
+            pass
+
+    asyncio.run(run())
+
+    db.refresh(session)
+    state = json.loads(session.agent_state)
+    weak = state.get("weak_points") or []
+    # 追问触发后应有至少一条薄弱线索，且标注了 category
+    assert weak, f"weak_points 不应为空: {state}"
+    assert any("vague" in w for w in weak)
