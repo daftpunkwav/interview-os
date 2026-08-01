@@ -464,13 +464,35 @@ class InterviewAgent:
         self.questions_in_phase = 0
         if self.current_phase_idx < len(self.workflow.phases):
             phase = self.current_phase()
+            content = self._phase_entry_message(phase)
             self.messages.append({
                 "role": "system",
-                "content": (
-                    f"进入新阶段：{phase.name}（{phase.description}）。"
-                    "请开始本阶段提问。回复禁止使用 emoji 表情。"
-                ),
+                "content": content,
             })
+
+    def _phase_entry_message(self, phase: InterviewPhase) -> str:
+        """构建进入新阶段时的 system message。
+
+        反问环节（reverse_qa）使用专门的「公司代表角色」prompt，强调基于
+        公司知识库回答候选人问题、未覆盖的坦诚说明；其他阶段用通用引导。
+        """
+        if phase.id == "reverse_qa":
+            company_ctx = get_company_context(self.session.company or "")
+            return (
+                f"进入新阶段：{phase.name}（{phase.description}）。\n"
+                f"{company_ctx}\n\n"
+                "现在角色切换：你不再是考察者，而是该公司的代表（资深工程师/HR），"
+                "回答候选人关于公司文化、团队、技术栈、业务方向、成长机会等问题。\n"
+                "要求：\n"
+                "1. 基于上方公司资料回答；资料未覆盖的内容应坦诚说明「这方面我没有确切信息」\n"
+                "2. 回答专业、真实，避免空泛套话\n"
+                "3. 仍可用 web_search_interview_exp 工具补充公开信息\n"
+                "4. 回复禁止使用 emoji 表情"
+            )
+        return (
+            f"进入新阶段：{phase.name}（{phase.description}）。"
+            "请开始本阶段提问。回复禁止使用 emoji 表情。"
+        )
 
 
 # ---------------------------------------------------------------------------

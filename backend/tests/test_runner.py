@@ -597,3 +597,68 @@ def test_build_opening_prompt_without_system_learning(db, monkeypatch) -> None:
 
     system_content = runner.agent.messages[0]["content"]
     assert "系统学习摘要" not in system_content
+
+
+def test_reverse_qa_phase_injects_company_representative_prompt(db) -> None:
+    """进入反问环节时应注入「公司代表角色」专门 prompt。"""
+    from app.services.interview.workflows import TECHNICAL_WORKFLOW
+
+    session = _make_session(db)
+    # 把 phase_idx 设到 reverse_qa 前一阶段（scenario），questions_in_phase
+    # 设为 max，使 advance_phase_if_needed 推进到 reverse_qa
+    session.agent_state = json.dumps({
+        "phase_idx": 6,  # scenario
+        "questions_in_phase": 2,  # scenario.max_questions=2
+    })
+    session.current_phase = "scenario"
+    db.commit()
+    db.refresh(session)
+
+    llm = FakeLLMClient(tokens=["好的，进入反问。"])
+    runner = InterviewRunner(session, llm)
+
+    import asyncio
+
+    async def run():
+        async for _ in runner.stream_turn("我的回答", db):
+            pass
+
+    asyncio.run(run())
+
+    # 推进到 reverse_qa 后，messages 中应有公司代表 prompt
+    system_msgs = [m["content"] for m in runner.agent.messages if m["role"] == "system"]
+    reverse_qa_msg = next(
+        (s for s in system_msgs if "角色切换" in s and "代表" in s), None
+    )
+    assert reverse_qa_msg is not None, f"未找到公司代表 prompt: {system_msgs}"
+    # 应包含公司知识（bytedance -> 字节跳动）
+    assert "字节跳动" in reverse_qa_msg
+    # 应强调坦诚说明未覆盖内容
+    assert "没有确切信息" in reverse_qa_msg
+
+
+def test_non_reverse_qa_phase_uses_generic_entry_message(db) -> None:
+    """非反问环节的阶段推进应使用通用引导，不含公司代表 prompt。"""
+    session = _make_session(db)
+    # identity_check(idx=0, max=1) -> 推进到 self_intro
+    session.agent_state = json.dumps({"phase_idx": 0, "questions_in_phase": 1})
+    session.current_phase = "identity_check"
+    db.commit()
+    db.refresh(session)
+
+    llm = FakeLLMClient(tokens=["好的。"])
+    runner = InterviewRunner(session, llm)
+
+    import asyncio
+
+    async def run():
+        async for _ in runner.stream_turn("回答", db):
+            pass
+
+    asyncio.run(run())
+
+    system_msgs = [m["content"] for m in runner.agent.messages if m["role"] == "system"]
+    # 进入 self_intro 的消息应是通用引导，不含「角色切换」
+    entry_msgs = [s for s in system_msgs if "进入新阶段" in s]
+    assert entry_msgs, f"应有阶段进入消息: {system_msgs}"
+    assert not any("角色切换" in s for s in entry_msgs)
