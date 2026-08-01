@@ -531,3 +531,66 @@ def test_stream_turn_records_weak_point_on_followup(db) -> None:
     # 追问触发后应有至少一条薄弱线索，且标注了 category
     assert weak, f"weak_points 不应为空: {state}"
     assert any("vague" in w for w in weak)
+
+
+def test_build_opening_prompt_includes_system_learning(db, monkeypatch) -> None:
+    """开场 prompt 应注入系统学习摘要（自我成长反哺闭环）。"""
+    from app.services.growth import learning as learning_mod
+
+    # mock 系统学习数据：该公司低均分 + 有薄弱线索
+    monkeypatch.setattr(
+        learning_mod, "get_system_insights",
+        lambda limit=10: {
+            "avg_scores_by_company": {"bytedance": 65},
+            "recent_probes": [
+                {"company": "bytedance", "role": "后端工程师",
+                 "point": "缓存一致性理解不足"},
+            ],
+        },
+    )
+
+    session = _make_session(db)  # company=bytedance role=后端工程师
+    llm = FakeLLMClient()
+    runner = InterviewRunner(session, llm)
+
+    import asyncio
+
+    async def run():
+        async for _ in runner.stream_opening(db):
+            pass
+
+    asyncio.run(run())
+
+    system_content = runner.agent.messages[0]["content"]
+    # 应包含系统学习摘要，引用历史均分与薄弱线索
+    assert "系统学习摘要" in system_content
+    assert "65" in system_content
+    assert "缓存一致性" in system_content
+
+
+def test_build_opening_prompt_without_system_learning(db, monkeypatch) -> None:
+    """无系统学习数据时不应注入空摘要段落。"""
+    from app.services.growth import learning as learning_mod
+
+    monkeypatch.setattr(
+        learning_mod, "get_system_insights",
+        lambda limit=10: {
+            "avg_scores_by_company": {},
+            "recent_probes": [],
+        },
+    )
+
+    session = _make_session(db)
+    llm = FakeLLMClient()
+    runner = InterviewRunner(session, llm)
+
+    import asyncio
+
+    async def run():
+        async for _ in runner.stream_opening(db):
+            pass
+
+    asyncio.run(run())
+
+    system_content = runner.agent.messages[0]["content"]
+    assert "系统学习摘要" not in system_content

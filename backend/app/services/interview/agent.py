@@ -302,6 +302,57 @@ class InterviewAgent:
         except (json.JSONDecodeError, Exception):
             return None
 
+    def _system_learning_section(self) -> str:
+        """从跨面试积累的系统学习数据中提取供本场面试参考的摘要。
+
+        实现 PRD 4.7「自我成长」的反哺闭环：将历史面试中该公司/岗位的
+        常见弱项、有效追问线索注入 system prompt，让 Agent 自发参考。
+        读取失败或无数据时返回空串，不影响主流程。
+        """
+        try:
+            from app.services.growth.learning import get_system_insights
+
+            insights = get_system_insights(limit=5)
+        except Exception as e:
+            logger.warning("读取系统学习洞察失败: %s", e)
+            return ""
+
+        parts: list[str] = []
+        company = self.session.company or ""
+        role = self.session.role or ""
+
+        # 该公司历史均分（低分提示 Agent 加大考察力度）
+        avg_scores = insights.get("avg_scores_by_company") or {}
+        company_avg = avg_scores.get(company)
+        if isinstance(company_avg, (int, float)) and company_avg < 80:
+            parts.append(
+                f"目标公司「{company}」历史面试均分 {company_avg}，"
+                "建议适度加大项目深挖与技术追问力度。"
+            )
+
+        # 近期有效追问线索（薄弱点），按公司/岗位相关性优先
+        probes = insights.get("recent_probes") or []
+        relevant: list[str] = []
+        for p in probes:
+            if not isinstance(p, dict):
+                continue
+            p_company = p.get("company") or ""
+            p_role = p.get("role") or ""
+            # 同公司或同岗位的线索优先，否则取通用线索
+            if p_company == company or p_role == role or not relevant:
+                relevant.append(str(p.get("point", ""))[:120])
+            if len(relevant) >= 3:
+                break
+        if relevant:
+            parts.append(
+                "近期面试中发现的常见薄弱点（可针对性考察）：\n- "
+                + "\n- ".join(relevant)
+            )
+
+        if not parts:
+            return ""
+        return "\n\n## 系统学习摘要（跨面试积累，供参考）\n" + "\n".join(parts)
+
     def _memory_section(self) -> str:
         """结构化记忆摘要（压缩后仍可用）。"""
         parts: list[str] = []
@@ -330,9 +381,11 @@ class InterviewAgent:
         profile = self.get_user_profile(db)
         company_ctx = get_company_context(config.company)
         phase = self.current_phase()
-        return build_system_prompt(
+        prompt = build_system_prompt(
             config, candidate, company_ctx, self.workflow, phase, profile
-        ) + self._memory_section()
+        )
+        # 系统学习摘要（跨面试积累，整场不变）+ 会话结构化记忆（每回合刷新）
+        return prompt + self._system_learning_section() + self._memory_section()
 
     def refresh_system_memory(self) -> None:
         """刷新 system prompt 头部中的结构化记忆段落。
