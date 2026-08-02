@@ -4,14 +4,14 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import type { ChatMessage, ClientEvent, FaceAnalysis } from "@/types";
 import { VideoPanel, type VideoPanelHandle } from "@/components/interview/VideoPanel";
-import { InterviewerAvatar } from "@/features/avatar/InterviewerAvatar";
+import { TalkingHeadAvatar } from "@/features/avatar/TalkingHeadAvatar";
 import { useInterviewWS } from "@/features/media/useInterviewWS";
 import { useAudioRecorder } from "@/features/media/useAudioRecorder";
 import { useTTSPlayer } from "@/features/media/useTTSPlayer";
 import { api } from "@/lib/api";
 import { PHASE_LABELS } from "@/config/phases";
 import { toast } from "@/components/Toast";
-import { Flag, Loader2, Send, WifiOff, Radio } from "lucide-react";
+import { Flag, Loader2, Send, WifiOff, Radio, Volume2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function InterviewRoomPage() {
@@ -23,6 +23,9 @@ export default function InterviewRoomPage() {
   const [currentPhase, setCurrentPhase] = useState("");
   const [emotion, setEmotion] = useState("neutral");
   const [aiSpeaking, setAiSpeaking] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [audioBlocked, setAudioBlocked] = useState(false);
+  const [sttFailUntil, setSttFailUntil] = useState(0);
   const [showOutline, setShowOutline] = useState(true);
   const [tokenUsage, setTokenUsage] = useState(0);
   const [inputText, setInputText] = useState("");
@@ -52,7 +55,8 @@ export default function InterviewRoomPage() {
     on,
     retryNow,
   } = useInterviewWS(sessionId);
-  const { playBase64Mp3, setOnSpeakingChange } = useTTSPlayer();
+  const { playBase64Mp3, setOnSpeakingChange, setOnAudioLevel, setOnPlaybackBlocked, setOnPlaybackDone, unlockAudio, retryLastFailed, isQueueBusy, queueDepth } =
+    useTTSPlayer();
 
 
   useEffect(() => {
@@ -64,7 +68,15 @@ export default function InterviewRoomPage() {
 
   useEffect(() => {
     setOnSpeakingChange(setAiSpeaking);
-  }, [setOnSpeakingChange]);
+    setOnAudioLevel(setAudioLevel);
+    setOnPlaybackBlocked(setAudioBlocked);
+    setOnPlaybackDone(() => {
+      sendRef.current({ type: "tts_playback_done" });
+    });
+  }, [setOnSpeakingChange, setOnAudioLevel, setOnPlaybackBlocked, setOnPlaybackDone]);
+
+  const ttsBusy = aiSpeaking || queueDepth > 0 || isQueueBusy();
+  const micEnabled = connected && turnState === "USER_SPEAKING" && !ttsBusy;
 
   useEffect(() => {
     api.getSession(sessionId).then((s) => {
@@ -116,12 +128,6 @@ export default function InterviewRoomPage() {
     }
   }, []);
 
-  const { flush, isRecording, partialText, micError } = useAudioRecorder(
-    connected && turnState === "USER_SPEAKING",
-    onSilenceStable,
-    onPartialStable,
-  );
-
   const requestHint = useCallback((question: string) => {
     if (!showOutlineRef.current || !question.trim()) return;
     setHintLoading(true);
@@ -130,9 +136,9 @@ export default function InterviewRoomPage() {
     sendRef.current({ type: "request_hint", question });
   }, []);
 
-  // 10s 静默追问（仅随回合切换重置，不随 partialText 变化）
+  // 10s 静默追问：仅在可开麦、且非 STT 失败冷却期
   useEffect(() => {
-    if (turnState !== "USER_SPEAKING") {
+    if (!micEnabled || Date.now() < sttFailUntil) {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       return;
     }
@@ -142,7 +148,7 @@ export default function InterviewRoomPage() {
     return () => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     };
-  }, [turnState]);
+  }, [micEnabled, sttFailUntil]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -159,7 +165,6 @@ export default function InterviewRoomPage() {
       setTokenUsage((t) => t + msg.content.length);
       requestHint(msg.content);
       if (msg.is_complete) {
-        // 先确保报告落库（WS 端也会生成；finish 幂等），失败则不跳转
         void (async () => {
           try {
             await api.finishInterview(sessionId);
@@ -174,27 +179,65 @@ export default function InterviewRoomPage() {
       if (msg.text) setMessages((prev) => [...prev, { role: "user", content: msg.text }]);
     });
     on("tts_audio", (msg) => playBase64Mp3(msg.data));
+    on("tts_failed", (msg) => {
+      setAudioBlocked(true);
+      toast.error(msg.message || "语音播放失败");
+      setMessages((prev) => [...prev, { role: "assistant", content: `⚠️ ${msg.message}` }]);
+      // 无音频可播时仍通知服务端，避免一直卡在等播完
+      sendRef.current({ type: "tts_playback_done" });
+    });
     on("silence_nudge", (msg) => {
       setMessages((prev) => [...prev, { role: "assistant", content: `[追问] ${msg.content}` }]);
     });
     on("reference_hint_loading", () => setHintLoading(true));
     on("reference_hint", (msg) => {
-      setReferenceHint(msg.content);
+      const cleaned = msg.content
+        .replace(/<think>[\s\S]*?<\/think>/gi, "")
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+        .trim();
+      setReferenceHint(cleaned);
       setLastQuestion(msg.question || "");
       setHintLoading(false);
     });
     on("error", (msg) => {
       setMessages((prev) => [...prev, { role: "assistant", content: `⚠️ ${msg.message}` }]);
+      if (msg.message.includes("未能识别") || msg.message.includes("语音合成失败")) {
+        setSttFailUntil(Date.now() + 18_000);
+        if (msg.message.includes("语音合成") || msg.message.includes("合成失败")) {
+          setAudioBlocked(true);
+        }
+        if (msg.message.includes("未能识别")) {
+          toast.error("识别失败：可改用下方文字输入继续作答");
+        }
+      }
     });
   }, [on, playBase64Mp3, router, sessionId, requestHint]);
+
+  const { flush, isRecording, partialText, micError } = useAudioRecorder(
+    micEnabled,
+    onSilenceStable,
+    onPartialStable,
+  );
 
   const handleFaceAnalysis = useCallback((analysis: FaceAnalysis) => {
     faceRef.current = analysis;
     send({ type: "vision_update", face_analysis: analysis });
   }, [send]);
 
-  const canInput = turnState === "USER_SPEAKING";
+  const canInput = turnState === "USER_SPEAKING" && !ttsBusy;
   const canSend = canInput && (Boolean(inputText.trim()) || isRecording);
+
+  const handleEnableAudio = async () => {
+    const ok = await unlockAudio();
+    if (ok) {
+      setAudioBlocked(false);
+      toast.success("声音已启用");
+      // 若有失败缓存，一键重试
+      retryLastFailed();
+    } else {
+      toast.error("无法启用声音，请检查浏览器权限");
+    }
+  };
 
   const handleSend = () => {
     if (!canInput) return;
@@ -298,6 +341,19 @@ export default function InterviewRoomPage() {
           )}
         </div>
       )}
+      {audioBlocked && (
+        <div className="absolute inset-x-0 top-0 z-40 flex items-center justify-center gap-2 px-3 py-2 bg-rose-500/95 text-white text-xs font-medium shadow-md">
+          无声？浏览器可能拦截了自动播放
+          <button
+            type="button"
+            onClick={() => void handleEnableAudio()}
+            className="ml-1 underline underline-offset-2 inline-flex items-center gap-1"
+          >
+            <Volume2 size={12} />
+            点击启用并重试
+          </button>
+        </div>
+      )}
       <header className="flex items-center justify-between gap-3 px-3 sm:px-4 py-2.5 border-b border-white/10 bg-black/50 backdrop-blur-sm shrink-0">
         <div className="flex items-center gap-2 sm:gap-3 text-sm min-w-0">
           <span className="font-medium text-white/90 shrink-0">面试 #{sessionId}</span>
@@ -317,6 +373,15 @@ export default function InterviewRoomPage() {
             <Radio size={11} className={turnState === "USER_SPEAKING" ? "animate-pulse" : ""} />
             {turnLabel[turnState] || turnState}
           </span>
+          {!audioBlocked && (
+            <button
+              type="button"
+              onClick={() => void handleEnableAudio()}
+              className="hidden md:inline-flex text-[11px] px-2 py-0.5 rounded-full border border-white/15 text-gray-300 hover:bg-white/5"
+            >
+              启用声音
+            </button>
+          )}
         </div>
         <button
           type="button"
@@ -379,11 +444,12 @@ export default function InterviewRoomPage() {
 
         {/* 右侧：面试官 + 提纲 */}
         <div className="grid grid-rows-[minmax(180px,1.4fr)_minmax(120px,0.85fr)] lg:grid-rows-[1.618fr_1fr] gap-2 min-h-0 order-1 lg:order-2">
-          <InterviewerAvatar
+          <TalkingHeadAvatar
             avatarId={sessionMeta.avatar_id}
             sceneId={sessionMeta.scene_id}
             emotion={emotion}
-            speaking={aiSpeaking || turnState === "AI_SPEAKING"}
+            speaking={aiSpeaking}
+            audioLevel={audioLevel}
           />
           <div className="rounded-xl border border-white/10 bg-black/40 p-3.5 sm:p-4 overflow-y-auto flex flex-col min-h-0">
             <div className="flex items-center justify-between mb-3 shrink-0 gap-2">

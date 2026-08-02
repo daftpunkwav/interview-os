@@ -43,19 +43,51 @@ def pcm_base64_to_wav_bytes(pcm_b64: str, sample_rate: int = 16000) -> bytes:
 
 
 def transcribe_pcm_base64(pcm_b64: str, sample_rate: int = 16000, model_size: str = "base") -> str:
-    """转写 PCM 音频，失败返回空字符串。"""
+    """转写 PCM 音频，失败或判定为无语音时返回空字符串。"""
     model = _get_model(model_size)
     if model is None:
         return ""
 
     try:
+        # 过短音频直接跳过，避免噪声幻觉
+        raw = base64.b64decode(pcm_b64)
+        if len(raw) < sample_rate * 2 * 0.35:  # < ~0.35s 的 int16 mono
+            return ""
         wav_bytes = pcm_base64_to_wav_bytes(pcm_b64, sample_rate)
-        segments, _ = model.transcribe(io.BytesIO(wav_bytes), language="zh", beam_size=1)
+        segments, info = model.transcribe(
+            io.BytesIO(wav_bytes),
+            language="zh",
+            beam_size=1,
+            vad_filter=True,
+            no_speech_threshold=0.6,
+        )
+        # faster-whisper 可能提供 no_speech_prob
+        try:
+            if getattr(info, "language_probability", 1.0) is not None and getattr(info, "language_probability", 1) < 0.35:
+                return ""
+        except Exception:
+            pass
         text = "".join(seg.text for seg in segments).strip()
+        # 极短结果多为幻觉
+        if len(text) < 2:
+            return ""
         return text
     except Exception as e:
         logger.error("Whisper 转写失败: %s", e)
         return ""
+
+
+async def warmup_whisper(model_size: str = "base") -> None:
+    """后台预热模型，降低首答延迟。"""
+    import asyncio
+
+    def _load() -> None:
+        _get_model(model_size)
+
+    try:
+        await asyncio.to_thread(_load)
+    except Exception as e:
+        logger.warning("Whisper 预热失败: %s", e)
 
 
 async def transcribe_pcm_base64_async(

@@ -101,14 +101,18 @@ export default function GrowthPage() {
               {topWeaknesses.length > 0 ? (
                 <div className="space-y-3.5">
                   {topWeaknesses.map(([skill, count], index) => (
-                    <div key={skill} className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded-lg bg-[var(--danger-soft)] text-[var(--danger-ink)] text-xs font-semibold flex items-center justify-center shrink-0 tabular-nums">
+                    <div key={skill} className="flex items-start gap-3">
+                      <div className="w-7 h-7 rounded-lg bg-[var(--danger-soft)] text-[var(--danger-ink)] text-xs font-semibold flex items-center justify-center shrink-0 tabular-nums mt-0.5">
                         {index + 1}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between text-sm mb-1">
-                          <span className="font-medium text-[var(--foreground)]">{skill}</span>
-                          <span className="text-xs text-[var(--muted)]">出现 {count} 次</span>
+                        <div className="flex items-start justify-between gap-3 text-sm mb-1">
+                          <span className="font-medium text-[var(--foreground)] min-w-0 break-words leading-snug">
+                            {skill}
+                          </span>
+                          <span className="text-xs text-[var(--muted)] shrink-0 whitespace-nowrap pt-0.5">
+                            出现 {count} 次
+                          </span>
                         </div>
                         <div className="progress !h-1.5">
                           <div
@@ -155,9 +159,9 @@ export default function GrowthPage() {
                 {insights.recent_probes && insights.recent_probes.length > 0 && (
                   <div>
                     <p className="text-xs font-medium mb-1.5 text-[var(--foreground)]">近期线索</p>
-                    <ul className="text-xs text-[var(--text-secondary)] space-y-1 max-h-28 overflow-y-auto">
+                    <ul className="text-xs text-[var(--text-secondary)] space-y-2 max-h-32 overflow-y-auto leading-relaxed">
                       {insights.recent_probes.slice(0, 5).map((p, i) => (
-                        <li key={i}>
+                        <li key={i} className="break-words">
                           · [{p.company || "—"}] {p.point}
                         </li>
                       ))}
@@ -259,13 +263,19 @@ export default function GrowthPage() {
                   <p className="text-[11px] font-medium text-[var(--muted)] mb-2 uppercase tracking-wide">
                     重点关注
                   </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {topWeaknesses.slice(0, 4).map(([skill]) => (
-                      <span key={skill} className="chip chip-yellow">
-                        {skill}
-                      </span>
+                  <ul className="space-y-2">
+                    {topWeaknesses.slice(0, 4).map(([skill], i) => (
+                      <li
+                        key={skill}
+                        className="text-xs text-[var(--text-secondary)] leading-relaxed flex gap-2"
+                      >
+                        <span className="text-[var(--g-yellow)] font-semibold shrink-0 tabular-nums">
+                          {i + 1}.
+                        </span>
+                        <span className="min-w-0 break-words line-clamp-2">{skill}</span>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               )}
               {selected && selected.training_plan.length > 0 && (

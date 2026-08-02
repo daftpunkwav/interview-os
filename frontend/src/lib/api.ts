@@ -156,7 +156,9 @@ async function request<T>(
     if (controller.signal.aborted) {
       if (timedOut) {
         throw new ApiError(
-          `请求超时（${Math.round(timeoutMs / 1000)}s）。深度评价等 LLM 任务较慢，请稍后重试或检查模型/网络`,
+          timeoutMs > DEFAULT_REQUEST_TIMEOUT_MS
+            ? `请求超时（${Math.round(timeoutMs / 1000)}s）。深度评价等 LLM 任务较慢，请稍后重试或检查模型/网络`
+            : `请求超时（${Math.round(timeoutMs / 1000)}s）。请确认 backend 已启动且前端 rewrite 端口正确（本机常见为 8001），并重启 frontend`,
           0,
         );
       }

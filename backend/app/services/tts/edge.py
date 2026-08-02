@@ -28,18 +28,26 @@ def split_sentences(text: str) -> list[str]:
 
 
 async def synthesize_to_base64(text: str, voice: str | None = None) -> str:
-    """合成语音并返回 base64 MP3。"""
+    """合成语音并返回 base64 MP3。失败抛出异常由调用方决定是否告警。"""
     if not text.strip():
         return ""
+    import edge_tts
+
+    voice_id = voice or DEFAULT_VOICE
+    communicate = edge_tts.Communicate(text, voice_id)
+    audio_bytes = b""
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_bytes += chunk["data"]
+    if not audio_bytes:
+        raise RuntimeError("Edge TTS 返回空音频")
+    return base64.b64encode(audio_bytes).decode("ascii")
+
+
+async def synthesize_to_base64_safe(text: str, voice: str | None = None) -> str:
+    """合成语音；失败记日志并返回空串（兼容旧调用）。"""
     try:
-        import edge_tts
-        voice_id = voice or DEFAULT_VOICE
-        communicate = edge_tts.Communicate(text, voice_id)
-        audio_bytes = b""
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio_bytes += chunk["data"]
-        return base64.b64encode(audio_bytes).decode("ascii")
+        return await synthesize_to_base64(text, voice)
     except Exception as e:
         logger.error("Edge TTS 失败: %s", e)
         return ""

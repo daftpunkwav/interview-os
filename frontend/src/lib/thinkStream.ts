@@ -131,3 +131,14 @@ function couldBeTagPrefix(
 export function stripThinking(raw: string): string {
   return splitThinkAnswer(raw).answer;
 }
+
+/** 去掉 ReAct 工具调用 JSON（前端兜底，避免协议泄漏到气泡） */
+const TOOL_JSON_RE = /\{[^{}]*["']tool["']\s*:\s*["']\w+["'][^{}]*\}/gi;
+
+export function stripToolCallJson(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(TOOL_JSON_RE, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}

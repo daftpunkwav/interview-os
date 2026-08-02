@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronRight, Brain } from "lucide-react";
 import { StreamingReveal } from "@/components/StreamingReveal";
-import { splitThinkAnswer } from "@/lib/thinkStream";
+import { splitThinkAnswer, stripToolCallJson } from "@/lib/thinkStream";
 import { cn } from "@/lib/utils";
 
 interface ThinkAnswerMessageProps {
@@ -17,6 +17,7 @@ interface ThinkAnswerMessageProps {
  * 准备页助手气泡：
  * - 思考过程默认折叠，可展开
  * - 正式回答走 StreamingReveal 流式渲染
+ * - 剥离误流出的 tool JSON
  */
 export function ThinkAnswerMessage({
   content,
@@ -24,10 +25,14 @@ export function ThinkAnswerMessage({
   className,
 }: ThinkAnswerMessageProps) {
   const [expanded, setExpanded] = useState(false);
-  const { thinking, answer, inThinking, hasThinking } = useMemo(
-    () => splitThinkAnswer(content),
-    [content],
-  );
+  const { thinking, answer, inThinking, hasThinking } = useMemo(() => {
+    const split = splitThinkAnswer(content);
+    return {
+      ...split,
+      answer: stripToolCallJson(split.answer),
+      thinking: stripToolCallJson(split.thinking),
+    };
+  }, [content]);
 
   const showThinking = hasThinking || inThinking || thinking.length > 0;
   // 仍在思考且尚无正式回答时，给用户可见反馈

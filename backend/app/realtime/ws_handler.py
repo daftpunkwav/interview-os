@@ -31,13 +31,15 @@ from app.models import InterviewSession, LLMSettings
 from app.realtime.events import TurnState
 from app.services.interview.agent import (
     InterviewAgent,
+    ThinkStreamFilter,
     generate_and_persist_report,
     strip_markers,
+    strip_think_blocks,
 )
 from app.services.interview.events import EventKind, StreamEvent
 from app.services.interview.runner import InterviewRunner
 from app.services.llm.client import LLMClient
-from app.services.stt.whisper import transcribe_pcm_base64_async
+from app.services.stt.whisper import transcribe_pcm_base64_async, warmup_whisper
 from app.services.tts.edge import synthesize_to_base64
 
 logger = logging.getLogger(__name__)
@@ -112,6 +114,17 @@ class _SentenceTTSQueue:
         self._worker_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
         self._dropped_count = 0
+        self._voice: str = settings.tts_voice
+        self._fail_count = 0
+        self._on_sent: Any = None
+
+    def set_voice(self, voice: str) -> None:
+        if voice:
+            self._voice = voice
+
+    def set_on_sent(self, callback) -> None:
+        """每成功发出一条 tts_audio 时回调（用于等待客户端播完）。"""
+        self._on_sent = callback
 
     async def start(self, send_callback) -> None:
         """启动后台 worker；每个 WS 连接初始化时调用一次。"""
@@ -128,7 +141,8 @@ class _SentenceTTSQueue:
             logger.info("TTS 队列丢弃 %d 句(超过上限)", self._dropped_count)
 
     async def enqueue(self, sentence: str) -> None:
-        if not sentence.strip():
+        clean = strip_markers(sentence).strip()
+        if not clean:
             return
         # 队列过长时丢弃最早的旧句，避免内存膨胀
         if self._queue.qsize() >= self._MAX_QUEUE_SIZE:
@@ -138,7 +152,7 @@ class _SentenceTTSQueue:
                 self._dropped_count += 1
             except asyncio.QueueEmpty:
                 pass
-        await self._queue.put(sentence.strip())
+        await self._queue.put(clean)
 
     async def flush_remainder(self, sentence: str) -> None:
         """回合结束时把残留 buffer 入队，并等待队列全部处理完。"""
@@ -154,12 +168,35 @@ class _SentenceTTSQueue:
                 if item is None:
                     return
                 async with self._lock:
-                    audio_b64 = await synthesize_to_base64(item, settings.tts_voice)
+                    try:
+                        audio_b64 = await synthesize_to_base64(item, self._voice)
+                    except Exception as e:
+                        self._fail_count += 1
+                        logger.error("Edge TTS 失败 voice=%s: %s", self._voice, e)
+                        if self._fail_count <= 3:
+                            try:
+                                await self._send(
+                                    "error",
+                                    message="语音合成失败，请检查网络或稍后重试（文字面试仍可用）",
+                                )
+                            except Exception:
+                                pass
+                        continue
                     if audio_b64:
                         try:
                             await self._send("tts_audio", data=audio_b64, sentence=item)
+                            if callable(self._on_sent):
+                                self._on_sent()
                         except Exception as e:
                             logger.warning("TTS 发送失败: %s", e)
+                    else:
+                        try:
+                            await self._send(
+                                "tts_failed",
+                                message="语音合成返回空音频，请检查网络或改用文字作答",
+                            )
+                        except Exception:
+                            pass
             finally:
                 self._queue.task_done()
 
@@ -181,6 +218,13 @@ class InterviewWSHandler:
         self._tts_queue = _SentenceTTSQueue()
         # 被同 session 新连接顶替时置 True，主循环应尽快退出
         self._superseded = False
+        self._last_nudge_at: float = 0.0
+        self._stt_fail_streak: int = 0
+        self._nudge_cooldown_sec: float = 20.0
+        # 客户端播完 TTS 后再开麦；超时兜底防卡死
+        self._playback_done = asyncio.Event()
+        self._tts_sent_this_turn = False
+        self._playback_wait_timeout_sec: float = 120.0
 
     # ------------------------------------------------------------------
     # 传输层工具
@@ -236,14 +280,17 @@ class InterviewWSHandler:
             else:
                 self._whisper_model = settings.whisper_model
 
+            self._tts_queue.set_voice(self.tts_voice)
+            self._tts_queue.set_on_sent(self._mark_tts_sent)
+            # 预热 Whisper，降低首答卡顿（失败可忽略）
+            asyncio.create_task(warmup_whisper(self._whisper_model))
+
             # 状态判断统一走枚举值
             if session.status == SessionStatus.PENDING.value:
                 await self._tts_queue.start(self.send)
                 await self.set_turn(TurnState.AI_SPEAKING)
-                async for event in self._consume_runner_opening(db):
-                    await self._dispatch_event(event)
-                await self._tts_queue.flush_remainder("")
-                await self.set_turn(TurnState.USER_SPEAKING)
+                await self._stream_events_with_tts(self._consume_runner_opening(db))
+                await self._open_mic_after_playback()
             elif session.status == SessionStatus.ACTIVE.value:
                 await self._tts_queue.start(self.send)
                 await self.set_turn(TurnState.USER_SPEAKING)
@@ -364,10 +411,36 @@ class InterviewWSHandler:
                 await self._process_user_text(text, data, db, session)
         elif msg_type == "request_hint":
             await self._on_request_hint(data, db, session)
+        elif msg_type == "tts_playback_done":
+            self._playback_done.set()
 
-    # ------------------------------------------------------------------
-    # 用户回合结束
-    # ------------------------------------------------------------------
+    def _mark_tts_sent(self) -> None:
+        self._tts_sent_this_turn = True
+
+    async def _wait_client_playback(self) -> None:
+        """若本回合发过 TTS，则等待客户端 tts_playback_done（或超时）。"""
+        if not self._tts_sent_this_turn:
+            return
+        # 若客户端已提前播完并上报，则不再 clear，直接放行
+        if not self._playback_done.is_set():
+            try:
+                await asyncio.wait_for(
+                    self._playback_done.wait(),
+                    timeout=self._playback_wait_timeout_sec,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "tts_playback_done 超时 sid=%s，继续",
+                    self.session_id,
+                )
+        await asyncio.sleep(0.15)
+        self._tts_sent_this_turn = False
+        self._playback_done.clear()
+
+    async def _open_mic_after_playback(self) -> None:
+        """服务端合成发完后，等客户端播完（或超时）再切 USER_SPEAKING，防回采。"""
+        await self._wait_client_playback()
+        await self.set_turn(TurnState.USER_SPEAKING)
 
     async def _on_user_turn_end(
         self, data: dict[str, Any], db: Session, session: InterviewSession
@@ -376,16 +449,21 @@ class InterviewWSHandler:
             return
         await self.set_turn(TurnState.PROCESSING)
 
-        text = data.get("text", "").strip()
+        # 优先浏览器 STT 文本，Whisper 仅作兜底
+        text = (data.get("text") or "").strip()
         pcm_b64 = data.get("pcm") or data.get("data") or ""
-        stt_failed = False  # 标记服务端 STT 是否失败,避免静默回退
-        if not text and pcm_b64:
-            text = await transcribe_pcm_base64_async(pcm_b64, model_size=self._whisper_model)
+        stt_failed = False
+        if text:
+            await self.send("stt_final", text=text)
+        elif pcm_b64:
+            text = await transcribe_pcm_base64_async(
+                pcm_b64, model_size=self._whisper_model
+            )
             if text:
                 await self.send("stt_final", text=text)
             else:
                 stt_failed = True
-        elif not text and self.audio_buffer:
+        elif self.audio_buffer:
             pcm = "".join(self.audio_buffer)
             self.audio_buffer = []
             text = await transcribe_pcm_base64_async(pcm, model_size=self._whisper_model)
@@ -394,19 +472,16 @@ class InterviewWSHandler:
             else:
                 stt_failed = True
 
-        # Whisper 失败时回退到浏览器 STT 文本
         if not text:
-            text = data.get("text", "").strip()
-            if text:
-                await self.send("stt_final", text=text)
-
-        if not text:
-            # 同时存在服务端 STT 失败 + 浏览器未传 text 才视为完全无内容,显式告警前端
-            if stt_failed:
-                await self.send("error", message="未能识别语音内容，请重新说话或手动输入")
+            self._stt_fail_streak += 1
+            await self.send(
+                "error",
+                message="未能识别语音内容，请重新说话或手动输入",
+            )
             await self.set_turn(TurnState.USER_SPEAKING)
             return
 
+        self._stt_fail_streak = 0
         await self._process_user_text(text, data, db, session)
 
     # ------------------------------------------------------------------
@@ -446,6 +521,45 @@ class InterviewWSHandler:
         ):
             yield event
 
+    async def _stream_events_with_tts(self, events) -> StreamEvent | None:
+        """按句入队 TTS，并剥离 think；返回最后一个 TURN_COMPLETE/ERROR。"""
+        self._tts_sent_this_turn = False
+        self._playback_done.clear()
+        sentence_buf = ""
+        think_filter = ThinkStreamFilter()
+        last: StreamEvent | None = None
+        async for event in events:
+            if event.kind == EventKind.TOKEN:
+                visible = think_filter.feed(event.token or "")
+                if visible:
+                    await self.send("assistant_token", token=visible)
+                    sentence_buf += visible
+                    if any(sentence_buf.endswith(p) for p in ["。", "！", "？", "!", "?", "\n"]):
+                        await self._tts_queue.enqueue(sentence_buf)
+                        sentence_buf = ""
+            elif event.kind == EventKind.TURN_COMPLETE:
+                tail = think_filter.flush()
+                if tail:
+                    sentence_buf += tail
+                    await self.send("assistant_token", token=tail)
+                clean = strip_markers(event.content or "")
+                await self.send(
+                    "assistant_done",
+                    content=clean,
+                    phase=event.phase_id,
+                    is_complete=event.is_complete,
+                    emotion=event.emotion,
+                )
+                if sentence_buf.strip():
+                    await self._tts_queue.enqueue(sentence_buf)
+                    sentence_buf = ""
+                await self._tts_queue.flush_remainder("")
+                last = event
+            elif event.kind == EventKind.ERROR:
+                await self.send("error", message=event.error)
+                last = event
+        return last
+
     async def _process_user_text(
         self, text: str, data: dict[str, Any], db: Session, session: InterviewSession
     ) -> None:
@@ -453,45 +567,33 @@ class InterviewWSHandler:
         await self.set_turn(TurnState.PROCESSING)
         await self.set_turn(TurnState.AI_SPEAKING)
 
-        sentence_buf = ""
-        async for event in self._consume_runner_turn(text, data, db):
-            await self._dispatch_event(event)
-            if event.kind == EventKind.TOKEN:
-                sentence_buf += event.token
-                if any(sentence_buf.endswith(p) for p in ["。", "！", "？", "!", "?", "\n"]):
-                    # 非阻塞入队：让 TTS worker 异步合成与发送，
-                    # LLM 流不会被 TTS 网络往返阻塞。
-                    await self._tts_queue.enqueue(sentence_buf)
-                    sentence_buf = ""
-            elif event.kind == EventKind.TURN_COMPLETE:
-                if sentence_buf.strip():
-                    await self._tts_queue.enqueue(sentence_buf)
-                    sentence_buf = ""
-                # 等待当前回合所有句子播放完
-                await self._tts_queue.flush_remainder("")
-                if event.is_complete:
-                    await self.set_turn(TurnState.IDLE)
-                    # 自然结束时同步生成报告，避免前端跳转报告页 404
-                    try:
-                        if self.llm is not None:
-                            await generate_and_persist_report(session, self.llm, db)
-                    except Exception as e:
-                        logger.exception(
-                            "面试自然结束但报告生成失败 sid=%s: %s",
-                            self.session_id,
-                            e,
-                        )
-                        await self.send(
-                            "error",
-                            message="报告生成失败，请点击「结束面试」重试",
-                        )
-                else:
-                    await self.set_turn(TurnState.USER_SPEAKING)
-            elif event.kind == EventKind.ERROR:
-                await self.set_turn(TurnState.USER_SPEAKING)
+        last = await self._stream_events_with_tts(
+            self._consume_runner_turn(text, data, db)
+        )
+        if last is None or last.kind == EventKind.ERROR:
+            await self._open_mic_after_playback()
+            return
+        if last.is_complete:
+            await self._wait_client_playback()
+            await self.set_turn(TurnState.IDLE)
+            try:
+                if self.llm is not None:
+                    await generate_and_persist_report(session, self.llm, db)
+            except Exception as e:
+                logger.exception(
+                    "面试自然结束但报告生成失败 sid=%s: %s",
+                    self.session_id,
+                    e,
+                )
+                await self.send(
+                    "error",
+                    message="报告生成失败，请点击「结束面试」重试",
+                )
+        else:
+            await self._open_mic_after_playback()
 
     # ------------------------------------------------------------------
-    # runner 事件 → 前端 WS 事件
+    # runner 事件 → 前端 WS 事件（仅非流式路径保留；主流式走 _stream_events_with_tts）
     # ------------------------------------------------------------------
 
     async def _dispatch_event(self, event: StreamEvent) -> None:
@@ -500,7 +602,7 @@ class InterviewWSHandler:
         elif event.kind == EventKind.TURN_COMPLETE:
             await self.send(
                 "assistant_done",
-                content=event.content,
+                content=strip_markers(event.content or ""),
                 phase=event.phase_id,
                 is_complete=event.is_complete,
                 emotion=event.emotion,
@@ -513,11 +615,13 @@ class InterviewWSHandler:
     # ------------------------------------------------------------------
 
     async def _on_request_hint(self, data: dict[str, Any], db: Session, session: InterviewSession) -> None:
-        question = data.get("question", "").strip()
+        question = strip_think_blocks((data.get("question") or "").strip())
+        question = strip_markers(question)
         if not question or not self.llm:
             return
         await self.send("reference_hint_loading", question=question)
         hint = await self._generate_reference_hint(question, db, session)
+        hint = strip_markers(strip_think_blocks(hint))
         await self.send("reference_hint", question=question, content=hint)
 
     async def _generate_reference_hint(
@@ -537,7 +641,7 @@ class InterviewWSHandler:
                 "content": with_agent_output_rules(
                     "你是面试辅导助手。根据候选人背景，为面试官的问题生成简洁参考回答提纲。\n"
                     "要求：3-5 个要点，每点一行，以「•」开头；结合简历具体经历；不要冗长；"
-                    "不要替候选人捏造未提及的项目细节。"
+                    "不要替候选人捏造未提及的项目细节；不要输出思考过程或 <think> 标签。"
                 ),
             },
             {
@@ -558,20 +662,46 @@ class InterviewWSHandler:
     async def _on_silence_nudge(self, db: Session, session: InterviewSession) -> None:
         if self.turn_state != TurnState.USER_SPEAKING:
             return
+        now = asyncio.get_event_loop().time()
+        cooldown = self._nudge_cooldown_sec
+        if self._stt_fail_streak >= 2:
+            cooldown = 35.0
+        if now - self._last_nudge_at < cooldown:
+            return
+        self._last_nudge_at = now
         nudge = self.orchestrator.build_silence_nudge(session.personality, session.strictness)
         await self.set_turn(TurnState.PROCESSING)
         await self.send("silence_nudge", content=nudge)
+        self._tts_sent_this_turn = False
+        self._playback_done.clear()
         await self._speak_one(nudge)
-        await self.set_turn(TurnState.USER_SPEAKING)
+        await self._open_mic_after_playback()
 
     # ------------------------------------------------------------------
     # TTS（一次性短句静默追问仍使用直发；流式回合 TTS 走 _tts_queue）
     # ------------------------------------------------------------------
 
     async def _speak_one(self, sentence: str) -> None:
-        audio_b64 = await synthesize_to_base64(sentence, self.tts_voice)
+        clean = strip_markers(sentence)
+        if not clean:
+            return
+        try:
+            audio_b64 = await synthesize_to_base64(clean, self.tts_voice)
+        except Exception as e:
+            logger.error("Edge TTS 短句失败: %s", e)
+            await self.send(
+                "error",
+                message="语音合成失败，请检查网络（文字内容仍可用）",
+            )
+            return
         if audio_b64:
-            await self.send("tts_audio", data=audio_b64, sentence=sentence)
+            await self.send("tts_audio", data=audio_b64, sentence=clean)
+            self._mark_tts_sent()
+        else:
+            await self.send(
+                "tts_failed",
+                message="语音合成返回空音频，请检查网络或改用文字作答",
+            )
 
     # 兼容旧接口，handler 内部不再直接使用
     _clean_reply = staticmethod(strip_markers)

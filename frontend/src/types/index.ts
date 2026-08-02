@@ -267,7 +267,8 @@ export type ServerEvent =
   | { type: "assistant_audio_end" }
   | { type: "stt_partial"; text: string }
   | { type: "stt_final"; text: string }
-  | { type: "tts_audio"; data: string; mime?: string }
+  | { type: "tts_audio"; data: string; mime?: string; sentence?: string }
+  | { type: "tts_failed"; message: string }
   | { type: "silence_nudge"; content: string }
   | { type: "reference_hint_loading"; question: string }
   | { type: "reference_hint"; content: string; question: string }
@@ -283,11 +284,19 @@ export type ClientEvent =
       face_analysis?: FaceAnalysis;
       image_base64?: string;
     }
-  | { type: "user_turn_end"; pcm: string; sample_rate: number }
+  | {
+      type: "user_turn_end";
+      pcm: string;
+      sample_rate: number;
+      text?: string;
+      face_analysis?: FaceAnalysis;
+      image_base64?: string;
+    }
   | { type: "stt_text"; text: string }
   | { type: "silence_timeout" }
   | { type: "request_hint"; question: string }
   | { type: "vision_update"; face_analysis: FaceAnalysis }
+  | { type: "tts_playback_done" }
   | { type: "pong"; t: number };
 
 /* ====================================================================== */

@@ -10,6 +10,8 @@ const MIN_CHUNKS_BEFORE_SILENCE = 2;
 const SILENCE_TRIGGER_MS = 1200;
 /** RMS 阈值,低于此视为静音。 */
 const SILENCE_RMS_THRESHOLD = 0.008;
+/** 至少累积约 0.4s 语音能量才允许静音提交，减少空包。 */
+const MIN_SPEECH_CHUNKS = 4;
 
 /** 安全关闭 AudioContext，避免重复 close 抛 InvalidStateError。 */
 function safeCloseAudioContext(ctx: AudioContext | null) {
@@ -30,10 +32,12 @@ export function useAudioRecorder(
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Int16Array[]>([]);
   const chunksBytesRef = useRef(0);
+  const speechChunksRef = useRef(0);
   const silenceStartRef = useRef<number | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const sessionRef = useRef(0);
-  const partialRef = useRef("");
+  const finalsRef = useRef("");
+  const interimRef = useRef("");
   const onSilenceRef = useRef(onSilence);
   const onPartialRef = useRef(onPartial);
   const [isRecording, setIsRecording] = useState(false);
@@ -72,12 +76,19 @@ export function useAudioRecorder(
     return btoa(binary);
   };
 
+  const currentText = () => `${finalsRef.current}${interimRef.current}`.trim();
+
   const emitSilenceRef = useRef(() => {
-    const b64 = encodeBase64(chunksRef.current);
-    const text = partialRef.current;
+    const text = currentText();
+    const hasSpeech = speechChunksRef.current >= MIN_SPEECH_CHUNKS || Boolean(text);
+    const b64 = hasSpeech ? encodeBase64(chunksRef.current) : "";
     chunksRef.current = [];
     chunksBytesRef.current = 0;
+    speechChunksRef.current = 0;
     silenceStartRef.current = null;
+    finalsRef.current = "";
+    interimRef.current = "";
+    setPartialText("");
     if (b64 || text) {
       onSilenceRef.current(b64, text);
     }
@@ -100,7 +111,11 @@ export function useAudioRecorder(
     streamRef.current = null;
 
     try {
-      recognitionRef.current?.stop();
+      const rec = recognitionRef.current;
+      if (rec) {
+        rec.onend = null;
+        rec.stop();
+      }
     } catch {
       /* 识别器可能已停止 */
     }
@@ -108,6 +123,7 @@ export function useAudioRecorder(
 
     chunksRef.current = [];
     chunksBytesRef.current = 0;
+    speechChunksRef.current = 0;
     silenceStartRef.current = null;
   }, []);
 
@@ -120,7 +136,8 @@ export function useAudioRecorder(
   useEffect(() => {
     if (!enabled) {
       stop();
-      partialRef.current = "";
+      finalsRef.current = "";
+      interimRef.current = "";
       setPartialText("");
       return;
     }
@@ -128,7 +145,8 @@ export function useAudioRecorder(
     stop();
     const session = sessionRef.current;
     setMicError("");
-    partialRef.current = "";
+    finalsRef.current = "";
+    interimRef.current = "";
     setPartialText("");
 
     (async () => {
@@ -161,7 +179,6 @@ export function useAudioRecorder(
           const rms = Math.sqrt(sum / input.length);
           const pcm = floatTo16BitPCM(input);
 
-          // 上限保护:超过 MAX_CHUNKS_BYTES 时丢弃最早的 chunk,防止长会话内存泄漏。
           chunksRef.current.push(pcm);
           chunksBytesRef.current += pcm.byteLength;
           while (
@@ -172,16 +189,18 @@ export function useAudioRecorder(
             if (dropped) chunksBytesRef.current -= dropped.byteLength;
           }
 
-          if (rms < SILENCE_RMS_THRESHOLD) {
+          if (rms >= SILENCE_RMS_THRESHOLD) {
+            speechChunksRef.current += 1;
+            silenceStartRef.current = null;
+          } else {
             if (!silenceStartRef.current) silenceStartRef.current = Date.now();
             else if (
               Date.now() - silenceStartRef.current > SILENCE_TRIGGER_MS &&
-              chunksRef.current.length > MIN_CHUNKS_BEFORE_SILENCE
+              chunksRef.current.length > MIN_CHUNKS_BEFORE_SILENCE &&
+              (speechChunksRef.current >= MIN_SPEECH_CHUNKS || currentText())
             ) {
               emitSilenceRef.current();
             }
-          } else {
-            silenceStartRef.current = null;
           }
         };
 
@@ -193,23 +212,49 @@ export function useAudioRecorder(
 
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (SR && session === sessionRef.current) {
-          const rec = new SR();
-          rec.lang = "zh-CN";
-          rec.continuous = true;
-          rec.interimResults = true;
-          rec.onresult = (event) => {
-            let text = "";
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              const r = event.results[i];
-              if (!r) continue;
-              text += r[0]?.transcript ?? "";
+          const startRec = () => {
+            if (session !== sessionRef.current) return;
+            const rec = new SR();
+            rec.lang = "zh-CN";
+            rec.continuous = true;
+            rec.interimResults = true;
+            rec.onresult = (event) => {
+              let interim = "";
+              for (let i = event.resultIndex; i < event.results.length; i++) {
+                const r = event.results[i];
+                if (!r) continue;
+                const piece = r[0]?.transcript ?? "";
+                if (r.isFinal) {
+                  finalsRef.current = `${finalsRef.current}${piece}`;
+                } else {
+                  interim += piece;
+                }
+              }
+              interimRef.current = interim;
+              const text = currentText();
+              setPartialText(text);
+              onPartialRef.current?.(text);
+            };
+            rec.onerror = () => {
+              /* no-speech / aborted 等由 onend 重启 */
+            };
+            rec.onend = () => {
+              if (session !== sessionRef.current) return;
+              // Chrome continuous 常会自动停，需重启
+              try {
+                startRec();
+              } catch {
+                /* ignore */
+              }
+            };
+            try {
+              rec.start();
+              recognitionRef.current = rec;
+            } catch {
+              /* already started */
             }
-            partialRef.current = text;
-            setPartialText(text);
-            onPartialRef.current?.(text);
           };
-          rec.start();
-          recognitionRef.current = rec;
+          startRec();
         }
 
         if (session === sessionRef.current) {
@@ -219,8 +264,6 @@ export function useAudioRecorder(
         const msg = e instanceof Error ? e.message : "麦克风不可用";
         setMicError(msg);
         console.warn("麦克风不可用", e);
-        // getUserMedia 失败：释放可能已被部分分配的 audio 资源
-        // 防止麦克风被占用却 UI 显示"已就绪"
         if (streamRef.current) {
           streamRef.current.getTracks().forEach((t) => t.stop());
           streamRef.current = null;
@@ -244,11 +287,15 @@ interface SpeechRecognition extends EventTarget {
   stop(): void;
   onresult: ((event: SpeechRecognitionEvent) => void) | null;
   onerror: ((event: Event) => void) | null;
+  onend: (() => void) | null;
 }
 
 interface SpeechRecognitionEvent {
   resultIndex: number;
-  results: { length: number; [i: number]: { [j: number]: { transcript: string }; isFinal: boolean } };
+  results: {
+    length: number;
+    [i: number]: { [j: number]: { transcript: string }; isFinal: boolean };
+  };
 }
 
 declare global {

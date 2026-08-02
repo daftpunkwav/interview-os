@@ -6,7 +6,14 @@ const backendOrigin = (
   `http://127.0.0.1:${process.env.BACKEND_PORT || "8000"}`
 ).replace(/\/+$/, "");
 
+// 启动时打印，便于确认 rewrite 目标端口（避免指到被占用的 8000）
+if (process.env.NODE_ENV !== "production") {
+  // eslint-disable-next-line no-console
+  console.info(`[next.config] API rewrite → ${backendOrigin}`);
+}
+
 const nextConfig = {
+  transpilePackages: ["@met4citizen/talkinghead", "three"],
   async rewrites() {
     return [
       {
