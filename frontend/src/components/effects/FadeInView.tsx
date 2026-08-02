@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { ReactNode } from "react";
 
 interface FadeInViewProps {
@@ -14,28 +14,34 @@ interface FadeInViewProps {
 export function FadeInView({
   children,
   delay = 0,
-  duration = 0.6,
+  duration = 0.5,
   direction = "up",
   className = "",
 }: FadeInViewProps) {
-  const directions = {
-    up: { y: 30 },
-    down: { y: -30 },
-    left: { x: 30 },
-    right: { x: -30 },
+  const reduce = useReducedMotion();
+
+  const offsets = {
+    up: { y: 12 },
+    down: { y: -12 },
+    left: { x: 12 },
+    right: { x: -12 },
     none: {},
   };
+
+  if (reduce) {
+    return <div className={className}>{children}</div>;
+  }
 
   return (
     <motion.div
       className={className}
-      initial={{ opacity: 0, ...directions[direction] }}
+      initial={{ opacity: 0, ...offsets[direction] }}
       whileInView={{ opacity: 1, x: 0, y: 0 }}
-      viewport={{ once: true, margin: "-50px" }}
+      viewport={{ once: true, margin: "-40px" }}
       transition={{
         duration,
         delay,
-        ease: [0.25, 0.1, 0.25, 1], // 非线性缓动曲线
+        ease: [0.22, 1, 0.36, 1],
       }}
     >
       {children}

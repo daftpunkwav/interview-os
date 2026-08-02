@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { motion, useInView } from "framer-motion";
+import { useInView, useReducedMotion } from "framer-motion";
 
 interface AnimatedCounterProps {
   value: number;
@@ -15,47 +15,47 @@ export function AnimatedCounter({
   value,
   suffix = "",
   prefix = "",
-  duration = 2,
+  duration = 1.4,
   className = "",
 }: AnimatedCounterProps) {
   const [count, setCount] = useState(0);
   const ref = useRef<HTMLSpanElement>(null);
-  const isInView = useInView(ref, { once: true, margin: "-50px" });
+  const isInView = useInView(ref, { once: true, margin: "-40px" });
+  const reduce = useReducedMotion();
 
   useEffect(() => {
     if (!isInView) return;
+    if (reduce) {
+      setCount(value);
+      return;
+    }
 
-    let startTime: number;
+    let startTime: number | undefined;
     let animationFrame: number;
 
     function animate(timestamp: number) {
-      if (!startTime) startTime = timestamp;
+      if (startTime === undefined) startTime = timestamp;
       const progress = Math.min((timestamp - startTime) / (duration * 1000), 1);
-
-      // 使用 easeOutExpo 缓动函数
-      const easeOutExpo = 1 - Math.pow(2, -10 * progress);
-      setCount(Math.floor(easeOutExpo * value));
+      // easeOutCubic — 比 expo 更稳，数字不「冲」
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(Math.floor(eased * value));
 
       if (progress < 1) {
         animationFrame = requestAnimationFrame(animate);
+      } else {
+        setCount(value);
       }
     }
 
     animationFrame = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animationFrame);
-  }, [isInView, value, duration]);
+  }, [isInView, value, duration, reduce]);
 
   return (
-    <motion.span
-      ref={ref}
-      className={className}
-      initial={{ opacity: 0, y: 20 }}
-      animate={isInView ? { opacity: 1, y: 0 } : {}}
-      transition={{ duration: 0.6, ease: "easeOut" }}
-    >
+    <span ref={ref} className={className}>
       {prefix}
       {count}
       {suffix}
-    </motion.span>
+    </span>
   );
 }
