@@ -237,6 +237,8 @@ export function useTTSPlayer() {
     onSpeakingChangeRef.current(false);
     _stopLevelLoop();
     queueRef.current = Promise.resolve();
+    // 打断时也通知播完，避免服务端空等 tts_playback_done
+    onPlaybackDoneRef.current();
   }, [_releaseCurrent, _stopLevelLoop]);
 
   useEffect(() => {

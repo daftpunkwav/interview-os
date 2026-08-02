@@ -38,7 +38,10 @@ export default function ReportPage() {
   useEffect(() => {
     let cancelled = false;
     let attempts = 0;
-    const maxAttempts = 8;
+    const maxAttempts = 45;
+
+    // 兜底：面试页不再同步 finish；进入报告页触发一次补生成（与 WS 锁防双打）
+    void api.finishInterview(sessionId).catch(() => undefined);
 
     const tick = () => {
       attempts += 1;
@@ -82,7 +85,13 @@ export default function ReportPage() {
           <button
             type="button"
             className="btn-secondary inline-flex items-center gap-2"
-            onClick={loadReport}
+            onClick={() => {
+              // 若 WS 后台未落库，补一次 HTTP 生成后再拉取
+              api
+                .finishInterview(sessionId)
+                .catch(() => undefined)
+                .finally(() => loadReport());
+            }}
           >
             <RefreshCw size={16} /> 重新加载
           </button>

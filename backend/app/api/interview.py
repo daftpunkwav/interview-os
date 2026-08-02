@@ -202,7 +202,10 @@ async def finish_interview(
     db: Session = Depends(get_db),
     access: str | None = Depends(extract_token),
 ):
-    """提前结束面试并生成报告。"""
+    """提前结束面试并生成报告。
+
+    若 WS 已落库报告则直接返回；否则触发一次生成（与 WS 后台共用锁防双打）。
+    """
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="面试会话不存在")
@@ -214,6 +217,7 @@ async def finish_interview(
     ):
         return {"session_id": session_id, "status": "already_completed"}
 
+    # 口头收尾可能已把 status 标 completed 但 report 仍空：补生成
     llm = LLMClient.from_db(db)
     try:
         await generate_and_persist_report(session, llm, db)

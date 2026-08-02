@@ -249,11 +249,16 @@ class InterviewWSHandler:
         # 客户端播完 TTS 后再开麦；超时兜底防卡死
         self._playback_done = asyncio.Event()
         self._tts_sent_this_turn = False
-        self._playback_wait_timeout_sec: float = 120.0
+        # 主循环已能并行收包后，正常路径靠客户端 done；超时仅兜底
+        self._playback_wait_timeout_sec: float = 45.0
         # 播放握手世代：重连/新回合递增，避免旧 done 误放行或丢信号后卡麦
         self._playback_generation: int = 0
         self._awaiting_playback_gen: int = 0
         self._closing: bool = False
+        # 防止 create_task 回合重入；提纲 debounce；报告后台任务
+        self._turn_busy: bool = False
+        self._hint_inflight: str | None = None
+        self._report_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
     # 传输层工具
@@ -348,7 +353,12 @@ class InterviewWSHandler:
             if session.status == SessionStatus.PENDING.value:
                 await self._tts_queue.start(self._tts_send)
                 await self.set_turn(TurnState.AI_SPEAKING)
-                await self._stream_events_with_tts(self._consume_runner_opening(db))
+                await self._stream_events_with_tts(
+                    self._consume_runner_opening(db),
+                    db=db,
+                    session=session,
+                    auto_hint=True,
+                )
                 await self._open_mic_after_playback()
             elif session.status == SessionStatus.ACTIVE.value:
                 await self._tts_queue.start(self._tts_send)
@@ -456,25 +466,77 @@ class InterviewWSHandler:
                 self.orchestrator.snapshot.merge_face(face)
                 self.orchestrator.snapshot.vision_summary = VisionAgent.summarize(face)
         elif msg_type == "user_turn_end":
-            await self._on_user_turn_end(data, db, session)
+            if self._turn_busy or self._closing:
+                return
+            asyncio.create_task(self._run_user_turn_end(data, db, session))
         elif msg_type == "silence_timeout":
-            await self._on_silence_nudge(db, session)
+            if self._turn_busy or self._closing:
+                return
+            asyncio.create_task(self._on_silence_nudge(db, session))
         elif msg_type == "user_text":
             text = data.get("text", "").strip()
-            if text and self.turn_state == TurnState.USER_SPEAKING:
-                await self.set_turn(TurnState.PROCESSING)
-                await self.send("stt_final", text=text)
-                await self._process_user_text(text, data, db, session)
+            if (
+                text
+                and self.turn_state == TurnState.USER_SPEAKING
+                and not self._turn_busy
+                and not self._closing
+            ):
+                asyncio.create_task(self._run_user_text(text, data, db, session))
         elif msg_type == "request_hint":
-            # 不阻塞主循环：提纲生成与面试回合并行，避免卡住开麦/心跳
+            # 不阻塞主循环；与服务端自触发共用 debounce
             asyncio.create_task(self._on_request_hint(data, db, session))
         elif msg_type == "request_finish":
-            await self._on_request_finish(db, session)
+            if self._closing:
+                return
+            asyncio.create_task(self._on_request_finish(db, session))
         elif msg_type == "tts_playback_done":
             # 仅当世代匹配时放行，防止重连后旧/乱序 done 干扰下一回合
             client_gen = data.get("generation")
             if client_gen is None or client_gen == self._awaiting_playback_gen:
                 self._playback_done.set()
+
+    async def _run_user_text(
+        self,
+        text: str,
+        data: dict[str, Any],
+        db: Session,
+        session: InterviewSession,
+    ) -> None:
+        if self._turn_busy or self._closing:
+            return
+        self._turn_busy = True
+        try:
+            await self.set_turn(TurnState.PROCESSING)
+            await self.send("stt_final", text=text)
+            await self._process_user_text(text, data, db, session)
+        except Exception:
+            logger.exception("user_text 回合失败 sid=%s", self.session_id)
+            try:
+                await self.set_turn(TurnState.USER_SPEAKING)
+            except Exception:
+                pass
+        finally:
+            self._turn_busy = False
+
+    async def _run_user_turn_end(
+        self,
+        data: dict[str, Any],
+        db: Session,
+        session: InterviewSession,
+    ) -> None:
+        if self._turn_busy or self._closing:
+            return
+        self._turn_busy = True
+        try:
+            await self._on_user_turn_end(data, db, session)
+        except Exception:
+            logger.exception("user_turn_end 失败 sid=%s", self.session_id)
+            try:
+                await self.set_turn(TurnState.USER_SPEAKING)
+            except Exception:
+                pass
+        finally:
+            self._turn_busy = False
 
     def _mark_tts_sent(self) -> None:
         self._tts_sent_this_turn = True
@@ -595,7 +657,14 @@ class InterviewWSHandler:
         ):
             yield event
 
-    async def _stream_events_with_tts(self, events) -> StreamEvent | None:
+    async def _stream_events_with_tts(
+        self,
+        events,
+        *,
+        db: Session | None = None,
+        session: InterviewSession | None = None,
+        auto_hint: bool = True,
+    ) -> StreamEvent | None:
         """按句入队 TTS，并剥离 think；返回最后一个 TURN_COMPLETE/ERROR。"""
         self._begin_playback_wait()
         sentence_buf = ""
@@ -632,6 +701,17 @@ class InterviewWSHandler:
                     emotion=event.emotion,
                     playback_generation=self._awaiting_playback_gen,
                 )
+                # 服务端自触发提纲，不依赖客户端往返（避免队头阻塞丢 hint）
+                if (
+                    auto_hint
+                    and not event.is_complete
+                    and db is not None
+                    and session is not None
+                    and clean.strip()
+                ):
+                    asyncio.create_task(
+                        self._on_request_hint({"question": clean}, db, session)
+                    )
                 if sentence_buf.strip():
                     await self._tts_queue.enqueue(
                         sentence_buf, emotion=turn_emotion
@@ -652,32 +732,24 @@ class InterviewWSHandler:
         await self.set_turn(TurnState.AI_SPEAKING)
 
         last = await self._stream_events_with_tts(
-            self._consume_runner_turn(text, data, db)
+            self._consume_runner_turn(text, data, db),
+            db=db,
+            session=session,
+            auto_hint=True,
         )
         if last is None or last.kind == EventKind.ERROR:
             await self._open_mic_after_playback()
             return
         if last.is_complete:
-            await self._wait_client_playback()
             await self.set_turn(TurnState.IDLE)
-            try:
-                if self.llm is not None:
-                    await generate_and_persist_report(session, self.llm, db)
-            except Exception as e:
-                logger.exception(
-                    "面试自然结束但报告生成失败 sid=%s: %s",
-                    self.session_id,
-                    e,
-                )
-                await self.send(
-                    "error",
-                    message="报告生成失败，请点击「结束面试」重试",
-                )
+            self._schedule_report_generation()
+            # 播完等待不阻塞报告
+            asyncio.create_task(self._wait_client_playback())
         else:
             await self._open_mic_after_playback()
 
     async def _on_request_finish(self, db: Session, session: InterviewSession) -> None:
-        """候选人主动结束：流式口头致谢与评价，再生成报告。"""
+        """候选人主动结束：流式口头致谢与评价，报告异步生成。"""
         if self._closing:
             return
         if session.status == SessionStatus.COMPLETED.value:
@@ -688,6 +760,7 @@ class InterviewWSHandler:
                 is_complete=True,
                 emotion="smile",
             )
+            self._schedule_report_generation()
             return
         if self.runner is None or self.llm is None:
             await self.send("error", message="面试引擎未就绪，无法收尾")
@@ -696,7 +769,12 @@ class InterviewWSHandler:
         self._closing = True
         await self.set_turn(TurnState.PROCESSING)
         await self.set_turn(TurnState.AI_SPEAKING)
-        last = await self._stream_events_with_tts(self.runner.stream_closing(db))
+        last = await self._stream_events_with_tts(
+            self.runner.stream_closing(db),
+            db=db,
+            session=session,
+            auto_hint=False,
+        )
         if last is None or last.kind == EventKind.ERROR:
             self._closing = False
             await self._open_mic_after_playback()
@@ -706,19 +784,52 @@ class InterviewWSHandler:
             )
             return
 
-        await self._wait_client_playback()
         await self.set_turn(TurnState.IDLE)
+        # 报告与 TTS 收尾并行，不再先等播完
+        self._schedule_report_generation()
+        asyncio.create_task(self._wait_client_playback())
+
+    def _schedule_report_generation(self) -> None:
+        """后台生成报告（独立 DB session），避免阻塞 WS / 重复任务。"""
+        if self._report_task is not None and not self._report_task.done():
+            return
+        if self.llm is None:
+            return
+        self._report_task = asyncio.create_task(self._generate_report_bg())
+
+    async def _generate_report_bg(self) -> None:
+        if self.llm is None:
+            return
+        db = SessionLocal()
         try:
+            session = (
+                db.query(InterviewSession)
+                .filter(InterviewSession.id == self.session_id)
+                .first()
+            )
+            if not session:
+                return
+            # 已有报告则跳过
+            raw = (session.report or "").strip()
+            if session.status == SessionStatus.COMPLETED.value and raw and raw != "{}":
+                return
             await generate_and_persist_report(session, self.llm, db)
         except Exception as e:
             logger.exception(
-                "收尾后报告生成失败 sid=%s: %s", self.session_id, e
+                "后台报告生成失败 sid=%s: %s", self.session_id, e
             )
-            await self.send(
-                "error",
-                message="口头收尾已完成，但报告生成失败，请点击「结束面试」重试",
-            )
-            self._closing = False
+            try:
+                await self.send(
+                    "error",
+                    message="口头收尾已完成，但报告生成失败，请稍后在报告页重试",
+                )
+            except Exception:
+                pass
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # runner 事件 → 前端 WS 事件（仅非流式路径保留；主流式走 _stream_events_with_tts）
@@ -757,22 +868,31 @@ class InterviewWSHandler:
                 content="暂时无法生成参考回答，请根据你的实际经历组织语言。",
             )
             return
-        await self.send("reference_hint_loading", question=question)
+        # debounce：同题进行中则跳过（服务端自触发 + 客户端 request_hint 双打）
+        key = question[:200]
+        if self._hint_inflight == key:
+            return
+        self._hint_inflight = key
         try:
-            hint = await asyncio.wait_for(
-                self._generate_reference_hint(question, db, session),
-                timeout=self._HINT_TIMEOUT_SEC,
-            )
-        except asyncio.TimeoutError:
-            logger.warning("参考提纲超时 sid=%s", self.session_id)
-            hint = "生成超时。可先按 STAR 结构自拟要点：情境 → 任务 → 行动 → 结果（尽量带量化）。"
-        except Exception as e:
-            logger.warning("参考提纲异常 sid=%s: %s", self.session_id, e)
-            hint = "暂时无法生成参考回答，请根据你的实际经历组织语言。"
-        hint = strip_markers(strip_think_blocks(hint or ""))
-        if not hint.strip():
-            hint = "暂时无法生成参考回答，请根据你的实际经历组织语言。"
-        await self.send("reference_hint", question=question, content=hint)
+            await self.send("reference_hint_loading", question=question)
+            try:
+                hint = await asyncio.wait_for(
+                    self._generate_reference_hint(question, db, session),
+                    timeout=self._HINT_TIMEOUT_SEC,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("参考提纲超时 sid=%s", self.session_id)
+                hint = "生成超时。可先按 STAR 结构自拟要点：情境 → 任务 → 行动 → 结果（尽量带量化）。"
+            except Exception as e:
+                logger.warning("参考提纲异常 sid=%s: %s", self.session_id, e)
+                hint = "暂时无法生成参考回答，请根据你的实际经历组织语言。"
+            hint = strip_markers(strip_think_blocks(hint or ""))
+            if not hint.strip():
+                hint = "暂时无法生成参考回答，请根据你的实际经历组织语言。"
+            await self.send("reference_hint", question=question, content=hint)
+        finally:
+            if self._hint_inflight == key:
+                self._hint_inflight = None
 
     @staticmethod
     def _extract_hint_question(text: str) -> str:
@@ -819,7 +939,7 @@ class InterviewWSHandler:
             },
         ]
         try:
-            return await self.llm.chat(messages, temperature=0.4)
+            return await self.llm.chat(messages, temperature=0.4, max_tokens=400)
         except Exception as e:
             logger.warning("参考提纲生成失败: %s", e)
             return "暂时无法生成参考回答，请根据你的实际经历组织语言。"

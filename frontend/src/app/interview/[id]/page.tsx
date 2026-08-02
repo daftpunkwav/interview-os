@@ -207,18 +207,14 @@ export default function InterviewRoomPage() {
       finishingRef.current = true;
       setFinishingUi(true);
       stopTTS();
-      try {
-        await api.finishInterview(sessionId);
-        if (reportNavTimerRef.current) clearTimeout(reportNavTimerRef.current);
-        reportNavTimerRef.current = setTimeout(() => {
-          router.push(`/report/${sessionId}`);
-        }, 1500);
-      } catch {
-        navigatingRef.current = false;
-        finishingRef.current = false;
-        setFinishingUi(false);
-        toast.error("报告尚未就绪，请点击「结束面试」重试");
-      }
+      // stopTTS 已通过 onPlaybackDone 回传；再显式发一次防竞态
+      sendRef.current({
+        type: "tts_playback_done",
+        generation: playbackGenRef.current,
+      });
+      // 不再 await finishInterview：报告由 WS 后台生成，报告页轮询承接
+      if (reportNavTimerRef.current) clearTimeout(reportNavTimerRef.current);
+      router.push(`/report/${sessionId}`);
     };
 
     on("assistant_token", (msg) => setStreamingText((prev) => prev + msg.token));
@@ -330,8 +326,12 @@ export default function InterviewRoomPage() {
     if (finishingRef.current || navigatingRef.current) return;
     finishingRef.current = true;
     setFinishingUi(true);
-    // 打断当前播报，让收尾发言重新排队
+    // 打断当前播报，让收尾发言重新排队；并放行服务端播完等待
     stopTTS();
+    send({
+      type: "tts_playback_done",
+      generation: playbackGenRef.current,
+    });
     const ok = send({ type: "request_finish" });
     if (!ok) {
       finishingRef.current = false;

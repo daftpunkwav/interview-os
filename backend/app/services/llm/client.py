@@ -195,11 +195,12 @@ class LLMClient:
         stream: bool = False,
         response_format: dict[str, str] | None = None,
         tools: list[dict[str, Any]] | None = None,
+        max_tokens: int | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
-            "max_tokens": self.max_tokens,
+            "max_tokens": max_tokens if max_tokens is not None else self.max_tokens,
             "temperature": temperature,
             "stream": stream,
         }
@@ -217,13 +218,18 @@ class LLMClient:
         temperature: float = 0.7,
         response_format: dict[str, str] | None = None,
         tools: list[dict[str, Any]] | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         """发送 Chat Completions 请求并返回文本内容。"""
         if not is_safe_http_url(self.api_base, allow_local=_is_local_allowed()):
             raise UnsafeURLError(f"LLM api_base 不安全: {self.api_base}")
         url = f"{self.api_base}/chat/completions"
         payload = self._build_payload(
-            messages, temperature, response_format=response_format, tools=tools
+            messages,
+            temperature,
+            response_format=response_format,
+            tools=tools,
+            max_tokens=max_tokens,
         )
         headers = self._headers()
 

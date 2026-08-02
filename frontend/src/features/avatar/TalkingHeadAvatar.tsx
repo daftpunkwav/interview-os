@@ -157,8 +157,10 @@ export function TalkingHeadAvatar({
           },
           (ev: unknown) => {
             const e = ev as { lengthComputable?: boolean; loaded?: number; total?: number };
-            if (e?.lengthComputable && e.total) {
-              setLoadPct(Math.round((100 * (e.loaded || 0)) / e.total));
+            // CDN/gzip 下 ProgressEvent.loaded 常大于 total，需钳制到 100
+            if (e?.lengthComputable && e.total && e.total > 0) {
+              const raw = Math.round((100 * (e.loaded || 0)) / e.total);
+              setLoadPct(Math.min(100, Math.max(0, raw)));
             }
           },
         );

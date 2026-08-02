@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -30,6 +31,9 @@ from app.services.interview.workflows import (
 from app.services.llm.client import LLMClient
 
 logger = logging.getLogger(__name__)
+
+# 同 session 报告生成互斥，防止 WS 后台与 HTTP finish 双打 LLM
+_REPORT_LOCKS: dict[int, asyncio.Lock] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -722,37 +726,52 @@ async def generate_and_persist_report(
     """生成报告并写入 session / GrowthRecord（同一事务）。
 
     任意阶段失败整体回滚，避免「session 已 completed 但 GrowthRecord 缺失」。
+    同 session 并发调用时加锁，并在已有报告时直接返回，避免 WS/HTTP 双打。
     """
     from app.core.constants import SessionStatus
     from app.models import GrowthRecord
 
-    report = await generate_report(session, llm, face_records)
-
-    growth = GrowthRecord(
-        profile_id=session.profile_id,
-        session_id=session.id,
-        weak_skills=json.dumps(report.weaknesses, ensure_ascii=False),
-        common_mistakes=json.dumps(report.weaknesses[:3], ensure_ascii=False),
-        training_plan=json.dumps(report.training_plan, ensure_ascii=False),
-    )
-
-    try:
-        session.report = report.model_dump_json()
-        session.overall_score = report.overall_score
-        session.status = SessionStatus.COMPLETED.value
-        session.ended_at = datetime.now(timezone.utc)
-        db.add(growth)
-        db.commit()
+    sid = int(session.id)
+    lock = _REPORT_LOCKS.setdefault(sid, asyncio.Lock())
+    async with lock:
         try:
-            from app.services.growth.learning import record_interview_learning
-
-            record_interview_learning(session, report=report.model_dump())
+            db.refresh(session)
         except Exception:
             pass
-    except Exception:
-        db.rollback()
-        raise
-    return report
+        raw = (session.report or "").strip()
+        if raw and raw != "{}":
+            try:
+                return InterviewReport.model_validate_json(raw)
+            except Exception:
+                pass
+
+        report = await generate_report(session, llm, face_records)
+
+        growth = GrowthRecord(
+            profile_id=session.profile_id,
+            session_id=session.id,
+            weak_skills=json.dumps(report.weaknesses, ensure_ascii=False),
+            common_mistakes=json.dumps(report.weaknesses[:3], ensure_ascii=False),
+            training_plan=json.dumps(report.training_plan, ensure_ascii=False),
+        )
+
+        try:
+            session.report = report.model_dump_json()
+            session.overall_score = report.overall_score
+            session.status = SessionStatus.COMPLETED.value
+            session.ended_at = datetime.now(timezone.utc)
+            db.add(growth)
+            db.commit()
+            try:
+                from app.services.growth.learning import record_interview_learning
+
+                record_interview_learning(session, report=report.model_dump())
+            except Exception:
+                pass
+        except Exception:
+            db.rollback()
+            raise
+        return report
 
 
 async def stream_report(
