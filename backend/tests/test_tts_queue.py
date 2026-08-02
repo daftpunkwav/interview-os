@@ -11,7 +11,7 @@ import asyncio
 from app.realtime.ws_handler import _SentenceTTSQueue
 
 
-async def _fake_synth(sentence: str, voice: str) -> str:
+async def _fake_synth(sentence: str, voice: str = "", **_kwargs) -> str:
     return f"audio:{sentence}"
 
 
@@ -60,7 +60,7 @@ async def test_enqueue_skips_empty(monkeypatch) -> None:
 async def test_enqueue_does_not_block_producer(monkeypatch) -> None:
     """入队操作应是非阻塞的，生产者不会被 TTS 合成延迟。"""
 
-    async def slow_synth(sentence, voice):
+    async def slow_synth(sentence, voice="", **_kwargs):
         await asyncio.sleep(0.2)
         return f"audio:{sentence}"
 

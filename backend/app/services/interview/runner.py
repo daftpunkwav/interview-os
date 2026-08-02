@@ -480,4 +480,93 @@ class InterviewRunner:
             yield StreamEvent.make_error(str(e))
 
 
+
+    # ------------------------------------------------------------------
+    # 手动结束：个性化口头收尾
+    # ------------------------------------------------------------------
+
+    _CLOSING_BY_PERSONALITY: dict[str, str] = {
+        "gentle": "语气温暖鼓励，肯定准备与态度，温和指出 1-2 个可改进点。",
+        "professional": "语气专业克制，给出结构化口头评价（优势/待提升），感谢配合。",
+        "pressure": "保持一定锐利但不刻薄，点出扛压表现与薄弱处，仍须正式致谢。",
+        "hr": "侧重软技能与文化匹配感受，鼓励后续沟通，致谢。",
+        "expert": "从技术深度点评亮点与缺口，专业致谢。",
+    }
+
+    async def stream_closing(self, db: Session) -> AsyncIterator[StreamEvent]:
+        """候选人主动结束：面试官口头致谢 + 个性化小结，并标记完成。"""
+        if self.session.status == "completed":
+            yield StreamEvent.make_error("面试已结束")
+            return
+
+        try:
+            personality = (self.session.personality or "professional").lower()
+            style_hint = self._CLOSING_BY_PERSONALITY.get(
+                personality, self._CLOSING_BY_PERSONALITY["professional"]
+            )
+            phases = self.agent.workflow.phases
+            summary_idx = next(
+                (i for i, ph in enumerate(phases) if ph.id == "summary"),
+                max(0, len(phases) - 1),
+            )
+            if self.agent.current_phase_idx < summary_idx:
+                self.agent.current_phase_idx = summary_idx
+                self.agent.questions_in_phase = 0
+                self.session.current_phase = phases[summary_idx].id
+
+            nl = "\n"
+            closing_system = (
+                "候选人主动点击了「结束面试」。请立刻做口头收尾，不要再提问、不要开启新考察。"
+                + nl
+                + "要求："
+                + nl
+                + "1. 感谢候选人参加本次模拟面试；"
+                + nl
+                + "2. 结合本场已聊内容，用 3–6 句给出个性化口头总结与评价"
+                + "（至少各提一点优势与待改进）；若对话很少，也可基于态度与表达作简要评价；"
+                + nl
+                + f"3. 人设与语气：{style_hint}"
+                + nl
+                + "4. 不要输出 JSON、表格或报告标题；不要捏造未提及的项目细节；"
+                + nl
+                + "5. 结尾单独一行写：[INTERVIEW_COMPLETE]"
+            )
+            self.agent.messages.append({"role": "system", "content": closing_system})
+            self.agent.refresh_system_memory()
+
+            context_window = self._get_context_window(db)
+            api_messages = list(self.agent.messages)
+            if context_window:
+                api_messages = compress_messages(api_messages, context_window)
+            api_messages = api_messages + [
+                {"role": "user", "content": "（系统）请按指示完成口头收尾与评价。"},
+            ]
+
+            content_buf = ""
+            stream_tools = self._collect_chat_tools(include_function_tools=False)
+            async for token in self.llm.chat_stream(
+                api_messages, temperature=0.7, tools=stream_tools
+            ):
+                content_buf += token
+                yield StreamEvent.make_token(token)
+
+            if INTERVIEW_COMPLETE_MARKER not in content_buf:
+                content_buf = content_buf.rstrip() + "\n" + INTERVIEW_COMPLETE_MARKER
+
+            self.agent.record_assistant_text(content_buf)
+            self.agent.mark_completed()
+            self.agent.save_state(db)
+
+            yield StreamEvent.make_turn_done(
+                content=strip_markers(content_buf),
+                phase_id=self.agent.current_phase().id,
+                is_complete=True,
+                phase_changed=True,
+                emotion=detect_emotion(content_buf) or "smile",
+            )
+        except Exception as e:
+            logger.exception("收尾发言失败: %s", e)
+            yield StreamEvent.make_error(str(e))
+
+
 __all__ = ["InterviewRunner", "StreamEvent", "EventKind"]

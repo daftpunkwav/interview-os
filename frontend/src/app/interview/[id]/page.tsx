@@ -32,6 +32,8 @@ export default function InterviewRoomPage() {
   const [referenceHint, setReferenceHint] = useState("");
   const [hintLoading, setHintLoading] = useState(false);
   const [lastQuestion, setLastQuestion] = useState("");
+  const [finishingUi, setFinishingUi] = useState(false);
+  const hintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sessionMeta, setSessionMeta] = useState({
     avatar_id: "professional_male",
     scene_id: "meeting_room",
@@ -43,6 +45,7 @@ export default function InterviewRoomPage() {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reportNavTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finishingRef = useRef(false);
+  const navigatingRef = useRef(false);
   const playbackGenRef = useRef(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const showOutlineRef = useRef(showOutline);
@@ -99,7 +102,7 @@ export default function InterviewRoomPage() {
   }, [setOnSpeakingChange, setOnAudioLevel, setOnPlaybackBlocked, setOnPlaybackDone]);
 
   const ttsBusy = aiSpeaking || queueDepth > 0 || isQueueBusy();
-  const micEnabled = connected && turnState === "USER_SPEAKING" && !ttsBusy;
+  const micEnabled = connected && turnState === "USER_SPEAKING" && !ttsBusy && !finishingUi;
 
   useEffect(() => {
     api.getSession(sessionId).then((s) => {
@@ -151,13 +154,32 @@ export default function InterviewRoomPage() {
     }
   }, []);
 
+  const clearHintTimeout = useCallback(() => {
+    if (hintTimeoutRef.current) {
+      clearTimeout(hintTimeoutRef.current);
+      hintTimeoutRef.current = null;
+    }
+  }, []);
+
   const requestHint = useCallback((question: string) => {
     if (!showOutlineRef.current || !question.trim()) return;
     setHintLoading(true);
     setReferenceHint("");
     setLastQuestion(question);
+    clearHintTimeout();
+    // 客户端兜底：后端超时/早退/丢包时避免永久转圈
+    hintTimeoutRef.current = setTimeout(() => {
+      setHintLoading(false);
+      setReferenceHint((prev) =>
+        prev.trim()
+          ? prev
+          : "生成较慢或已超时。可先按 STAR：情境 → 任务 → 行动 → 结果（尽量量化）自行组织。",
+      );
+    }, 25_000);
     sendRef.current({ type: "request_hint", question });
-  }, []);
+  }, [clearHintTimeout]);
+
+  useEffect(() => () => clearHintTimeout(), [clearHintTimeout]);
 
   // 10s 静默追问：仅在可开麦、且非 STT 失败冷却期
   useEffect(() => {
@@ -180,8 +202,10 @@ export default function InterviewRoomPage() {
   /* 服务端事件的强类型订阅（on() 风格，handler 中 ``msg`` 已按 ``type`` 收窄）。 */
   useEffect(() => {
     const finishOnceAndNavigate = async () => {
-      if (finishingRef.current) return;
+      if (navigatingRef.current) return;
+      navigatingRef.current = true;
       finishingRef.current = true;
+      setFinishingUi(true);
       stopTTS();
       try {
         await api.finishInterview(sessionId);
@@ -190,7 +214,9 @@ export default function InterviewRoomPage() {
           router.push(`/report/${sessionId}`);
         }, 1500);
       } catch {
+        navigatingRef.current = false;
         finishingRef.current = false;
+        setFinishingUi(false);
         toast.error("报告尚未就绪，请点击「结束面试」重试");
       }
     };
@@ -205,7 +231,10 @@ export default function InterviewRoomPage() {
       if (typeof msg.playback_generation === "number") {
         playbackGenRef.current = msg.playback_generation;
       }
-      requestHint(msg.content);
+      // 收尾完成语不再请求参考提纲
+      if (!msg.is_complete) {
+        requestHint(msg.content);
+      }
       if (msg.is_complete) {
         void finishOnceAndNavigate();
       }
@@ -238,12 +267,17 @@ export default function InterviewRoomPage() {
         .replace(/<think>[\s\S]*?<\/think>/gi, "")
         .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
         .trim();
+      clearHintTimeout();
       setReferenceHint(cleaned);
       setLastQuestion(msg.question || "");
       setHintLoading(false);
     });
     on("error", (msg) => {
       setMessages((prev) => [...prev, { role: "assistant", content: `⚠️ ${msg.message}` }]);
+      if (msg.message.includes("收尾") || msg.message.includes("结束面试")) {
+        finishingRef.current = false;
+        setFinishingUi(false);
+      }
       if (msg.message.includes("未能识别") || msg.message.includes("语音合成失败")) {
         setSttFailUntil(Date.now() + 18_000);
         if (msg.message.includes("语音合成") || msg.message.includes("合成失败")) {
@@ -254,7 +288,7 @@ export default function InterviewRoomPage() {
         }
       }
     });
-  }, [on, playBase64Mp3, router, sessionId, requestHint, stopTTS]);
+  }, [on, playBase64Mp3, router, sessionId, requestHint, stopTTS, clearHintTimeout]);
 
   const { flush, isRecording, partialText, micError } = useAudioRecorder(
     micEnabled,
@@ -267,7 +301,7 @@ export default function InterviewRoomPage() {
     send({ type: "vision_update", face_analysis: analysis });
   }, [send]);
 
-  const canInput = turnState === "USER_SPEAKING" && !ttsBusy;
+  const canInput = turnState === "USER_SPEAKING" && !ttsBusy && !finishingUi;
   const canSend = canInput && (Boolean(inputText.trim()) || isRecording);
 
   const handleEnableAudio = async () => {
@@ -292,18 +326,20 @@ export default function InterviewRoomPage() {
     }
   };
 
-  const handleFinish = async () => {
-    if (finishingRef.current) return;
+  const handleFinish = () => {
+    if (finishingRef.current || navigatingRef.current) return;
     finishingRef.current = true;
+    setFinishingUi(true);
+    // 打断当前播报，让收尾发言重新排队
     stopTTS();
-    try {
-      await api.finishInterview(sessionId);
-      if (reportNavTimerRef.current) clearTimeout(reportNavTimerRef.current);
-      router.push(`/report/${sessionId}`);
-    } catch {
+    const ok = send({ type: "request_finish" });
+    if (!ok) {
       finishingRef.current = false;
-      toast.error("结束面试失败，请检查网络与 LLM 配置后重试");
+      setFinishingUi(false);
+      toast.error("连接已断开，无法结束面试，请重试");
+      return;
     }
+    toast.success("面试官正在做收尾评价…");
   };
 
   const voiceStatus = micError
@@ -434,9 +470,18 @@ export default function InterviewRoomPage() {
         <button
           type="button"
           onClick={handleFinish}
-          className="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-white/10 text-gray-300 hover:text-rose-300 hover:border-rose-400/40 hover:bg-rose-500/10 flex items-center gap-1.5 transition-colors"
+          disabled={finishingUi}
+          className="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-white/10 text-gray-300 hover:text-rose-300 hover:border-rose-400/40 hover:bg-rose-500/10 flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:pointer-events-none"
         >
-          <Flag size={13} /> 结束面试
+          {finishingUi ? (
+            <>
+              <Loader2 size={13} className="animate-spin" /> 收尾评价中…
+            </>
+          ) : (
+            <>
+              <Flag size={13} /> 结束面试
+            </>
+          )}
         </button>
       </header>
 

@@ -232,7 +232,11 @@ export default function InterviewSetupPage() {
                     label="面试官形象"
                     value={config.avatar_id || "professional_male"}
                     options={options.avatars.map((a) => a.id)}
-                    labels={options.avatars.map((a) => a.name)}
+                    labels={options.avatars.map((a) => {
+                      const voiceName =
+                        options.tts_voices?.find((v) => v.id === a.voice)?.name || a.voice;
+                      return voiceName ? `${a.name}（匹配：${voiceName}）` : a.name;
+                    })}
                     onChange={(v) => setConfig({ ...config, avatar_id: v })}
                   />
                 )}
@@ -290,7 +294,18 @@ export default function InterviewSetupPage() {
                   <PreviewRow
                     icon={UserCircle}
                     label="形象"
-                    value={[selectedAvatar?.name, selectedScene?.name].filter(Boolean).join(" · ")}
+                    value={[
+                      selectedAvatar?.name,
+                      selectedAvatar?.voice
+                        ? `音色 ${
+                            options.tts_voices?.find((v) => v.id === selectedAvatar.voice)?.name ||
+                            selectedAvatar.voice
+                          }`
+                        : null,
+                      selectedScene?.name,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   />
                 )}
                 {selectedResume && (

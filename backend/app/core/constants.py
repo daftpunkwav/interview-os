@@ -164,6 +164,7 @@ class WSClientEvent(StrEnum):
     STT_TEXT = "stt_text"
     SILENCE_TIMEOUT = "silence_timeout"
     REQUEST_HINT = "request_hint"
+    REQUEST_FINISH = "request_finish"
     VISION_UPDATE = "vision_update"
 
 

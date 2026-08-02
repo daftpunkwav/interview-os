@@ -304,6 +304,7 @@ export type ClientEvent =
   | { type: "stt_text"; text: string }
   | { type: "silence_timeout" }
   | { type: "request_hint"; question: string }
+  | { type: "request_finish" }
   | { type: "vision_update"; face_analysis: FaceAnalysis }
   | { type: "tts_playback_done"; generation?: number }
   | { type: "pong"; t: number };
@@ -339,6 +340,7 @@ export interface GetReportResponse {
   session_id: number;
   report: InterviewReport;
   duration_minutes?: number;
+  messages_count?: number;
 }
 
 export interface PrepSessionCreateResponse {

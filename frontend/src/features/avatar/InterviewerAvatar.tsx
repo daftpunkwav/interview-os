@@ -86,18 +86,13 @@ export function InterviewerAvatar({
       setMouthOpen(0);
       return;
     }
-    if (audioLevel > 0.02) {
-      setMouthOpen(Math.min(1, 0.2 + audioLevel * 1.2));
+    // 低电平强制闭嘴，不再随机张嘴
+    if (audioLevel < 0.03) {
+      setMouthOpen(0);
       return;
     }
-    // 无电平时退回轻微随机口型，避免完全静止
-    const id = window.setInterval(() => {
-      setMouthOpen(0.12 + Math.random() * 0.55);
-    }, 90);
-    return () => {
-      window.clearInterval(id);
-      setMouthOpen(0);
-    };
+    const shaped = Math.pow(Math.min(1, (audioLevel - 0.03) / 0.75), 0.85);
+    setMouthOpen(Math.min(0.95, 0.12 + shaped * 0.88));
   }, [speaking, audioLevel]);
 
   // 自然眨眼
@@ -119,11 +114,30 @@ export function InterviewerAvatar({
   const sceneBg = SCENE_FALLBACK[sceneId] || SCENE_FALLBACK.meeting_room;
   const sceneImg = SCENES[sceneId] || SCENES.meeting_room;
 
-  const browY = emotion === "serious" ? 2 : emotion === "smile" ? -1 : 0;
-  const mouthBase = emotion === "smile" ? 0.35 : emotion === "serious" ? 0.05 : 0.12;
+  const browY =
+    emotion === "serious" || emotion === "angry"
+      ? 3
+      : emotion === "curious"
+        ? -2
+        : emotion === "smile" || emotion === "happy" || emotion === "encouraging"
+          ? -1
+          : emotion === "concerned" || emotion === "sad"
+            ? 1.5
+            : 0;
+  const eyeSquint =
+    emotion === "smile" || emotion === "happy" || emotion === "encouraging" ? 0.85 : 1;
+  const mouthBase =
+    emotion === "smile" || emotion === "happy"
+      ? 0.35
+      : emotion === "serious" || emotion === "angry"
+        ? 0.04
+        : emotion === "encouraging"
+          ? 0.25
+          : 0.12;
   const mouthH = speaking ? 6 + mouthOpen * 14 : 4 + mouthBase * 8;
   const mouthW = speaking ? 22 + mouthOpen * 6 : 20;
-  const cheekOpacity = emotion === "smile" ? 0.35 : 0.12;
+  const cheekOpacity =
+    emotion === "smile" || emotion === "happy" || emotion === "encouraging" ? 0.35 : 0.12;
 
   return (
     <div className="relative w-full h-full overflow-hidden rounded-xl" style={{ background: sceneBg }}>
@@ -203,10 +217,10 @@ export function InterviewerAvatar({
           />
 
           {/* 眼睛 — 更立体 */}
-          <ellipse cx="80" cy="95" rx="10" ry={7.5 * blink} fill="#fff" />
-          <ellipse cx="120" cy="95" rx="10" ry={7.5 * blink} fill="#fff" />
-          <ellipse cx="80" cy="95" rx="5" ry={5 * blink} fill="#1e293b" />
-          <ellipse cx="120" cy="95" rx="5" ry={5 * blink} fill="#1e293b" />
+          <ellipse cx="80" cy="95" rx="10" ry={7.5 * blink * eyeSquint} fill="#fff" />
+          <ellipse cx="120" cy="95" rx="10" ry={7.5 * blink * eyeSquint} fill="#fff" />
+          <ellipse cx="80" cy="95" rx="5" ry={5 * blink * eyeSquint} fill="#1e293b" />
+          <ellipse cx="120" cy="95" rx="5" ry={5 * blink * eyeSquint} fill="#1e293b" />
           <circle cx="82" cy={93} r={1.8 * blink} fill="#fff" opacity={0.95} />
           <circle cx="122" cy={93} r={1.8 * blink} fill="#fff" opacity={0.95} />
           <path

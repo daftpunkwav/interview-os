@@ -41,7 +41,12 @@ from app.services.interview.events import EventKind, StreamEvent
 from app.services.interview.runner import InterviewRunner
 from app.services.llm.client import LLMClient
 from app.services.stt.whisper import transcribe_pcm_base64_async, warmup_whisper
-from app.services.tts.edge import synthesize_to_base64
+from app.services.tts.edge import (
+    extract_emotion,
+    should_flush_sentence_buffer,
+    synthesize_to_base64,
+)
+from app.services.tts.voice_resolve import VoiceProsody, resolve_prosody, with_emotion
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -111,17 +116,27 @@ class _SentenceTTSQueue:
     _MAX_QUEUE_SIZE: int = 50
 
     def __init__(self) -> None:
-        self._queue: asyncio.Queue[str | None] = asyncio.Queue()
+        # (text, emotion) ；None 为哨兵结束
+        self._queue: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
         self._worker_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
         self._dropped_count = 0
-        self._voice: str = settings.tts_voice
+        self._prosody: VoiceProsody = VoiceProsody(voice=settings.tts_voice)
         self._fail_count = 0
         self._on_sent: Any = None
 
     def set_voice(self, voice: str) -> None:
+        """兼容旧调用：仅更新音色，保留现有 rate/pitch。"""
         if voice:
-            self._voice = voice
+            self._prosody = VoiceProsody(
+                voice=voice,
+                rate=self._prosody.rate,
+                pitch=self._prosody.pitch,
+            )
+
+    def set_prosody(self, prosody: VoiceProsody) -> None:
+        """绑定本场会话的基线音色与韵律。"""
+        self._prosody = prosody
 
     def set_on_sent(self, callback) -> None:
         """每成功发出一条 tts_audio 时回调（用于等待客户端播完）。"""
@@ -141,7 +156,8 @@ class _SentenceTTSQueue:
         if self._dropped_count:
             logger.info("TTS 队列丢弃 %d 句(超过上限)", self._dropped_count)
 
-    async def enqueue(self, sentence: str) -> None:
+    async def enqueue(self, sentence: str, emotion: str | None = None) -> None:
+        emo = (emotion or extract_emotion(sentence) or "neutral").strip().lower()
         clean = strip_markers(sentence).strip()
         if not clean:
             return
@@ -153,12 +169,12 @@ class _SentenceTTSQueue:
                 self._dropped_count += 1
             except asyncio.QueueEmpty:
                 pass
-        await self._queue.put(clean)
+        await self._queue.put((clean, emo))
 
-    async def flush_remainder(self, sentence: str) -> None:
+    async def flush_remainder(self, sentence: str, emotion: str | None = None) -> None:
         """回合结束时把残留 buffer 入队，并等待队列全部处理完。"""
         if sentence.strip():
-            await self.enqueue(sentence)
+            await self.enqueue(sentence, emotion=emotion)
         # join：等 worker 对每个 put 调用 task_done，真正排空队列
         await self._queue.join()
 
@@ -168,12 +184,16 @@ class _SentenceTTSQueue:
             try:
                 if item is None:
                     return
+                text, emotion = item
+                p = with_emotion(self._prosody, emotion)
                 async with self._lock:
                     try:
-                        audio_b64 = await synthesize_to_base64(item, self._voice)
+                        audio_b64 = await synthesize_to_base64(
+                            text, p.voice, rate=p.rate, pitch=p.pitch
+                        )
                     except Exception as e:
                         self._fail_count += 1
-                        logger.error("Edge TTS 失败 voice=%s: %s", self._voice, e)
+                        logger.error("Edge TTS 失败 voice=%s: %s", p.voice, e)
                         if self._fail_count <= 3:
                             try:
                                 await self._send(
@@ -185,7 +205,7 @@ class _SentenceTTSQueue:
                         continue
                     if audio_b64:
                         try:
-                            await self._send("tts_audio", data=audio_b64, sentence=item)
+                            await self._send("tts_audio", data=audio_b64, sentence=text)
                             if callable(self._on_sent):
                                 self._on_sent()
                         except Exception as e:
@@ -218,6 +238,7 @@ class InterviewWSHandler:
         self.llm: LLMClient | None = None
         self.runner: InterviewRunner | None = None
         self.tts_voice = settings.tts_voice
+        self._session_prosody: VoiceProsody = VoiceProsody(voice=settings.tts_voice)
         self._whisper_model = settings.whisper_model
         self._tts_queue = _SentenceTTSQueue()
         # 被同 session 新连接顶替时置 True，主循环应尽快退出
@@ -232,6 +253,7 @@ class InterviewWSHandler:
         # 播放握手世代：重连/新回合递增，避免旧 done 误放行或丢信号后卡麦
         self._playback_generation: int = 0
         self._awaiting_playback_gen: int = 0
+        self._closing: bool = False
 
     # ------------------------------------------------------------------
     # 传输层工具
@@ -291,15 +313,34 @@ class InterviewWSHandler:
             self.runner = InterviewRunner(session, self.llm, self.agent, rag=rag)
 
             row = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
+            settings_voice = None
             if row:
                 if row.tts_voice:
+                    settings_voice = row.tts_voice
                     self.tts_voice = row.tts_voice
                 self._whisper_model = row.stt_model or settings.whisper_model
             else:
                 self._whisper_model = settings.whisper_model
 
-            self._tts_queue.set_voice(self.tts_voice)
+            # 形象优先绑定音色，并按人设/严厉度设定基线语速音高
+            self._session_prosody = resolve_prosody(
+                avatar_id=getattr(session, "avatar_id", None),
+                personality=getattr(session, "personality", None),
+                strictness=getattr(session, "strictness", None),
+                emotion=None,
+                llm_settings_voice=settings_voice or self.tts_voice,
+            )
+            self.tts_voice = self._session_prosody.voice
+            self._tts_queue.set_prosody(self._session_prosody)
             self._tts_queue.set_on_sent(self._mark_tts_sent)
+            logger.info(
+                "TTS 会话绑定 sid=%s avatar=%s voice=%s rate=%s pitch=%s",
+                self.session_id,
+                getattr(session, "avatar_id", None),
+                self._session_prosody.voice,
+                self._session_prosody.rate,
+                self._session_prosody.pitch,
+            )
             # 预热 Whisper，降低首答卡顿（失败可忽略）
             asyncio.create_task(warmup_whisper(self._whisper_model))
 
@@ -425,7 +466,10 @@ class InterviewWSHandler:
                 await self.send("stt_final", text=text)
                 await self._process_user_text(text, data, db, session)
         elif msg_type == "request_hint":
-            await self._on_request_hint(data, db, session)
+            # 不阻塞主循环：提纲生成与面试回合并行，避免卡住开麦/心跳
+            asyncio.create_task(self._on_request_hint(data, db, session))
+        elif msg_type == "request_finish":
+            await self._on_request_finish(db, session)
         elif msg_type == "tts_playback_done":
             # 仅当世代匹配时放行，防止重连后旧/乱序 done 干扰下一回合
             client_gen = data.get("generation")
@@ -557,20 +601,28 @@ class InterviewWSHandler:
         sentence_buf = ""
         think_filter = ThinkStreamFilter()
         last: StreamEvent | None = None
+        turn_emotion = "neutral"
         async for event in events:
             if event.kind == EventKind.TOKEN:
                 visible = think_filter.feed(event.token or "")
                 if visible:
                     await self.send("assistant_token", token=visible)
                     sentence_buf += visible
-                    if any(sentence_buf.endswith(p) for p in ["。", "！", "？", "!", "?", "\n"]):
-                        await self._tts_queue.enqueue(sentence_buf)
+                    # 同步捕获句内情绪标记供后续句子使用
+                    if "[emotion:" in visible:
+                        turn_emotion = extract_emotion(sentence_buf) or turn_emotion
+                    if should_flush_sentence_buffer(sentence_buf):
+                        await self._tts_queue.enqueue(
+                            sentence_buf, emotion=turn_emotion
+                        )
                         sentence_buf = ""
             elif event.kind == EventKind.TURN_COMPLETE:
                 tail = think_filter.flush()
                 if tail:
                     sentence_buf += tail
                     await self.send("assistant_token", token=tail)
+                if event.emotion:
+                    turn_emotion = event.emotion
                 clean = strip_markers(event.content or "")
                 await self.send(
                     "assistant_done",
@@ -581,9 +633,11 @@ class InterviewWSHandler:
                     playback_generation=self._awaiting_playback_gen,
                 )
                 if sentence_buf.strip():
-                    await self._tts_queue.enqueue(sentence_buf)
+                    await self._tts_queue.enqueue(
+                        sentence_buf, emotion=turn_emotion
+                    )
                     sentence_buf = ""
-                await self._tts_queue.flush_remainder("")
+                await self._tts_queue.flush_remainder("", emotion=turn_emotion)
                 last = event
             elif event.kind == EventKind.ERROR:
                 await self.send("error", message=event.error)
@@ -622,6 +676,50 @@ class InterviewWSHandler:
         else:
             await self._open_mic_after_playback()
 
+    async def _on_request_finish(self, db: Session, session: InterviewSession) -> None:
+        """候选人主动结束：流式口头致谢与评价，再生成报告。"""
+        if self._closing:
+            return
+        if session.status == SessionStatus.COMPLETED.value:
+            await self.send(
+                "assistant_done",
+                content="面试已结束，正在生成报告。",
+                phase=session.current_phase or "summary",
+                is_complete=True,
+                emotion="smile",
+            )
+            return
+        if self.runner is None or self.llm is None:
+            await self.send("error", message="面试引擎未就绪，无法收尾")
+            return
+
+        self._closing = True
+        await self.set_turn(TurnState.PROCESSING)
+        await self.set_turn(TurnState.AI_SPEAKING)
+        last = await self._stream_events_with_tts(self.runner.stream_closing(db))
+        if last is None or last.kind == EventKind.ERROR:
+            self._closing = False
+            await self._open_mic_after_playback()
+            await self.send(
+                "error",
+                message="收尾发言失败，请重试「结束面试」或检查 LLM 配置",
+            )
+            return
+
+        await self._wait_client_playback()
+        await self.set_turn(TurnState.IDLE)
+        try:
+            await generate_and_persist_report(session, self.llm, db)
+        except Exception as e:
+            logger.exception(
+                "收尾后报告生成失败 sid=%s: %s", self.session_id, e
+            )
+            await self.send(
+                "error",
+                message="口头收尾已完成，但报告生成失败，请点击「结束面试」重试",
+            )
+            self._closing = False
+
     # ------------------------------------------------------------------
     # runner 事件 → 前端 WS 事件（仅非流式路径保留；主流式走 _stream_events_with_tts）
     # ------------------------------------------------------------------
@@ -644,15 +742,53 @@ class InterviewWSHandler:
     # 参考提纲
     # ------------------------------------------------------------------
 
+    _HINT_TIMEOUT_SEC: float = 20.0
+    _HINT_CTX_CHARS: int = 1200
+
     async def _on_request_hint(self, data: dict[str, Any], db: Session, session: InterviewSession) -> None:
         question = strip_think_blocks((data.get("question") or "").strip())
         question = strip_markers(question)
+        # 只取末段提问，避免把整段面试官独白塞进二次 LLM
+        question = self._extract_hint_question(question)
         if not question or not self.llm:
+            await self.send(
+                "reference_hint",
+                question=question or "",
+                content="暂时无法生成参考回答，请根据你的实际经历组织语言。",
+            )
             return
         await self.send("reference_hint_loading", question=question)
-        hint = await self._generate_reference_hint(question, db, session)
-        hint = strip_markers(strip_think_blocks(hint))
+        try:
+            hint = await asyncio.wait_for(
+                self._generate_reference_hint(question, db, session),
+                timeout=self._HINT_TIMEOUT_SEC,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("参考提纲超时 sid=%s", self.session_id)
+            hint = "生成超时。可先按 STAR 结构自拟要点：情境 → 任务 → 行动 → 结果（尽量带量化）。"
+        except Exception as e:
+            logger.warning("参考提纲异常 sid=%s: %s", self.session_id, e)
+            hint = "暂时无法生成参考回答，请根据你的实际经历组织语言。"
+        hint = strip_markers(strip_think_blocks(hint or ""))
+        if not hint.strip():
+            hint = "暂时无法生成参考回答，请根据你的实际经历组织语言。"
         await self.send("reference_hint", question=question, content=hint)
+
+    @staticmethod
+    def _extract_hint_question(text: str) -> str:
+        """从面试官整段回复中提取末尾提问，控制二次 LLM 输入体积。"""
+        t = (text or "").strip()
+        if not t:
+            return ""
+        # 按空行分段，优先最后一段；否则整段截断
+        parts = [p.strip() for p in t.split("\n") if p.strip()]
+        if not parts:
+            return t[:500]
+        # 自末尾向前找含问号的句子所在行
+        for line in reversed(parts):
+            if any(q in line for q in ("?", "？", "吗", "呢", "请", "介绍", "聊聊", "说说")):
+                return line[:500]
+        return parts[-1][:500]
 
     async def _generate_reference_hint(
         self, question: str, db: Session, session: InterviewSession
@@ -661,7 +797,7 @@ class InterviewWSHandler:
         system_ctx = ""
         for m in self.agent.messages:
             if m.get("role") == "system":
-                system_ctx = str(m.get("content", ""))[:4000]
+                system_ctx = str(m.get("content", ""))[: self._HINT_CTX_CHARS]
                 break
         from app.core.prompts import with_agent_output_rules
 
@@ -676,7 +812,10 @@ class InterviewWSHandler:
             },
             {
                 "role": "user",
-                "content": f"候选人背景摘要：\n{system_ctx}\n\n面试官问题：{question}\n\n请给出参考回答提纲：",
+                "content": (
+                    f"候选人背景摘要：\n{system_ctx or '（暂无详细档案）'}\n\n"
+                    f"面试官问题：{question}\n\n请给出参考回答提纲："
+                ),
             },
         ]
         try:
@@ -714,8 +853,13 @@ class InterviewWSHandler:
         clean = strip_markers(sentence)
         if not clean:
             return
+        base = getattr(self, "_session_prosody", None) or VoiceProsody(voice=self.tts_voice)
+        emo = extract_emotion(sentence)
+        p = with_emotion(base, emo)
         try:
-            audio_b64 = await synthesize_to_base64(clean, self.tts_voice)
+            audio_b64 = await synthesize_to_base64(
+                clean, p.voice, rate=p.rate, pitch=p.pitch
+            )
         except Exception as e:
             logger.error("Edge TTS 短句失败: %s", e)
             await self.send(

@@ -20,16 +20,15 @@ def test_retry_now_uses_reconnect_key() -> None:
     assert "reconnectKey," in text or "reconnectKey]" in text
 
 
-def test_handle_finish_does_not_swallow_and_navigate() -> None:
+def test_handle_finish_requests_closing_then_navigates() -> None:
     text = _ROOM.read_text(encoding="utf-8")
     assert "handleFinish" in text
+    assert "request_finish" in text
     assert "toast.error" in text
     assert "finishInterview" in text
-    # 失败路径不应在 catch 外无条件 push
-    # 成功后再 router.push
     assert "router.push" in text
-    # is_complete 也先 finish 再跳转
     assert "finishInterview(sessionId)" in text
+    assert "is_complete" in text
 
 
 def test_constants_encryption_version_v2() -> None:
