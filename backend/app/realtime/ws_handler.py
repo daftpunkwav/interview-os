@@ -26,6 +26,7 @@ from app.agents.vision.agent import VisionAgent
 from app.config import get_settings
 from app.core.constants import SessionStatus
 from app.core.logging import get_trace_id, set_trace_id
+from app.core.session_auth import tokens_match
 from app.database import SessionLocal
 from app.models import InterviewSession, LLMSettings
 from app.realtime.events import TurnState
@@ -204,11 +205,14 @@ class _SentenceTTSQueue:
 class InterviewWSHandler:
     """管理单个面试 WebSocket 连接的生命周期。"""
 
-    def __init__(self, websocket: WebSocket, session_id: int):
+    def __init__(self, websocket: WebSocket, session_id: int, access_token: str = ""):
         self.ws = websocket
         self.session_id = session_id
+        self._client_access_token = (access_token or "").strip()
         self.turn_state = TurnState.IDLE
         self.audio_buffer: list[str] = []
+        # 累计已缓冲音频解码字节，避免每 chunk 全量重解码
+        self._audio_buffer_bytes: int = 0
         self.orchestrator = InterviewOrchestrator()
         self.agent: InterviewAgent | None = None
         self.llm: LLMClient | None = None
@@ -225,6 +229,9 @@ class InterviewWSHandler:
         self._playback_done = asyncio.Event()
         self._tts_sent_this_turn = False
         self._playback_wait_timeout_sec: float = 120.0
+        # 播放握手世代：重连/新回合递增，避免旧 done 误放行或丢信号后卡麦
+        self._playback_generation: int = 0
+        self._awaiting_playback_gen: int = 0
 
     # ------------------------------------------------------------------
     # 传输层工具
@@ -232,6 +239,12 @@ class InterviewWSHandler:
 
     async def send(self, msg_type: str, **payload: Any) -> None:
         await self.ws.send_json({"type": msg_type, **payload})
+
+    async def _tts_send(self, msg_type: str, **payload: Any) -> None:
+        """TTS 通道发送：附带 playback_generation 供客户端回传。"""
+        if msg_type == "tts_audio":
+            payload.setdefault("playback_generation", self._awaiting_playback_gen)
+        await self.send(msg_type, **payload)
 
     async def set_turn(self, state: TurnState) -> None:
         self.turn_state = state
@@ -255,6 +268,11 @@ class InterviewWSHandler:
             ).first()
             if not session:
                 await self.send("error", message="面试会话不存在")
+                return
+            if not tokens_match(
+                getattr(session, "access_token", None), self._client_access_token
+            ):
+                await self.send("error", message="无权访问该面试会话")
                 return
 
             self.llm = LLMClient.from_db(db)
@@ -287,12 +305,15 @@ class InterviewWSHandler:
 
             # 状态判断统一走枚举值
             if session.status == SessionStatus.PENDING.value:
-                await self._tts_queue.start(self.send)
+                await self._tts_queue.start(self._tts_send)
                 await self.set_turn(TurnState.AI_SPEAKING)
                 await self._stream_events_with_tts(self._consume_runner_opening(db))
                 await self._open_mic_after_playback()
             elif session.status == SessionStatus.ACTIVE.value:
-                await self._tts_queue.start(self.send)
+                await self._tts_queue.start(self._tts_send)
+                # 重连：提升世代并直接开麦，避免等待已丢失的 playback_done
+                self._begin_playback_wait()
+                self._tts_sent_this_turn = False
                 await self.set_turn(TurnState.USER_SPEAKING)
             else:
                 await self.send("error", message="面试已结束")
@@ -362,31 +383,25 @@ class InterviewWSHandler:
         if msg_type == "audio_chunk":
             chunk = data.get("data", "")
             if chunk:
-                # 上限保护：先估算累计解码后字节数，超阈拒绝新 chunk 并清空
-                # 使用 b64decode 自身的 padding 容错，避免手算 padding
-                try:
-                    current_bytes = sum(
-                        len(base64.b64decode(c, validate=False))
-                        for c in self.audio_buffer
-                    )
-                except Exception:
-                    current_bytes = 0
                 try:
                     new_bytes = len(base64.b64decode(chunk, validate=False))
                 except Exception:
                     new_bytes = 0
-                if current_bytes + new_bytes > _AUDIO_BUFFER_MAX_BYTES:
+                if self._audio_buffer_bytes + new_bytes > _AUDIO_BUFFER_MAX_BYTES:
                     logger.warning(
                         "audio_buffer 超上限 session=%s bytes=%s",
-                        self.session_id, current_bytes + new_bytes,
+                        self.session_id,
+                        self._audio_buffer_bytes + new_bytes,
                     )
                     await self.send(
                         "error",
                         message="音频缓存超限，请先结束当前回合",
                     )
                     self.audio_buffer = []
+                    self._audio_buffer_bytes = 0
                     return
                 self.audio_buffer.append(chunk)
+                self._audio_buffer_bytes += new_bytes
         elif msg_type == "stt_text":
             text = data.get("text", "").strip()
             if text:
@@ -412,15 +427,26 @@ class InterviewWSHandler:
         elif msg_type == "request_hint":
             await self._on_request_hint(data, db, session)
         elif msg_type == "tts_playback_done":
-            self._playback_done.set()
+            # 仅当世代匹配时放行，防止重连后旧/乱序 done 干扰下一回合
+            client_gen = data.get("generation")
+            if client_gen is None or client_gen == self._awaiting_playback_gen:
+                self._playback_done.set()
 
     def _mark_tts_sent(self) -> None:
         self._tts_sent_this_turn = True
+
+    def _begin_playback_wait(self) -> None:
+        """新回合开始：提升世代并清空完成信号。"""
+        self._playback_generation += 1
+        self._awaiting_playback_gen = self._playback_generation
+        self._tts_sent_this_turn = False
+        self._playback_done.clear()
 
     async def _wait_client_playback(self) -> None:
         """若本回合发过 TTS，则等待客户端 tts_playback_done（或超时）。"""
         if not self._tts_sent_this_turn:
             return
+        wait_gen = self._awaiting_playback_gen
         # 若客户端已提前播完并上报，则不再 clear，直接放行
         if not self._playback_done.is_set():
             try:
@@ -430,12 +456,15 @@ class InterviewWSHandler:
                 )
             except asyncio.TimeoutError:
                 logger.warning(
-                    "tts_playback_done 超时 sid=%s，继续",
+                    "tts_playback_done 超时 sid=%s gen=%s，继续",
                     self.session_id,
+                    wait_gen,
                 )
         await asyncio.sleep(0.15)
-        self._tts_sent_this_turn = False
-        self._playback_done.clear()
+        # 仅清理本世代等待，避免覆盖更新回合
+        if self._awaiting_playback_gen == wait_gen:
+            self._tts_sent_this_turn = False
+            self._playback_done.clear()
 
     async def _open_mic_after_playback(self) -> None:
         """服务端合成发完后，等客户端播完（或超时）再切 USER_SPEAKING，防回采。"""
@@ -466,6 +495,7 @@ class InterviewWSHandler:
         elif self.audio_buffer:
             pcm = "".join(self.audio_buffer)
             self.audio_buffer = []
+            self._audio_buffer_bytes = 0
             text = await transcribe_pcm_base64_async(pcm, model_size=self._whisper_model)
             if text:
                 await self.send("stt_final", text=text)
@@ -523,8 +553,7 @@ class InterviewWSHandler:
 
     async def _stream_events_with_tts(self, events) -> StreamEvent | None:
         """按句入队 TTS，并剥离 think；返回最后一个 TURN_COMPLETE/ERROR。"""
-        self._tts_sent_this_turn = False
-        self._playback_done.clear()
+        self._begin_playback_wait()
         sentence_buf = ""
         think_filter = ThinkStreamFilter()
         last: StreamEvent | None = None
@@ -549,6 +578,7 @@ class InterviewWSHandler:
                     phase=event.phase_id,
                     is_complete=event.is_complete,
                     emotion=event.emotion,
+                    playback_generation=self._awaiting_playback_gen,
                 )
                 if sentence_buf.strip():
                     await self._tts_queue.enqueue(sentence_buf)
@@ -672,8 +702,7 @@ class InterviewWSHandler:
         nudge = self.orchestrator.build_silence_nudge(session.personality, session.strictness)
         await self.set_turn(TurnState.PROCESSING)
         await self.send("silence_nudge", content=nudge)
-        self._tts_sent_this_turn = False
-        self._playback_done.clear()
+        self._begin_playback_wait()
         await self._speak_one(nudge)
         await self._open_mic_after_playback()
 
@@ -695,7 +724,7 @@ class InterviewWSHandler:
             )
             return
         if audio_b64:
-            await self.send("tts_audio", data=audio_b64, sentence=clean)
+            await self._tts_send("tts_audio", data=audio_b64, sentence=clean)
             self._mark_tts_sent()
         else:
             await self.send(

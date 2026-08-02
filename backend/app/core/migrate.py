@@ -65,6 +65,7 @@ MIGRATIONS: dict[str, list[str]] = {
         "ALTER TABLE interview_sessions ADD COLUMN avatar_id VARCHAR(50) DEFAULT 'professional_male'",
         "ALTER TABLE interview_sessions ADD COLUMN scene_id VARCHAR(50) DEFAULT 'meeting_room'",
         "ALTER TABLE interview_sessions ADD COLUMN token_usage INTEGER DEFAULT 0",
+        "ALTER TABLE interview_sessions ADD COLUMN access_token VARCHAR(64) DEFAULT ''",
     ],
     "prep_sessions": [
         "ALTER TABLE prep_sessions ADD COLUMN status VARCHAR(20) DEFAULT 'active'",

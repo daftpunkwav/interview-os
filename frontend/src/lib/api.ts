@@ -31,6 +31,7 @@ import type {
   UserProfile,
 } from "@/types";
 import { getEnv } from "@/lib/env";
+import { interviewAuthHeaders, saveSessionToken } from "@/lib/sessionToken";
 
 /* ====================================================================== */
 /* 流式 URL 解析                                                            */
@@ -340,21 +341,28 @@ export const api = {
   getOptions: () => request<Options>("/v1/options"),
 
   /* 面试 */
-  createSession: (config: InterviewConfig) =>
-    request<InterviewSession>("/v1/interview/sessions", {
+  createSession: async (config: InterviewConfig) => {
+    const session = await request<InterviewSession>("/v1/interview/sessions", {
       method: "POST",
       body: JSON.stringify(config),
-    }),
+    });
+    if (session.access_token) {
+      saveSessionToken(session.id, session.access_token);
+    }
+    return session;
+  },
   listSessions: () => request<InterviewSession[]>("/v1/interview/sessions"),
   getSession: (id: number) =>
     request<InterviewSession>(`/v1/interview/sessions/${id}`),
   startInterview: (id: number) =>
     request<StartInterviewResponse>(`/v1/interview/sessions/${id}/start`, {
       method: "POST",
+      headers: interviewAuthHeaders(id),
     }),
   sendMessage: (id: number, content: string, faceAnalysis?: FaceAnalysis, imageBase64?: string) =>
     request<SendMessageResponse>(`/v1/interview/sessions/${id}/message`, {
       method: "POST",
+      headers: interviewAuthHeaders(id),
       body: JSON.stringify({
         content,
         face_analysis: faceAnalysis,
@@ -362,10 +370,14 @@ export const api = {
       }),
     }),
   getMessages: (id: number) =>
-    request<ChatMessage[]>(`/v1/interview/sessions/${id}/messages`),
+    request<ChatMessage[]>(`/v1/interview/sessions/${id}/messages`, {
+      headers: interviewAuthHeaders(id),
+    }),
   finishInterview: (id: number) =>
     request<FinishInterviewResponse>(`/v1/interview/sessions/${id}/finish`, {
       method: "POST",
+      headers: interviewAuthHeaders(id),
+      timeoutMs: LLM_HEAVY_TIMEOUT_MS,
     }),
 
   /* 报告 */

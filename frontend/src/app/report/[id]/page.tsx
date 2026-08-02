@@ -15,14 +15,49 @@ export default function ReportPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
+  const loadReport = () => {
+    setLoading(true);
+    setError("");
     api.getReport(sessionId)
       .then((data) => {
         setReport(data.report);
         setDuration(data.duration_minutes);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 8;
+
+    const tick = () => {
+      attempts += 1;
+      api.getReport(sessionId)
+        .then((data) => {
+          if (cancelled) return;
+          setReport(data.report);
+          setDuration(data.duration_minutes);
+          setError("");
+          setLoading(false);
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          const msg = e instanceof Error ? e.message : String(e);
+          // 报告未就绪：短轮询；其它错误直接展示
+          if (attempts < maxAttempts && /尚未|不存在|404|生成/.test(msg)) {
+            setTimeout(tick, 2000);
+            return;
+          }
+          setError(msg);
+          setLoading(false);
+        });
+    };
+    tick();
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId]);
 
   if (loading) {
@@ -37,7 +72,16 @@ export default function ReportPage() {
     return (
       <div className="page-shell text-center py-16">
         <p className="text-[var(--muted)] mb-4">{error || "报告不可用"}</p>
-        <Link href="/interview" className="btn-primary">返回面试</Link>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            type="button"
+            className="btn-secondary inline-flex items-center gap-2"
+            onClick={loadReport}
+          >
+            <RefreshCw size={16} /> 重新加载
+          </button>
+          <Link href="/interview" className="btn-primary">返回面试</Link>
+        </div>
       </div>
     );
   }
@@ -146,7 +190,7 @@ function RadarChart({ scores }: { scores: import("@/types").ScoreBreakdown }) {
   const cx = 120;
   const cy = 120;
   const r = 80;
-  const values = dims.map((d) => (scores[d.key] ?? scores.communication) / 100);
+  const values = dims.map((d) => (scores[d.key] ?? 0) / 100);
   const points = dims.map((_, i) => {
     const angle = (Math.PI * 2 * i) / dims.length - Math.PI / 2;
     const v = values[i] ?? 0;

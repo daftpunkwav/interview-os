@@ -45,6 +45,7 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
     const [cameraOn, setCameraOn] = useState(false);
     const streamRef = useRef<MediaStream | null>(null);
     const faceDetectorRef = useRef<BrowserFaceDetector | null>(null);
+    const acquiringRef = useRef(false);
     const [faceStatus, setFaceStatus] = useState<string>("未检测");
     const jitterHistory = useRef<number[]>([]);
     const isDark = variant === "dark";
@@ -65,8 +66,17 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
     }));
 
     const startCamera = async () => {
+      if (acquiringRef.current) return;
+      acquiringRef.current = true;
       try {
+        // 先停旧流，避免并发 getUserMedia 泄漏
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        if (!acquiringRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -82,12 +92,18 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
         }
       } catch {
         setFaceStatus("摄像头权限被拒绝");
+      } finally {
+        acquiringRef.current = false;
       }
     };
 
     const stopCamera = () => {
+      acquiringRef.current = false;
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
       faceDetectorRef.current = null;
       setCameraOn(false);
       setFaceStatus("未检测");

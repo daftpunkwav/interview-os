@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, SessionStatus
 from app.core.ratelimit import rate_limit_dep
+from app.core.session_auth import assert_session_token, extract_token, new_access_token
 from app.database import get_db
 from app.models import InterviewSession
 from app.schemas import (
@@ -33,6 +34,7 @@ _CHAT_MSG_ADAPTER: TypeAdapter[list[ChatMessage]] = TypeAdapter(list[ChatMessage
 
 @router.post("/sessions", response_model=InterviewSessionResponse)
 def create_session(config: InterviewConfig, db: Session = Depends(get_db)):
+    token = new_access_token()
     session = InterviewSession(
         role=config.role,
         level=config.level,
@@ -46,11 +48,12 @@ def create_session(config: InterviewConfig, db: Session = Depends(get_db)):
         scene_id=config.scene_id,
         status=SessionStatus.PENDING.value,
         current_phase="identity_check",
+        access_token=token,
     )
     db.add(session)
     db.commit()
     db.refresh(session)
-    return _to_response(session)
+    return _to_response(session, include_token=True)
 
 
 @router.get("/sessions", response_model=list[InterviewSessionResponse])
@@ -96,10 +99,15 @@ async def _collect_turn_result(stream) -> tuple[str, bool]:
         )
     ],
 )
-async def start_interview(session_id: int, db: Session = Depends(get_db)):
+async def start_interview(
+    session_id: int,
+    db: Session = Depends(get_db),
+    access: str | None = Depends(extract_token),
+):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="面试会话不存在")
+    assert_session_token(session, access)
     if session.status not in (SessionStatus.PENDING.value, SessionStatus.ACTIVE.value):
         raise HTTPException(status_code=400, detail="面试已结束")
 
@@ -134,10 +142,12 @@ async def send_message(
     session_id: int,
     body: InterviewMessageRequest,
     db: Session = Depends(get_db),
+    access: str | None = Depends(extract_token),
 ):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="面试会话不存在")
+    assert_session_token(session, access)
     if session.status == SessionStatus.COMPLETED.value:
         raise HTTPException(status_code=400, detail="面试已结束")
 
@@ -187,11 +197,16 @@ async def send_message(
         )
     ],
 )
-async def finish_interview(session_id: int, db: Session = Depends(get_db)):
+async def finish_interview(
+    session_id: int,
+    db: Session = Depends(get_db),
+    access: str | None = Depends(extract_token),
+):
     """提前结束面试并生成报告。"""
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="面试会话不存在")
+    assert_session_token(session, access)
     if (
         session.status == SessionStatus.COMPLETED.value
         and session.report
@@ -215,10 +230,15 @@ async def finish_interview(session_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/sessions/{session_id}/messages")
-def get_messages(session_id: int, db: Session = Depends(get_db)):
+def get_messages(
+    session_id: int,
+    db: Session = Depends(get_db),
+    access: str | None = Depends(extract_token),
+):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="面试会话不存在")
+    assert_session_token(session, access)
     raw = json.loads(session.messages or "[]")
     # 强校验：仅保留符合 ChatMessage 结构的合法项；坏数据降级为空列表
     try:
@@ -229,7 +249,9 @@ def get_messages(session_id: int, db: Session = Depends(get_db)):
         return []
 
 
-def _to_response(session: InterviewSession) -> InterviewSessionResponse:
+def _to_response(
+    session: InterviewSession, *, include_token: bool = False
+) -> InterviewSessionResponse:
     return InterviewSessionResponse(
         id=session.id,
         role=session.role,
@@ -247,4 +269,5 @@ def _to_response(session: InterviewSession) -> InterviewSessionResponse:
         started_at=session.started_at,
         ended_at=session.ended_at,
         created_at=session.created_at,
+        access_token=(session.access_token if include_token else None),
     )

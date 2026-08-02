@@ -16,7 +16,8 @@ def test_retry_now_uses_reconnect_key() -> None:
     assert "retryNow" in text
     # effect 依赖必须包含 reconnectKey
     assert "reconnectKey" in text
-    assert "[sessionId, maxRetries, reconnectKey]" in text or "reconnectKey]" in text
+    assert "sessionId" in text and "maxRetries" in text
+    assert "reconnectKey," in text or "reconnectKey]" in text
 
 
 def test_handle_finish_does_not_swallow_and_navigate() -> None:

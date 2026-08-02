@@ -5,13 +5,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 /**
  * 顺序播放 base64 MP3；支持用户手势解锁、失败提示、音量电平（供口型）。
  * 队列清空后触发 onPlaybackDone（用于回传 tts_playback_done）。
+ * 使用 epoch：stop()/卸载后旧 Promise 链不再创建 Audio / 播放。
  */
 export function useTTSPlayer() {
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const speakingRef = useRef(false);
   const pendingCountRef = useRef(0);
   const unlockedRef = useRef(false);
+  const epochRef = useRef(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const levelRafRef = useRef<number | null>(null);
@@ -93,6 +96,12 @@ export function useTTSPlayer() {
   }, []);
 
   const _releaseCurrent = useCallback(() => {
+    try {
+      sourceNodeRef.current?.disconnect();
+    } catch {
+      /* noop */
+    }
+    sourceNodeRef.current = null;
     const a = currentAudioRef.current;
     if (!a) return;
     try {
@@ -114,6 +123,7 @@ export function useTTSPlayer() {
 
   const playBase64Mp3 = useCallback(
     (b64: string) => {
+      const jobEpoch = epochRef.current;
       pendingCountRef.current += 1;
       setQueueDepth(pendingCountRef.current);
       const job = (prev: Promise<void>) =>
@@ -121,6 +131,11 @@ export function useTTSPlayer() {
           () =>
             new Promise<void>((resolve) => {
               const finish = () => {
+                // 过期 epoch：不碰共享计数（stop 已清零）
+                if (jobEpoch !== epochRef.current) {
+                  resolve();
+                  return;
+                }
                 pendingCountRef.current = Math.max(0, pendingCountRef.current - 1);
                 setQueueDepth(pendingCountRef.current);
                 if (currentAudioRef.current) {
@@ -132,6 +147,11 @@ export function useTTSPlayer() {
                 _notifyIfIdle();
                 resolve();
               };
+
+              if (jobEpoch !== epochRef.current) {
+                resolve();
+                return;
+              }
 
               if (!b64) {
                 finish();
@@ -154,6 +174,7 @@ export function useTTSPlayer() {
                   analyser.connect(ctx.destination);
                 }
                 const src = ctx.createMediaElementSource(audio);
+                sourceNodeRef.current = src;
                 src.connect(analyserRef.current!);
                 void ctx.resume();
                 _startLevelLoop();
@@ -172,6 +193,15 @@ export function useTTSPlayer() {
               };
               audio.play().then(
                 () => {
+                  if (jobEpoch !== epochRef.current) {
+                    try {
+                      audio.pause();
+                    } catch {
+                      /* noop */
+                    }
+                    finish();
+                    return;
+                  }
                   unlockedRef.current = true;
                   onBlockedRef.current(false);
                   lastFailedB64Ref.current = null;
@@ -199,6 +229,7 @@ export function useTTSPlayer() {
   }, [playBase64Mp3]);
 
   const stop = useCallback(() => {
+    epochRef.current += 1;
     _releaseCurrent();
     speakingRef.current = false;
     pendingCountRef.current = 0;
@@ -210,11 +241,12 @@ export function useTTSPlayer() {
 
   useEffect(() => {
     return () => {
-      _releaseCurrent();
-      _stopLevelLoop();
+      stop();
       void audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
+      analyserRef.current = null;
     };
-  }, [_releaseCurrent, _stopLevelLoop]);
+  }, [stop]);
 
   return {
     playBase64Mp3,

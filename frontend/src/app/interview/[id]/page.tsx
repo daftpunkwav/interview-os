@@ -41,6 +41,9 @@ export default function InterviewRoomPage() {
   const faceRef = useRef<FaceAnalysis>({});
   const partialTextRef = useRef("");
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reportNavTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finishingRef = useRef(false);
+  const playbackGenRef = useRef(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const showOutlineRef = useRef(showOutline);
   const sendRef = useRef<(p: ClientEvent) => boolean>(() => false);
@@ -55,8 +58,18 @@ export default function InterviewRoomPage() {
     on,
     retryNow,
   } = useInterviewWS(sessionId);
-  const { playBase64Mp3, setOnSpeakingChange, setOnAudioLevel, setOnPlaybackBlocked, setOnPlaybackDone, unlockAudio, retryLastFailed, isQueueBusy, queueDepth } =
-    useTTSPlayer();
+  const {
+    playBase64Mp3,
+    setOnSpeakingChange,
+    setOnAudioLevel,
+    setOnPlaybackBlocked,
+    setOnPlaybackDone,
+    unlockAudio,
+    retryLastFailed,
+    stop: stopTTS,
+    isQueueBusy,
+    queueDepth,
+  } = useTTSPlayer();
 
 
   useEffect(() => {
@@ -67,11 +80,21 @@ export default function InterviewRoomPage() {
   }, [send]);
 
   useEffect(() => {
+    return () => {
+      if (reportNavTimerRef.current) clearTimeout(reportNavTimerRef.current);
+      stopTTS();
+    };
+  }, [stopTTS]);
+
+  useEffect(() => {
     setOnSpeakingChange(setAiSpeaking);
     setOnAudioLevel(setAudioLevel);
     setOnPlaybackBlocked(setAudioBlocked);
     setOnPlaybackDone(() => {
-      sendRef.current({ type: "tts_playback_done" });
+      sendRef.current({
+        type: "tts_playback_done",
+        generation: playbackGenRef.current,
+      });
     });
   }, [setOnSpeakingChange, setOnAudioLevel, setOnPlaybackBlocked, setOnPlaybackDone]);
 
@@ -156,6 +179,22 @@ export default function InterviewRoomPage() {
 
   /* 服务端事件的强类型订阅（on() 风格，handler 中 ``msg`` 已按 ``type`` 收窄）。 */
   useEffect(() => {
+    const finishOnceAndNavigate = async () => {
+      if (finishingRef.current) return;
+      finishingRef.current = true;
+      stopTTS();
+      try {
+        await api.finishInterview(sessionId);
+        if (reportNavTimerRef.current) clearTimeout(reportNavTimerRef.current);
+        reportNavTimerRef.current = setTimeout(() => {
+          router.push(`/report/${sessionId}`);
+        }, 1500);
+      } catch {
+        finishingRef.current = false;
+        toast.error("报告尚未就绪，请点击「结束面试」重试");
+      }
+    };
+
     on("assistant_token", (msg) => setStreamingText((prev) => prev + msg.token));
     on("assistant_done", (msg) => {
       setMessages((prev) => [...prev, { role: "assistant", content: msg.content }]);
@@ -163,28 +202,32 @@ export default function InterviewRoomPage() {
       setCurrentPhase(msg.phase);
       setEmotion(msg.emotion || "neutral");
       setTokenUsage((t) => t + msg.content.length);
+      if (typeof msg.playback_generation === "number") {
+        playbackGenRef.current = msg.playback_generation;
+      }
       requestHint(msg.content);
       if (msg.is_complete) {
-        void (async () => {
-          try {
-            await api.finishInterview(sessionId);
-            setTimeout(() => router.push(`/report/${sessionId}`), 1500);
-          } catch {
-            toast.error("报告尚未就绪，请点击「结束面试」重试");
-          }
-        })();
+        void finishOnceAndNavigate();
       }
     });
     on("stt_final", (msg) => {
       if (msg.text) setMessages((prev) => [...prev, { role: "user", content: msg.text }]);
     });
-    on("tts_audio", (msg) => playBase64Mp3(msg.data));
+    on("tts_audio", (msg) => {
+      if (typeof msg.playback_generation === "number") {
+        playbackGenRef.current = msg.playback_generation;
+      }
+      playBase64Mp3(msg.data);
+    });
     on("tts_failed", (msg) => {
       setAudioBlocked(true);
       toast.error(msg.message || "语音播放失败");
       setMessages((prev) => [...prev, { role: "assistant", content: `⚠️ ${msg.message}` }]);
       // 无音频可播时仍通知服务端，避免一直卡在等播完
-      sendRef.current({ type: "tts_playback_done" });
+      sendRef.current({
+        type: "tts_playback_done",
+        generation: playbackGenRef.current,
+      });
     });
     on("silence_nudge", (msg) => {
       setMessages((prev) => [...prev, { role: "assistant", content: `[追问] ${msg.content}` }]);
@@ -211,7 +254,7 @@ export default function InterviewRoomPage() {
         }
       }
     });
-  }, [on, playBase64Mp3, router, sessionId, requestHint]);
+  }, [on, playBase64Mp3, router, sessionId, requestHint, stopTTS]);
 
   const { flush, isRecording, partialText, micError } = useAudioRecorder(
     micEnabled,
@@ -250,10 +293,15 @@ export default function InterviewRoomPage() {
   };
 
   const handleFinish = async () => {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    stopTTS();
     try {
       await api.finishInterview(sessionId);
+      if (reportNavTimerRef.current) clearTimeout(reportNavTimerRef.current);
       router.push(`/report/${sessionId}`);
     } catch {
+      finishingRef.current = false;
       toast.error("结束面试失败，请检查网络与 LLM 配置后重试");
     }
   };

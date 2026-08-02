@@ -218,6 +218,8 @@ class InterviewSessionResponse(BaseModel):
     started_at: datetime | None = None
     ended_at: datetime | None = None
     created_at: datetime
+    # 仅 create 响应填充；list/get 为 None，避免令牌反复下发
+    access_token: str | None = None
 
 
 class ChatMessage(BaseModel):

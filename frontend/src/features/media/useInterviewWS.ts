@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClientEvent, ServerEvent, TurnState } from "@/types";
 import { getEnv } from "@/lib/env";
+import { getSessionToken } from "@/lib/sessionToken";
 
 type ServerHandler<K extends ServerEvent["type"]> = (
   msg: Extract<ServerEvent, { type: K }>,
@@ -121,7 +122,9 @@ export function useInterviewWS(
       }
 
       const wsBase = getEnv().WS_BASE;
-      const url = `${wsBase}/api/v1/ws/interview/${sessionId}`;
+      const token = getSessionToken(sessionId);
+      const tokenQs = token ? `?token=${encodeURIComponent(token)}` : "";
+      const url = `${wsBase}/api/v1/ws/interview/${sessionId}${tokenQs}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 

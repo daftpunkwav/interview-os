@@ -171,6 +171,8 @@ export interface InterviewSession {
   started_at?: string;
   ended_at?: string;
   created_at: string;
+  /** 仅 create 响应返回；后续请求从 localStorage 读取 */
+  access_token?: string | null;
 }
 
 export interface ChatMessage {
@@ -261,13 +263,20 @@ export type ServerEvent =
       emotion?: string;
       is_complete: boolean;
       audio_b64?: string;
+      playback_generation?: number;
     }
   | { type: "assistant_audio_start" }
   | { type: "assistant_audio_chunk"; data: string; idx?: number }
   | { type: "assistant_audio_end" }
   | { type: "stt_partial"; text: string }
   | { type: "stt_final"; text: string }
-  | { type: "tts_audio"; data: string; mime?: string; sentence?: string }
+  | {
+      type: "tts_audio";
+      data: string;
+      mime?: string;
+      sentence?: string;
+      playback_generation?: number;
+    }
   | { type: "tts_failed"; message: string }
   | { type: "silence_nudge"; content: string }
   | { type: "reference_hint_loading"; question: string }
@@ -296,7 +305,7 @@ export type ClientEvent =
   | { type: "silence_timeout" }
   | { type: "request_hint"; question: string }
   | { type: "vision_update"; face_analysis: FaceAnalysis }
-  | { type: "tts_playback_done" }
+  | { type: "tts_playback_done"; generation?: number }
   | { type: "pong"; t: number };
 
 /* ====================================================================== */

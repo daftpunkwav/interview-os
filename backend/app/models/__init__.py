@@ -129,6 +129,8 @@ class InterviewSession(Base):
     report: Mapped[str] = mapped_column(Text, default="{}")
     overall_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     token_usage: Mapped[int] = mapped_column(Integer, default=0)
+    # 能力令牌：创建时下发，可变操作必验；勿写入 list/get 响应
+    access_token: Mapped[str] = mapped_column(String(64), default="")
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
