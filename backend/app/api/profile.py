@@ -22,6 +22,17 @@ def _get_or_create_profile(db: Session) -> UserProfile:
     return profile
 
 
+_PROFILE_FIELDS = [
+    "name", "gender", "identity", "school", "major", "graduation_year",
+    "job_direction", "experience_years", "work_years_detail",
+    "current_company", "expected_salary", "self_intro", "target_role",
+    "github_username", "portfolio_url", "linkedin_url", "city",
+    "preferred_languages", "career_highlights", "open_to_remote", "notice_period",
+    "education_level", "expected_city", "email", "phone", "certificates",
+    "english_level", "signature_projects", "strengths", "weaknesses",
+]
+
+
 def _to_response(p: UserProfile) -> UserProfileResponse:
     return UserProfileResponse(
         id=p.id,
@@ -47,6 +58,15 @@ def _to_response(p: UserProfile) -> UserProfileResponse:
         career_highlights=getattr(p, "career_highlights", "") or "",
         open_to_remote=getattr(p, "open_to_remote", "") or "",
         notice_period=getattr(p, "notice_period", "") or "",
+        education_level=getattr(p, "education_level", "") or "",
+        expected_city=getattr(p, "expected_city", "") or "",
+        email=getattr(p, "email", "") or "",
+        phone=getattr(p, "phone", "") or "",
+        certificates=getattr(p, "certificates", "") or "",
+        english_level=getattr(p, "english_level", "") or "",
+        signature_projects=getattr(p, "signature_projects", "") or "",
+        strengths=getattr(p, "strengths", "") or "",
+        weaknesses=getattr(p, "weaknesses", "") or "",
         updated_at=p.updated_at,
     )
 
@@ -59,13 +79,7 @@ def get_profile(db: Session = Depends(get_db)):
 @router.put("", response_model=UserProfileResponse)
 def update_profile(body: UserProfileUpdate, db: Session = Depends(get_db)):
     p = _get_or_create_profile(db)
-    for field in [
-        "name", "gender", "identity", "school", "major", "graduation_year",
-        "job_direction", "experience_years", "work_years_detail",
-        "current_company", "expected_salary", "self_intro", "target_role",
-        "github_username", "portfolio_url", "linkedin_url", "city",
-        "preferred_languages", "career_highlights", "open_to_remote", "notice_period",
-    ]:
+    for field in _PROFILE_FIELDS:
         setattr(p, field, getattr(body, field))
     p.set_tech_domains(body.tech_domains)
     p.updated_at = datetime.now(timezone.utc)

@@ -66,7 +66,7 @@ const components: Components = {
   ),
   tbody: ({ children }) => <tbody className="divide-y divide-[var(--border)]">{children}</tbody>,
   tr: ({ children }) => (
-    <tr className="border-b border-[var(--border)] last:border-0 hover:bg-[#fafbfc]">{children}</tr>
+    <tr className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-muted)]">{children}</tr>
   ),
   th: ({ children }) => (
     <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap border-b border-[var(--border)] align-top">

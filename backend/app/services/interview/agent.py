@@ -63,23 +63,39 @@ def build_system_prompt(
         city = getattr(profile, "city", "") or ""
         langs = getattr(profile, "preferred_languages", "") or ""
         highlights = getattr(profile, "career_highlights", "") or ""
+        education_level = getattr(profile, "education_level", "") or ""
+        expected_city = getattr(profile, "expected_city", "") or ""
+        email = getattr(profile, "email", "") or ""
+        phone = getattr(profile, "phone", "") or ""
+        certificates = getattr(profile, "certificates", "") or ""
+        english_level = getattr(profile, "english_level", "") or ""
+        signature_projects = getattr(profile, "signature_projects", "") or ""
+        strengths = getattr(profile, "strengths", "") or ""
+        weaknesses = getattr(profile, "weaknesses", "") or ""
+        work_detail = getattr(profile, "work_years_detail", "") or ""
         candidate_info += f"""
 ## 候选人个人档案
 姓名：{profile.name}
 性别/身份：{profile.gender or '—'} / {profile.identity or '—'}
 学校/专业：{profile.school or '—'} / {profile.major or '—'}
+学历层次：{education_level or '—'}
 毕业年份：{profile.graduation_year or '—'}
-城市：{city or '—'}
+所在城市 / 期望城市：{city or '—'} / {expected_city or '—'}
+邮箱 / 电话或微信：{email or '—'} / {phone or '—'}
 求职方向：{profile.job_direction}
 目标岗位：{profile.target_role}
-工作年限：{profile.experience_years}
+工作年限：{profile.experience_years}{f'（{work_detail}）' if work_detail else ''}
 当前公司：{profile.current_company or '—'}
 期望薪资：{profile.expected_salary or '—'}
 技术领域：{', '.join(profile.tech_domains_list)}
+英语水平：{english_level or '—'}
+证书：{(certificates or '—')[:300]}
 GitHub：{github_u or '—'}
 作品集/博客：{portfolio or '—'}
 LinkedIn：{linkedin or '—'}
 偏好语言：{langs or '—'}
+代表项目：{(signature_projects or '—')[:600]}
+优势 / 待提升：{(strengths or '—')[:300]} / {(weaknesses or '—')[:300]}
 职业亮点：{(highlights or '')[:500]}
 自我介绍：{(profile.self_intro or '')[:800]}
 """

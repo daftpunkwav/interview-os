@@ -179,7 +179,7 @@ export default function InterviewSetupPage() {
                     className={`px-2 py-2 rounded-[var(--radius)] border text-center text-xs font-medium transition-colors ${
                       config.company === c.id
                         ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-ink)]"
-                        : "border-[var(--border)] bg-white hover:border-[var(--brand)]/40 hover:bg-[var(--brand-softer)]"
+                        : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--brand)]/40 hover:bg-[var(--brand-softer)]"
                     }`}
                   >
                     {c.name}
@@ -201,7 +201,7 @@ export default function InterviewSetupPage() {
                         className={`px-3 py-1.5 rounded-[var(--radius)] text-xs border font-medium transition-colors ${
                           config.personality === p.id
                             ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-ink)]"
-                            : "border-[var(--border)] bg-white hover:border-[var(--brand)]/40"
+                            : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--brand)]/40"
                         }`}
                       >
                         {p.name}
@@ -255,7 +255,7 @@ export default function InterviewSetupPage() {
                   />
                 ) : (
                   <div>
-                    <label className="block text-xs font-medium mb-1 text-slate-700">关联简历</label>
+                    <label className="block text-xs font-medium mb-1 text-[var(--text-secondary)]">关联简历</label>
                     <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-2.5 py-2">
                       暂无简历，可稍后在「简历管理」上传
                     </p>
@@ -273,7 +273,7 @@ export default function InterviewSetupPage() {
           {/* 右侧摘要（大屏） */}
           <div className="hidden lg:flex min-h-0 flex-col gap-2.5 overflow-hidden">
             <div className="surface-card p-3.5">
-              <h2 className="font-semibold text-xs mb-2.5 flex items-center gap-1.5 text-slate-800">
+              <h2 className="font-semibold text-xs mb-2.5 flex items-center gap-1.5 text-[var(--foreground)]">
                 <ListChecks size={14} className="text-brand-600" />
                 配置预览
               </h2>
@@ -301,7 +301,7 @@ export default function InterviewSetupPage() {
 
             {selectedCompany && (
               <div className="surface-card p-3.5 flex-1 min-h-0 overflow-y-auto">
-                <h2 className="font-semibold text-xs mb-1.5 flex items-center gap-1.5 text-slate-800">
+                <h2 className="font-semibold text-xs mb-1.5 flex items-center gap-1.5 text-[var(--foreground)]">
                   <Building2 size={14} className="text-brand-600" />
                   {selectedCompany.name} 面经
                 </h2>
@@ -317,7 +317,7 @@ export default function InterviewSetupPage() {
                 )}
                 {selectedWorkflow && selectedWorkflow.phases.length > 0 && (
                   <div className="mb-2">
-                    <p className="text-[10px] text-slate-400 mb-1">流程</p>
+                    <p className="text-[10px] text-[var(--muted-soft)] mb-1">流程</p>
                     <p className="text-[11px] text-[var(--muted)] leading-snug">
                       {selectedWorkflow.phases.join(" → ")}
                     </p>
@@ -325,7 +325,7 @@ export default function InterviewSetupPage() {
                 )}
                 {selectedCompany.sample_questions.length > 0 && (
                   <p className="text-[11px] text-[var(--muted)] leading-snug line-clamp-3">
-                    <span className="text-slate-400">参考：</span>
+                    <span className="text-[var(--muted-soft)]">参考：</span>
                     {selectedCompany.sample_questions[0]}
                   </p>
                 )}

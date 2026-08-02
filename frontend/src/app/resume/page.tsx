@@ -18,9 +18,13 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { LoadError } from "@/components/LoadError";
+import { normalizeCnPunctuation, parseRewriteExample, tokenizeEvalText } from "@/lib/cnText";
+import type { EvalTextPart } from "@/lib/cnText";
 
 const DIM_LABELS: Record<string, string> = {
   structure_clarity: "结构清晰度",
+  visual_layout: "版式布局",
+  typography: "字体可读性",
   impact_quantification: "成果量化",
   tech_depth: "技术深度",
   project_narrative: "项目叙事",
@@ -46,6 +50,19 @@ function dimScore(
   if (typeof v === "number") return v;
   if (v && typeof v === "object" && "score" in v) return Number((v as { score: number }).score) || 0;
   return 0;
+}
+
+function dimComment(
+  v: ResumeAnalysis["dimension_scores"] extends infer D
+    ? D extends Record<string, infer V>
+      ? V
+      : never
+    : never,
+): string {
+  if (v && typeof v === "object" && "comment" in v) {
+    return String((v as { comment?: string }).comment || "").trim();
+  }
+  return "";
 }
 
 export default function ResumePage() {
@@ -111,14 +128,27 @@ export default function ResumePage() {
   const handleAnalyze = async (id: number) => {
     setError("");
     setAnalyzingId(id);
-    toast.info("正在生成深度评价，通常需要 30–120 秒，请稍候…");
+    setPreviewId(id);
+    toast.clear();
+    toast.info("正在生成深度评价（含联网检索），约需 1–3 分钟，请勿关闭页面…", {
+      persist: true,
+    });
     try {
       const data = await api.analyzeResume(id);
       await load();
-      toast.success(`综合评分 ${data.score} · 已生成多维度评价`);
-      setPreviewId(id);
+      toast.clear();
+      toast.success(`评价完成 · 综合评分 ${data.score}`, { durationMs: 8000 });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "分析失败");
+      // 可能已写入库但响应失败：刷新列表，避免界面与数据不一致
+      try {
+        await load();
+      } catch {
+        /* ignore */
+      }
+      toast.clear();
+      const msg = err instanceof Error ? err.message : "分析失败";
+      toast.error(msg, { durationMs: 10000 });
+      setError(msg);
     } finally {
       setAnalyzingId(null);
     }
@@ -201,7 +231,7 @@ export default function ResumePage() {
                             if (e.key === "Enter" || e.key === " ") setPreviewId(r.id);
                           }}
                           className={`px-4 py-3.5 flex items-center gap-3 cursor-pointer transition-colors ${
-                            selected ? "bg-[var(--brand-softer)]" : "hover:bg-[#fafbfc]"
+                            selected ? "bg-[var(--brand-softer)]" : "hover:bg-[var(--surface-muted)]"
                           }`}
                         >
                           <div
@@ -236,18 +266,23 @@ export default function ResumePage() {
 
                         {/* 选中项操作条 */}
                         {selected && (
-                          <div className="px-4 pb-3.5 flex flex-wrap gap-2 bg-[var(--brand-softer)] border-t border-[var(--brand-soft)]/60">
+                          <div className="px-4 pb-3.5 pt-1 flex flex-wrap items-center gap-2 bg-[var(--brand-softer)] border-t border-[var(--border)]">
                             <button
                               type="button"
+                              disabled={r.is_active}
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 await api.activateResume(r.id);
                                 await load();
                                 toast.success("已设为投递简历");
                               }}
-                              className="btn-secondary !h-8 !px-3 !text-xs"
+                              className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-[var(--radius)] text-xs font-medium border transition-colors ${
+                                r.is_active
+                                  ? "border-transparent bg-[var(--brand-soft)] text-[var(--brand-ink)] cursor-default"
+                                  : "border-[var(--border-strong)] bg-[var(--card)] text-[var(--text-secondary)] hover:border-[var(--brand)]/40 hover:text-[var(--brand-ink)] hover:bg-[var(--card)]"
+                              }`}
                             >
-                              设为投递
+                              {r.is_active ? "当前投递" : "设为投递"}
                             </button>
                             <button
                               type="button"
@@ -256,7 +291,7 @@ export default function ResumePage() {
                                 void handleAnalyze(r.id);
                               }}
                               disabled={analyzingId === r.id}
-                              className="btn-primary !h-8 !px-3 !text-xs"
+                              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[var(--radius)] text-xs font-medium border border-transparent bg-[var(--brand-soft)] text-[var(--brand-ink)] hover:bg-[var(--brand)]/25 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
                               {analyzingId === r.id ? (
                                 <Loader2 size={12} className="animate-spin" />
@@ -278,7 +313,7 @@ export default function ResumePage() {
                                   toast.error(err instanceof Error ? err.message : "删除失败");
                                 }
                               }}
-                              className="btn-tertiary !h-8 !px-3 !text-xs text-[var(--danger-ink)] hover:!bg-[var(--danger-soft)]"
+                              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[var(--radius)] text-xs font-medium text-[var(--danger-ink)] hover:bg-[var(--danger-soft)] transition-colors ml-auto"
                             >
                               <Trash2 size={12} />
                               删除
@@ -292,48 +327,64 @@ export default function ResumePage() {
               )}
             </div>
 
-            {/* Agent 深度评价 · 左侧下方全宽 */}
+            {/* Agent 深度评价 · 审阅笺 */}
             <section className="surface-card overflow-hidden">
-              <div className="px-4 sm:px-5 py-3.5 border-b border-[var(--border)] flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Sparkles size={16} className="text-[var(--brand)] shrink-0" />
-                  <h2 className="text-sm font-semibold tracking-tight">Agent 深度评价</h2>
+              {analyzingId != null && analyzingId === previewId && (
+                <div className="px-5 sm:px-7 py-3 border-b border-[var(--border)] bg-[var(--brand-softer)] flex items-center gap-2.5 text-sm text-[var(--brand-ink)]">
+                  <Loader2 size={15} className="animate-spin shrink-0" />
+                  <span className="tracking-[0.02em]">
+                    Agent 正在深度评价与联网检索，完成后将自动刷新…
+                  </span>
                 </div>
-                {previewResume && analysis && (
-                  <span className="chip chip-blue shrink-0">综合 {analysis.score}</span>
-                )}
-              </div>
-
-              <div className="p-4 sm:p-5">
+              )}
+              <div className="px-5 sm:px-8 pt-6 sm:pt-7 pb-6 sm:pb-8">
                 {!previewResume ? (
                   <div className="empty-state !py-10">
-                    <p className="text-sm">选择一份简历后查看评价</p>
+                    <p className="text-sm tracking-[0.04em]">选择一份简历后查看评价</p>
+                  </div>
+                ) : analyzingId === previewResume.id ? (
+                  <div className="text-center py-14">
+                    <Loader2 className="animate-spin mx-auto text-[var(--brand)] mb-4" size={28} />
+                    <p className="text-sm text-[var(--foreground)] tracking-[0.04em] mb-1.5">
+                      正在生成深度评价
+                    </p>
+                    <p className="text-xs text-[var(--muted)] tracking-[0.03em] leading-relaxed max-w-sm mx-auto">
+                      包含排版、字体、内容审阅与联网岗位参考，通常需要 1–3 分钟
+                    </p>
                   </div>
                 ) : !analysis ? (
-                  <div className="text-center py-10">
-                    <div className="empty-state-icon mb-3">
+                  <div className="text-center py-12">
+                    <div className="empty-state-icon mb-4">
                       <Sparkles size={22} />
                     </div>
-                    <p className="text-sm text-[var(--text-secondary)] mb-1">尚未生成深度评价</p>
-                    <p className="text-xs text-[var(--muted)] mb-4">
-                      点击「AI 深度评价」获取多维度评分、风险点与预测题
+                    <p className="text-sm text-[var(--text-secondary)] mb-1.5 tracking-[0.04em]">
+                      尚未生成深度评价
                     </p>
+                    <p className="text-xs text-[var(--muted)] mb-5 tracking-[0.03em] leading-relaxed">
+                      生成后将给出排版、字体与内容的完整审阅
+                    </p>
+                    {error && (
+                      <p className="text-xs text-[var(--danger-ink)] mb-4 max-w-md mx-auto leading-relaxed">
+                        {error}
+                      </p>
+                    )}
                     <button
                       type="button"
                       onClick={() => void handleAnalyze(previewResume.id)}
                       disabled={analyzingId === previewResume.id}
                       className="btn-primary !h-9"
                     >
-                      {analyzingId === previewResume.id ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <Sparkles size={14} />
-                      )}
+                      <Sparkles size={14} />
                       开始评价
                     </button>
                   </div>
                 ) : (
-                  <AnalysisPanel analysis={analysis} />
+                  <>
+                    {error && (
+                      <div className="alert alert-warning mb-4 text-xs">{error}</div>
+                    )}
+                    <AnalysisPanel analysis={analysis} />
+                  </>
                 )}
               </div>
             </section>
@@ -462,8 +513,8 @@ export default function ResumePage() {
               </h2>
               <ul className="text-xs text-[var(--muted)] space-y-2 leading-relaxed">
                 <li>· 「投递简历」会关联到模拟面试与面试准备</li>
-                <li>· 深度评价在左侧下方展开，右侧仅作速览</li>
-                <li>· 支持多份简历切换对比</li>
+                <li>· 深度评价会联网检索岗位要求，并点评排版、字体与内容</li>
+                <li>· 旧评价需重新点击「AI 深度评价」才会刷新新结构</li>
               </ul>
             </div>
           </aside>
@@ -473,132 +524,318 @@ export default function ResumePage() {
   );
 }
 
-/** 深度评价正文 · 两栏网格，避免单列过长 */
+/** 深度评价 · 审阅笺 */
 function AnalysisPanel({ analysis }: { analysis: ResumeAnalysis }) {
   const dims = analysis.dimension_scores || {};
   const dimEntries = Object.entries(dims);
+  const t = normalizeCnPunctuation;
 
   return (
-    <div className="space-y-5">
+    <article className="eval-sheet">
+      <header className="eval-masthead">
+        <div className="min-w-0">
+          <h2 className="eval-masthead-title">Agent 深度评价</h2>
+          <p className="eval-masthead-sub">简历审阅意见</p>
+        </div>
+        <div className="eval-score" aria-label={`综合得分 ${analysis.score}`}>
+          <div className="eval-score-num">{analysis.score}</div>
+          <div className="eval-score-label">综合</div>
+        </div>
+      </header>
+
       {analysis.overall_narrative && (
-        <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-          {analysis.overall_narrative}
-        </p>
+        <section className="eval-section">
+          <span className="eval-label">总评</span>
+          <p className="eval-prose">
+            <EvalRichText text={t(analysis.overall_narrative)} />
+          </p>
+          {analysis.seniority_estimate && (
+            <p className="eval-meta">
+              职级判断 · <strong>{t(analysis.seniority_estimate)}</strong>
+            </p>
+          )}
+        </section>
       )}
 
-      <div className="flex flex-wrap gap-2 text-xs">
-        {analysis.seniority_estimate && (
-          <span className="chip chip-blue">职级 · {analysis.seniority_estimate}</span>
-        )}
-        {analysis.role_fit_summary && (
-          <span className="chip chip-gray line-clamp-1 max-w-full">{analysis.role_fit_summary}</span>
-        )}
-      </div>
+      {analysis.role_fit_summary && (
+        <section className="eval-callout">
+          <span className="eval-label">岗位匹配</span>
+          <p className="eval-prose eval-prose-sm">
+            <EvalRichText text={t(analysis.role_fit_summary)} />
+          </p>
+        </section>
+      )}
+
+      {(analysis.layout_review || analysis.typography_review || analysis.content_review) && (
+        <div className="flex flex-col gap-6">
+          {analysis.layout_review && (
+            <section className="eval-section">
+              <span className="eval-label">排版与结构</span>
+              <p className="eval-prose eval-prose-sm">
+                <EvalRichText text={t(analysis.layout_review)} />
+              </p>
+            </section>
+          )}
+          {analysis.typography_review && (
+            <section className="eval-section">
+              <span className="eval-label">字体与可读性</span>
+              <p className="eval-prose eval-prose-sm">
+                <EvalRichText text={t(analysis.typography_review)} />
+              </p>
+            </section>
+          )}
+          {analysis.content_review && (
+            <section className="eval-section">
+              <span className="eval-label">内容深度</span>
+              <p className="eval-prose eval-prose-sm">
+                <EvalRichText text={t(analysis.content_review)} />
+              </p>
+            </section>
+          )}
+        </div>
+      )}
 
       {dimEntries.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-[var(--foreground)] mb-3">维度评分</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5">
+        <section className="eval-section">
+          <span className="eval-label">维度评分</span>
+          <div className="eval-dim-grid">
             {dimEntries.map(([k, v]) => {
               const sc = dimScore(v as never);
+              const comment = dimComment(v as never);
               return (
-                <div key={k}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-[var(--muted)]">{DIM_LABELS[k] || k}</span>
-                    <span className="font-medium tabular-nums text-[var(--foreground)]">{sc}</span>
+                <div key={k} className="min-w-0">
+                  <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                    <span className="eval-dim-name">{DIM_LABELS[k] || k}</span>
+                    <span className="eval-dim-score">{sc}</span>
                   </div>
-                  <div className="progress !h-1.5">
+                  <div className="progress !h-1">
                     <div className="progress-bar" style={{ width: `${Math.min(sc, 100)}%` }} />
                   </div>
+                  {comment ? (
+                    <p className="eval-dim-comment">
+                      <EvalRichText text={t(comment)} />
+                    </p>
+                  ) : null}
                 </div>
               );
             })}
           </div>
-        </div>
+        </section>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="eval-pair">
         {analysis.strengths && analysis.strengths.length > 0 && (
-          <ListBlock title="优势" tone="green" items={analysis.strengths} />
+          <EvalList title="优势" items={analysis.strengths.map(t)} />
         )}
         {analysis.weaknesses && analysis.weaknesses.length > 0 && (
-          <ListBlock title="不足" tone="yellow" items={analysis.weaknesses} />
+          <EvalList title="不足" items={analysis.weaknesses.map(t)} />
         )}
       </div>
 
       {analysis.red_flags && analysis.red_flags.length > 0 && (
-        <div className="alert alert-error">
+        <div className="alert alert-error !py-4">
           <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-          <div>
-            <p className="font-semibold text-sm mb-1">风险点</p>
-            <ul className="text-xs space-y-1 opacity-90">
+          <div className="min-w-0">
+            <p className="font-semibold text-sm mb-2.5 tracking-[0.06em]">风险点</p>
+            <ul className="eval-list">
               {analysis.red_flags.map((s, i) => (
-                <li key={i}>· {s}</li>
+                <li key={i}>
+                  <span className="eval-list-mark">·</span>
+                  <span className="eval-list-body">
+                    <EvalRichText text={t(s)} />
+                  </span>
+                </li>
               ))}
             </ul>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="eval-pair">
         {analysis.improvement_suggestions && analysis.improvement_suggestions.length > 0 && (
-          <ListBlock title="改进建议" tone="gray" items={analysis.improvement_suggestions} />
+          <EvalList title="改进建议" items={analysis.improvement_suggestions.map(t)} />
         )}
-        {analysis.rewrite_examples && analysis.rewrite_examples.length > 0 && (
-          <ListBlock title="改写示例" tone="blue" items={analysis.rewrite_examples} />
+        {analysis.interview_risk_areas && analysis.interview_risk_areas.length > 0 && (
+          <EvalList title="面试易被打穿" items={analysis.interview_risk_areas.map(t)} />
         )}
       </div>
 
-      {analysis.predicted_questions && analysis.predicted_questions.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-[var(--foreground)] mb-2.5">预测面试题</p>
-          <ol className="space-y-2">
-            {analysis.predicted_questions.map((q, i) => (
-              <li
-                key={i}
-                className="text-xs sm:text-sm leading-relaxed text-[var(--text-secondary)] flex gap-2.5 p-2.5 rounded-lg bg-[var(--popover)]"
-              >
-                <span className="font-mono text-[10px] text-[var(--brand)] font-semibold shrink-0 mt-0.5">
-                  Q{i + 1}
-                </span>
-                <span>{q}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
+      {analysis.rewrite_examples && analysis.rewrite_examples.length > 0 && (
+        <RewriteGallery items={analysis.rewrite_examples} />
       )}
-    </div>
+
+      {analysis.market_insights && analysis.market_insights.length > 0 && (
+        <EvalList title="市场参考" items={analysis.market_insights.map(t)} />
+      )}
+
+      {(analysis.ats_keywords?.length || analysis.missing_keywords?.length) ? (
+        <div className="eval-kw-grid">
+          {!!analysis.ats_keywords?.length && (
+            <section className="eval-section min-w-0">
+              <span className="eval-label">已覆盖关键词</span>
+              <div className="eval-kw is-covered">
+                {analysis.ats_keywords.map((k) => (
+                  <span key={k}>{k}</span>
+                ))}
+              </div>
+            </section>
+          )}
+          {!!analysis.missing_keywords?.length && (
+            <section className="eval-section min-w-0">
+              <span className="eval-label">建议补充</span>
+              <ul className="eval-kw-suggest">
+                {analysis.missing_keywords.map((k) => (
+                  <li key={k}>
+                    <EvalRichText text={t(k)} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+      ) : null}
+
+      {analysis.project_deep_dive && analysis.project_deep_dive.length > 0 && (
+        <EvalNumberedStack
+          title="项目深挖点"
+          prefix="P"
+          items={analysis.project_deep_dive.map(t)}
+        />
+      )}
+
+      {analysis.predicted_questions && analysis.predicted_questions.length > 0 && (
+        <EvalNumberedStack
+          title="预测面试题"
+          prefix="Q"
+          items={analysis.predicted_questions.map(t)}
+        />
+      )}
+    </article>
   );
 }
 
-function ListBlock({
+/** 评价正文：支持 **强调** / `代码`，旧数据兜底高亮指标 */
+function EvalRichText({ text }: { text: string }) {
+  const parts = tokenizeEvalText(text);
+  return (
+    <>
+      {parts.map((p, i) => (
+        <EvalRichPart key={i} part={p} />
+      ))}
+    </>
+  );
+}
+
+function EvalRichPart({ part }: { part: EvalTextPart }) {
+  if (part.type === "bold") {
+    return <strong className="eval-em">{part.value}</strong>;
+  }
+  if (part.type === "code") {
+    return <code className="eval-code">{part.value}</code>;
+  }
+  return <>{part.value}</>;
+}
+
+function EvalNumberedStack({
   title,
   items,
-  tone,
+  prefix,
 }: {
   title: string;
   items: string[];
-  tone: "green" | "yellow" | "blue" | "gray";
+  prefix: string;
 }) {
-  const chip =
-    tone === "green"
-      ? "chip-green"
-      : tone === "yellow"
-        ? "chip-yellow"
-        : tone === "blue"
-          ? "chip-blue"
-          : "chip-gray";
   return (
-    <div>
-      <span className={`chip ${chip} mb-2`}>{title}</span>
-      <ul className="text-xs space-y-1.5 text-[var(--text-secondary)] leading-relaxed mt-2">
-        {items.slice(0, 6).map((s, i) => (
-          <li key={i} className="flex gap-1.5">
-            <span className="text-[var(--muted-soft)]">·</span>
-            <span>{s}</span>
+    <section className="eval-section">
+      <span className="eval-label">{title}</span>
+      <div className="eval-q-stack">
+        {items.map((q, i) => (
+          <div key={i} className="eval-q">
+            <span className="eval-q-idx">
+              {prefix}
+              {i + 1}
+            </span>
+            <p className="eval-prose eval-prose-sm !max-w-none m-0">
+              <EvalRichText text={q} />
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RewriteGallery({
+  items,
+}: {
+  items: NonNullable<ResumeAnalysis["rewrite_examples"]>;
+}) {
+  const pairs = items
+    .map((item) => parseRewriteExample(item))
+    .filter((p): p is { before: string; after: string } => Boolean(p));
+
+  if (pairs.length === 0) {
+    // 无法解析时降级为普通列表，避免再露出 {'before': ...}
+    const fallback = items
+      .map((item) => {
+        if (typeof item === "string") return normalizeCnPunctuation(item);
+        if (item && typeof item === "object") {
+          const b = "before" in item ? String(item.before || "") : "";
+          const a = "after" in item ? String(item.after || "") : "";
+          if (b && a) return null;
+          return normalizeCnPunctuation(JSON.stringify(item));
+        }
+        return null;
+      })
+      .filter((x): x is string => Boolean(x));
+    if (!fallback.length) return null;
+    return <EvalList title="改写示例" items={fallback} />;
+  }
+
+  return (
+    <section className="eval-section">
+      <span className="eval-label">改写示例</span>
+      <div className="eval-rewrite-stack">
+        {pairs.map((pair, i) => (
+          <article key={i} className="eval-rewrite-card">
+            <div className="eval-rewrite-block is-before">
+              <div className="eval-rewrite-meta">
+                <span className="eval-rewrite-idx">{String(i + 1).padStart(2, "0")}</span>
+                <span className="eval-rewrite-tag">改前</span>
+              </div>
+              <p className="eval-rewrite-text">
+                <EvalRichText text={normalizeCnPunctuation(pair.before)} />
+              </p>
+            </div>
+            <div className="eval-rewrite-block is-after">
+              <div className="eval-rewrite-meta">
+                <span className="eval-rewrite-tag">改后</span>
+              </div>
+              <p className="eval-rewrite-text">
+                <EvalRichText text={normalizeCnPunctuation(pair.after)} />
+              </p>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function EvalList({ title, items }: { title: string; items: string[] }) {
+  return (
+    <section className="eval-section min-w-0">
+      <span className="eval-label">{title}</span>
+      <ul className="eval-list">
+        {items.map((s, i) => (
+          <li key={i}>
+            <span className="eval-list-mark">·</span>
+            <span className="eval-list-body">
+              <EvalRichText text={s} />
+            </span>
           </li>
         ))}
       </ul>
-    </div>
+    </section>
   );
 }

@@ -3,6 +3,7 @@ import { DM_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AppShell } from "@/components/layout/AppShell";
 import { Toaster } from "@/components/Toast";
+import { ThemeProvider, themeInitScript } from "@/components/theme/ThemeProvider";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
@@ -25,19 +26,27 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#4285f4",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#4285f4" },
+    { media: "(prefers-color-scheme: dark)", color: "#171a21" },
+  ],
   width: "device-width",
   initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body
         className={`${dmSans.variable} ${jetbrains.variable} font-sans antialiased text-[var(--foreground)] bg-[var(--background)]`}
       >
-        <AppShell>{children}</AppShell>
-        <Toaster />
+        <ThemeProvider>
+          <AppShell>{children}</AppShell>
+          <Toaster />
+        </ThemeProvider>
       </body>
     </html>
   );

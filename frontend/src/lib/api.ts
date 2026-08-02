@@ -105,7 +105,7 @@ async function parseErrorResponse(res: Response): Promise<string> {
     // 非 JSON
   }
   if (/internal server error/i.test(text)) {
-    return "后端处理失败（500）。请查看 backend 终端日志，常见原因：LLM 返回异常、数据库字段未迁移。";
+    return "请求失败（代理或后端超时/崩溃）。深度评价请直连后端；若刚改过端口，请重启 frontend。也可查看 backend 终端日志。";
   }
   return text.length > 300 ? `${text.slice(0, 300)}…` : text;
 }
@@ -116,9 +116,19 @@ const LLM_HEAVY_TIMEOUT_MS = 180_000;
 
 async function request<T>(
   path: string,
-  options: RequestInit & { timeoutMs?: number; signal?: AbortSignal } = {},
+  options: RequestInit & {
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    /** 长耗时 LLM 任务：直连后端，绕过 Next rewrite 代理超时 */
+    direct?: boolean;
+  } = {},
 ): Promise<T> {
-  const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, signal: externalSignal, ...rest } = options;
+  const {
+    timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    signal: externalSignal,
+    direct = false,
+    ...rest
+  } = options;
   // 组合外部 signal 与超时 signal，任一触发即取消。
   const controller = new AbortController();
   let timedOut = false;
@@ -134,9 +144,10 @@ async function request<T>(
     }
     externalSignal.addEventListener("abort", onExternalAbort, { once: true });
   }
+  const url = direct ? resolveStreamUrl(`/api${path}`) : `/api${path}`;
   let res: Response;
   try {
-    res = await fetch(`/api${path}`, {
+    res = await fetch(url, {
       ...rest,
       headers: { "Content-Type": "application/json", ...rest.headers },
       signal: controller.signal,
@@ -151,7 +162,12 @@ async function request<T>(
       }
       throw new ApiError("请求已取消", 0);
     }
-    throw new ApiError("无法连接后端服务，请确认 backend 已在 localhost:8000 启动", 0);
+    throw new ApiError(
+      direct
+        ? `无法直连后端（${url}）。请确认 backend 已启动，且 NEXT_PUBLIC_STREAM_API_BASE 端口正确`
+        : "无法连接后端服务，请确认 backend 已启动",
+      0,
+    );
   } finally {
     clearTimeout(timeoutId);
     externalSignal?.removeEventListener("abort", onExternalAbort);
@@ -263,6 +279,8 @@ export const api = {
     request<ResumeAnalysis>(`/v1/resume/${id}/analyze`, {
       method: "POST",
       timeoutMs: LLM_HEAVY_TIMEOUT_MS,
+      // 绕过 Next rewrite：代理常在 ~30–60s 断开，而评价通常需 1–3 分钟
+      direct: true,
     }),
 
   /* 面试准备 */

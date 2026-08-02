@@ -40,6 +40,7 @@ interface ToastItem {
   kind: ToastKind;
   message: string;
   persist?: boolean;
+  durationMs?: number;
 }
 
 type Listener = (items: ToastItem[]) => void;
@@ -65,18 +66,31 @@ function remove(id: number) {
   }
 }
 
+function clearAll() {
+  if (_items.length === 0) return;
+  _items.splice(0, _items.length);
+  emit();
+}
+
 export const toast = {
-  show: (message: string, opts?: { kind?: ToastKind; persist?: boolean }) =>
-    push({ id: ++_seq, message, kind: opts?.kind ?? "info", persist: opts?.persist }),
-  success: (message: string, opts?: { persist?: boolean }) =>
-    push({ id: ++_seq, message, kind: "success", persist: opts?.persist }),
-  info: (message: string, opts?: { persist?: boolean }) =>
-    push({ id: ++_seq, message, kind: "info", persist: opts?.persist }),
-  warning: (message: string, opts?: { persist?: boolean }) =>
-    push({ id: ++_seq, message, kind: "warning", persist: opts?.persist }),
-  error: (message: string, opts?: { persist?: boolean }) =>
-    push({ id: ++_seq, message, kind: "error", persist: opts?.persist }),
+  show: (message: string, opts?: { kind?: ToastKind; persist?: boolean; durationMs?: number }) =>
+    push({
+      id: ++_seq,
+      message,
+      kind: opts?.kind ?? "info",
+      persist: opts?.persist,
+      durationMs: opts?.durationMs,
+    }),
+  success: (message: string, opts?: { persist?: boolean; durationMs?: number }) =>
+    push({ id: ++_seq, message, kind: "success", persist: opts?.persist, durationMs: opts?.durationMs }),
+  info: (message: string, opts?: { persist?: boolean; durationMs?: number }) =>
+    push({ id: ++_seq, message, kind: "info", persist: opts?.persist, durationMs: opts?.durationMs }),
+  warning: (message: string, opts?: { persist?: boolean; durationMs?: number }) =>
+    push({ id: ++_seq, message, kind: "warning", persist: opts?.persist, durationMs: opts?.durationMs }),
+  error: (message: string, opts?: { persist?: boolean; durationMs?: number }) =>
+    push({ id: ++_seq, message, kind: "error", persist: opts?.persist, durationMs: opts?.durationMs }),
   dismiss: (id: number) => remove(id),
+  clear: () => clearAll(),
 };
 
 const ICONS: Record<ToastKind, ReactNode> = {
@@ -123,11 +137,12 @@ function ToastView({ item }: { item: ToastItem }) {
 
   useEffect(() => {
     if (item.persist) return;
-    timerRef.current = setTimeout(close, 4000);
+    const ms = item.durationMs ?? 4000;
+    timerRef.current = setTimeout(close, ms);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [item.persist, close]);
+  }, [item.persist, item.durationMs, close]);
 
   const kindAccent: Record<ToastKind, string> = {
     info: "border-l-[var(--g-blue)]",
@@ -142,7 +157,7 @@ function ToastView({ item }: { item: ToastItem }) {
       initial={{ opacity: 0, y: -8, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, x: 24, scale: 0.98 }}
-      className={`pointer-events-auto bg-white border border-[var(--border)] border-l-4 ${kindAccent[item.kind]} rounded-[var(--radius)] shadow-elevate p-3.5 flex items-start gap-3`}
+      className={`pointer-events-auto bg-[var(--card)] border border-[var(--border)] border-l-4 ${kindAccent[item.kind]} rounded-[var(--radius)] shadow-elevate p-3.5 flex items-start gap-3`}
       role="status"
     >
       <div className="mt-0.5 shrink-0">{ICONS[item.kind]}</div>

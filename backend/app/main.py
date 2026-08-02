@@ -269,6 +269,18 @@ async def _unsafe_url_handler(request: Request, exc: UnsafeURLError) -> JSONResp
     )
 
 
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """兜底未捕获异常，避免前端只看到无详情的 Internal Server Error。"""
+    logger.exception("未处理异常 path=%s: %s", request.url.path, exc)
+    return _envelope(
+        code="internal_error",
+        message=f"服务器内部错误：{type(exc).__name__}：{exc}",
+        status=500,
+        request=request,
+    )
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "interviewos-backend", "version": "1.0.0"}

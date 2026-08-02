@@ -95,9 +95,9 @@ function InterviewPreview() {
             "radial-gradient(ellipse at 50% 80%, rgba(66,133,244,0.18), transparent 70%)",
         }}
       />
-      <div className="relative rounded-2xl border border-[var(--border)] bg-white shadow-[0_1px_2px_rgba(32,33,36,0.06),0_8px_28px_rgba(32,33,36,0.08)] overflow-hidden">
+      <div className="relative rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow-md)] overflow-hidden">
         {/* 顶栏 */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] bg-[#fafbfc]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] bg-[var(--surface-muted)]">
           <div className="flex items-center gap-2.5">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--g-green)] opacity-40" />
@@ -122,7 +122,7 @@ function InterviewPreview() {
               <p className="text-[11px] font-medium text-[var(--muted-soft)] mb-1">
                 面试官 · 字节跳动
               </p>
-              <div className="rounded-xl rounded-tl-sm bg-[#f1f3f4] px-3.5 py-2.5">
+              <div className="rounded-xl rounded-tl-sm bg-[var(--popover)] px-3.5 py-2.5">
                 <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]">
                   请介绍一下你最近负责的项目，重点说明你做了什么决策，以及结果如何衡量。
                 </p>
@@ -149,7 +149,7 @@ function InterviewPreview() {
         </div>
 
         {/* 底栏状态 */}
-        <div className="flex items-center gap-4 px-4 py-2.5 border-t border-[var(--border)] bg-[#fafbfc]">
+        <div className="flex items-center gap-4 px-4 py-2.5 border-t border-[var(--border)] bg-[var(--surface-muted)]">
           <div className="flex items-center gap-1.5 text-[11px] text-[var(--muted)]">
             <Video size={12} strokeWidth={2} className="text-[var(--brand)]" />
             视频已连接
@@ -168,26 +168,26 @@ export default function HomePage() {
   const reduce = useReducedMotion();
 
   return (
-    <div className="min-h-full bg-white">
+    <div className="min-h-full bg-[var(--card)]">
       {/* —— Hero —— */}
       <section className="relative overflow-hidden">
-        {/* 底色：白 → 极淡蓝灰 */}
+        {/* 底色：表面色渐变 */}
         <div
           className="absolute inset-0"
           style={{
             background:
-              "linear-gradient(180deg, #ffffff 0%, #f7f9fc 55%, #f0f4fa 100%)",
+              "linear-gradient(180deg, var(--card) 0%, var(--background) 55%, var(--surface-muted) 100%)",
           }}
         />
         <FluidBackground className="opacity-100" />
         <div className="absolute inset-0 opacity-40">
           <ParticleField density={0.4} />
         </div>
-        {/* 底部淡出到白，衔接下一区 */}
+        {/* 底部淡出，衔接下一区 */}
         <div
           className="pointer-events-none absolute inset-x-0 bottom-0 h-24"
           style={{
-            background: "linear-gradient(to top, #ffffff, transparent)",
+            background: "linear-gradient(to top, var(--card), transparent)",
           }}
         />
 
@@ -199,7 +199,7 @@ export default function HomePage() {
                 initial={reduce ? false : { opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, ease }}
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-white/80 backdrop-blur-sm px-3 py-1 mb-6 shadow-[var(--shadow-sm)]"
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--card)]/80 backdrop-blur-sm px-3 py-1 mb-6 shadow-[var(--shadow-sm)]"
               >
                 <KeyRound size={12} className="text-[var(--brand)]" strokeWidth={2} />
                 <span className="text-[12px] font-medium text-[var(--text-secondary)]">
@@ -246,7 +246,7 @@ export default function HomePage() {
                 </Link>
                 <Link
                   href="/resume"
-                  className="inline-flex h-11 items-center gap-2 rounded-full border border-[var(--border-strong)] bg-white px-5 text-sm font-medium text-[var(--text-secondary)] hover:border-[var(--brand)]/40 hover:text-[var(--brand-strong)] hover:bg-[var(--brand-softer)] transition-colors"
+                  className="inline-flex h-11 items-center gap-2 rounded-full border border-[var(--border-strong)] bg-[var(--card)] px-5 text-sm font-medium text-[var(--text-secondary)] hover:border-[var(--brand)]/40 hover:text-[var(--brand-strong)] hover:bg-[var(--brand-softer)] transition-colors"
                 >
                   上传简历
                 </Link>
@@ -294,7 +294,7 @@ export default function HomePage() {
       </section>
 
       {/* —— 三步 —— */}
-      <section className="border-t border-[var(--border)] bg-white">
+      <section className="border-t border-[var(--border)] bg-[var(--card)]">
         <div className="mx-auto max-w-[1120px] px-6 sm:px-8 py-16 sm:py-20">
           <FadeInView>
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-10">
@@ -317,7 +317,7 @@ export default function HomePage() {
               <StaggerItem key={step.n}>
                 <Link
                   href={step.href}
-                  className="group relative flex h-full flex-col rounded-2xl border border-[var(--border)] bg-[#fafbfc] p-6 sm:p-7 hover:bg-white hover:border-[var(--brand)]/25 hover:shadow-[var(--shadow-md)] transition-all"
+                  className="group relative flex h-full flex-col rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-6 sm:p-7 hover:bg-[var(--card)] hover:border-[var(--brand)]/25 hover:shadow-[var(--shadow-md)] transition-all"
                 >
                   <div className="flex items-start justify-between mb-5">
                     <span className="text-[13px] font-semibold tabular-nums tracking-wide text-[var(--brand)]">
@@ -344,7 +344,7 @@ export default function HomePage() {
                   </span>
                   {i < STEPS.length - 1 && (
                     <span
-                      className="pointer-events-none absolute top-1/2 -right-2.5 z-10 hidden md:flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-white border border-[var(--border)] text-[var(--muted-soft)]"
+                      className="pointer-events-none absolute top-1/2 -right-2.5 z-10 hidden md:flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--card)] border border-[var(--border)] text-[var(--muted-soft)]"
                       aria-hidden
                     >
                       <ArrowRight size={10} />
@@ -358,7 +358,7 @@ export default function HomePage() {
       </section>
 
       {/* —— 能力 —— */}
-      <section className="border-t border-[var(--border)] bg-[#f8f9fa]">
+      <section className="border-t border-[var(--border)] bg-[var(--background)]">
         <div className="mx-auto max-w-[1120px] px-6 sm:px-8 py-16 sm:py-20">
           <FadeInView>
             <p className="text-[12px] font-semibold tracking-[0.08em] uppercase text-[var(--brand)] mb-2">
@@ -375,7 +375,7 @@ export default function HomePage() {
           <StaggerContainer className="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {FEATURES.map((f) => (
               <StaggerItem key={f.title}>
-                <div className="group h-full rounded-2xl border border-[var(--border)] bg-white p-5 sm:p-6 hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-sm)] transition-all">
+                <div className="group h-full rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 sm:p-6 hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-sm)] transition-all">
                   <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--brand-softer)] text-[var(--brand-strong)] group-hover:bg-[var(--brand-soft)] transition-colors">
                     <f.icon size={17} strokeWidth={1.75} />
                   </div>
@@ -391,7 +391,7 @@ export default function HomePage() {
       </section>
 
       {/* —— 信任点 —— */}
-      <section className="border-t border-[var(--border)] bg-white">
+      <section className="border-t border-[var(--border)] bg-[var(--card)]">
         <div className="mx-auto max-w-[1120px] px-6 sm:px-8 py-12 sm:py-14">
           <FadeInView>
             <div className="flex flex-col sm:flex-row sm:items-center gap-6 sm:gap-10">
@@ -436,7 +436,7 @@ export default function HomePage() {
       </section>
 
       {/* —— CTA —— */}
-      <section className="border-t border-[var(--border)] bg-[#f8f9fa]">
+      <section className="border-t border-[var(--border)] bg-[var(--background)]">
         <div className="mx-auto max-w-[1120px] px-6 sm:px-8 py-14 sm:py-16">
           <FadeInView>
             <div className="relative overflow-hidden rounded-2xl bg-[#202124] px-7 py-10 sm:px-12 sm:py-12">
@@ -458,7 +458,7 @@ export default function HomePage() {
                 </div>
                 <Link
                   href="/interview"
-                  className="group inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-white px-6 text-sm font-medium text-[var(--foreground)] hover:bg-[#f1f3f4] active:scale-[0.98] transition-all"
+                  className="group inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-white px-6 text-sm font-medium text-[#202124] hover:bg-[#f1f3f4] active:scale-[0.98] transition-all"
                 >
                   开始模拟面试
                   <ArrowRight

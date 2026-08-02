@@ -54,6 +54,15 @@ export interface UserProfile {
   career_highlights?: string;
   open_to_remote?: string;
   notice_period?: string;
+  education_level?: string;
+  expected_city?: string;
+  email?: string;
+  phone?: string;
+  certificates?: string;
+  english_level?: string;
+  signature_projects?: string;
+  strengths?: string;
+  weaknesses?: string;
   updated_at?: string;
 }
 
@@ -71,6 +80,11 @@ export interface DimensionScore {
   comment?: string;
 }
 
+export interface RewriteExample {
+  before: string;
+  after: string;
+}
+
 export interface ResumeAnalysis {
   score: number;
   strengths: string[];
@@ -84,9 +98,15 @@ export interface ResumeAnalysis {
   red_flags?: string[];
   role_fit_summary?: string;
   seniority_estimate?: string;
-  rewrite_examples?: string[];
+  /** 兼容旧版字符串与新版 {before,after} */
+  rewrite_examples?: Array<string | RewriteExample>;
   interview_risk_areas?: string[];
   overall_narrative?: string;
+  layout_review?: string;
+  typography_review?: string;
+  content_review?: string;
+  market_insights?: string[];
+  search_queries_used?: string[];
 }
 
 export interface Resume {

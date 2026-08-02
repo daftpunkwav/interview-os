@@ -180,7 +180,7 @@ export default function GrowthPage() {
                         className={`w-full text-left rounded-[var(--radius)] border px-4 py-3.5 transition-colors ${
                           active
                             ? "border-[var(--brand)] bg-[var(--brand-softer)]"
-                            : "border-[var(--border)] hover:border-[var(--border-strong)] hover:bg-[#fafbfc]"
+                            : "border-[var(--border)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2 mb-1">

@@ -76,6 +76,15 @@ class UserProfileUpdate(BaseModel):
     career_highlights: str = ""
     open_to_remote: str = ""
     notice_period: str = ""
+    education_level: str = ""
+    expected_city: str = ""
+    email: str = ""
+    phone: str = ""
+    certificates: str = ""
+    english_level: str = ""
+    signature_projects: str = ""
+    strengths: str = ""
+    weaknesses: str = ""
 
 
 class UserProfileResponse(BaseModel):
@@ -102,6 +111,15 @@ class UserProfileResponse(BaseModel):
     career_highlights: str = ""
     open_to_remote: str = ""
     notice_period: str = ""
+    education_level: str = ""
+    expected_city: str = ""
+    email: str = ""
+    phone: str = ""
+    certificates: str = ""
+    english_level: str = ""
+    signature_projects: str = ""
+    strengths: str = ""
+    weaknesses: str = ""
     updated_at: datetime | None = None
 
 
@@ -133,6 +151,12 @@ class DimensionScore(BaseModel):
     comment: str = ""
 
 
+class RewriteExample(BaseModel):
+    """简历 bullet 改写对照。"""
+    before: str = ""
+    after: str = ""
+
+
 class ResumeAnalysis(BaseModel):
     """多维度简历 Agent 评价结果。
 
@@ -151,9 +175,15 @@ class ResumeAnalysis(BaseModel):
     red_flags: list[str] = Field(default_factory=list)
     role_fit_summary: str = ""
     seniority_estimate: str = ""
-    rewrite_examples: list[str] = Field(default_factory=list)
+    rewrite_examples: list[RewriteExample] = Field(default_factory=list)
     interview_risk_areas: list[str] = Field(default_factory=list)
     overall_narrative: str = ""
+    # 排版 / 内容深评 + 市场参考
+    layout_review: str = ""
+    typography_review: str = ""
+    content_review: str = ""
+    market_insights: list[str] = Field(default_factory=list)
+    search_queries_used: list[str] = Field(default_factory=list)
 
 
 # ── 面试配置 ──────────────────────────────────────────

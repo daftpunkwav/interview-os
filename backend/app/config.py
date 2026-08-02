@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # 服务
     database_url: str = f"sqlite:///{BACKEND_ROOT / 'data' / 'interviewos.db'}"
     upload_dir: str = str(BACKEND_ROOT / "uploads")
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
     env: str = Field(default="dev", description="dev / prod，决定 allow_local_llm 与 CORS 严格度")

@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Menu, X } from "lucide-react";
 import { NAV_ITEMS } from "@/config/nav";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 
 function isNavActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
@@ -101,6 +102,7 @@ function NavContent({
       </nav>
 
       {/* 底部状态 */}
+      <ThemeToggle collapsed={collapsed} />
       {!collapsed && (
         <div className="mx-3 mb-3 px-3 py-3 rounded-xl bg-[var(--sidebar-hover)] border border-transparent">
           <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
@@ -137,7 +139,7 @@ export function Sidebar() {
   return (
     <>
       {/* 移动端顶栏 */}
-      <div className="lg:hidden sticky top-0 z-30 flex items-center gap-3 px-4 h-14 border-b border-[var(--border)] bg-white/95 backdrop-blur-md">
+      <div className="lg:hidden sticky top-0 z-30 flex items-center gap-3 px-4 h-14 border-b border-[var(--border)] bg-[var(--card)]/95 backdrop-blur-md">
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
@@ -202,7 +204,7 @@ export function Sidebar() {
 
         <button
           type="button"
-          className="absolute -right-3 top-[4.75rem] w-6 h-6 rounded-full bg-white border border-[var(--border)] shadow-sm flex items-center justify-center text-[var(--muted)] hover:text-[var(--brand)] hover:border-brand-300 z-20"
+          className="absolute -right-3 top-[4.75rem] w-6 h-6 rounded-full bg-[var(--card)] border border-[var(--border)] shadow-sm flex items-center justify-center text-[var(--muted)] hover:text-[var(--brand)] hover:border-brand-300 z-20"
           onClick={() => setCollapsed(!collapsed)}
           aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
         >

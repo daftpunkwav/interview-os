@@ -40,7 +40,7 @@ export function ThinkAnswerMessage({
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs text-[var(--muted)] hover:bg-white/60 transition-colors"
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs text-[var(--muted)] hover:bg-[var(--surface-soft)]/60 transition-colors"
             aria-expanded={expanded}
           >
             <ChevronRight

@@ -43,6 +43,16 @@ class UserProfile(Base):
     career_highlights: Mapped[str] = mapped_column(Text, default="")
     open_to_remote: Mapped[str] = mapped_column(String(20), default="")  # yes/no/hybrid
     notice_period: Mapped[str] = mapped_column(String(50), default="")
+    # 面试常用扩展字段
+    education_level: Mapped[str] = mapped_column(String(50), default="")  # 本科/硕士/博士等
+    expected_city: Mapped[str] = mapped_column(String(100), default="")
+    email: Mapped[str] = mapped_column(String(200), default="")
+    phone: Mapped[str] = mapped_column(String(100), default="")  # 电话或微信
+    certificates: Mapped[str] = mapped_column(Text, default="")
+    english_level: Mapped[str] = mapped_column(String(100), default="")
+    signature_projects: Mapped[str] = mapped_column(Text, default="")
+    strengths: Mapped[str] = mapped_column(Text, default="")
+    weaknesses: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 

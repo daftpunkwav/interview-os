@@ -111,7 +111,7 @@ export default function HistoryPage() {
                         type="button"
                         onClick={() => setSelectedId(s.id)}
                         className={`w-full text-left px-4 py-3.5 flex items-start gap-3 transition-colors ${
-                          active ? "bg-[var(--brand-softer)]" : "hover:bg-[#fafbfc]"
+                          active ? "bg-[var(--brand-softer)]" : "hover:bg-[var(--surface-muted)]"
                         }`}
                       >
                         <div className="min-w-0 flex-1">

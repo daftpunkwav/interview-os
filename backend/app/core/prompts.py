@@ -16,6 +16,7 @@ AGENT_OUTPUT_RULES = """
 ## 输出约束（必须遵守）
 - 禁止使用任何 emoji 表情符号、颜文字、绘文字或表情包式符号（例如笑脸、鼓掌、火焰等 Unicode 表情）
 - 仅使用纯文字、数字与常规中英文标点；可用 Markdown 排版
+- 中文正文必须使用全角标点：，。；：！？、（）「」；英文专有名词、代码标识符、URL 保持半角
 - 不要用表情代替语气；保持专业书面表达
 """.strip()
 
@@ -87,3 +88,44 @@ def strip_emojis(text: str) -> str:
     # 折叠因删除产生的多余空格（不碰换行结构）
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     return cleaned
+
+
+# 中日韩统一表意文字等常见 CJK 范围（用于标点规范化判定）
+_CJK_CHAR = r"\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff"
+
+
+def normalize_cn_punctuation(text: str) -> str:
+    """将中文语境下的半角标点转为全角，避免英文逗号/冒号混入中文评价。
+
+    不影响纯 ASCII 片段（如 ``MCP``、``LangGraph``、URL）。仅处理紧邻汉字的标点。
+    """
+    if not text:
+        return text
+    s = text
+    # 逗号、句号、分号、冒号、叹号、问号：左右有汉字时转全角
+    pairs = [
+        (",", "，"),
+        (r"\.", "。"),
+        (";", "；"),
+        (":", "："),
+        ("!", "！"),
+        (r"\?", "？"),
+    ]
+    for half, full in pairs:
+        s = re.sub(rf"(?<=[{_CJK_CHAR}]){half}", full, s)
+        s = re.sub(rf"{half}(?=[{_CJK_CHAR}])", full, s)
+    # 括号：内侧紧邻汉字时转全角
+    s = re.sub(rf"\((?=[{_CJK_CHAR}])", "（", s)
+    s = re.sub(rf"(?<=[{_CJK_CHAR}])\)", "）", s)
+    return s
+
+
+def normalize_cn_punctuation_tree(value: object) -> object:
+    """递归规范化 dict/list/str 中的中文标点。"""
+    if isinstance(value, str):
+        return normalize_cn_punctuation(value)
+    if isinstance(value, list):
+        return [normalize_cn_punctuation_tree(v) for v in value]
+    if isinstance(value, dict):
+        return {k: normalize_cn_punctuation_tree(v) for k, v in value.items()}
+    return value
