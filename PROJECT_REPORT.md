@@ -1,9 +1,10 @@
 # InterviewOS 项目状况与进展报告
 
-> 生成日期：2026-07-16  
-> 分支：`feat/complete-platform-v1`  
+> 生成日期：2026-07-23  
+> 分支：`main`  
 > 权威需求：`InterviewOS.md`  
-> 作者约定：`daftpunkwav` / `daftpunk.wav@outlook.com`
+> 作者约定：`daftpunkwav` / `daftpunk.wav@outlook.com`  
+> 详细开发进度（实现路径 + 修改意见）：[`DEVELOPMENT_PROGRESS.md`](./DEVELOPMENT_PROGRESS.md)
 
 ---
 
@@ -39,15 +40,15 @@
 | 简历 Agent 深度评价 | 「AI 深度评价」 | ✅ | 综合分 + 8 维评分 + 优势/不足/风险/改写/预测题/叙事 |
 | 面试准备 Agent | `/prep` | ✅ | 绑定简历 + 公司；ReAct 工具（搜索/公司/出题/**GitHub**） |
 | 面试配置 | `/interview` | ✅ | 岗位/职级/公司/工作流/人格/严厉度/风格/人像/场景/简历 |
-| 实时面试房间 | `/interview/[id]` | ✅ | WS、摄像头、STT、TTS、文字、阶段流转 |
-| 面试官拟真人像 | 面试房间 | ✅ | CSS 半身像、口型、眨眼、情绪（smile/serious） |
-| 真实语音 | Edge TTS | ✅ | 串行队列；可配置音色 |
-| GitHub 项目核验 | 面试/准备工具 | ✅ | 用户/仓库/README/commit/PR/文件/语言 |
-| 公司 RAG | 面试回合 | ✅ | local Chroma / StepFun / none |
+| 实时面试房间 | `/interview/[id]` | ✅ | WS、摄像头、STT、TTS、文字、阶段流转；同会话单连接（新连接踢旧） |
+| 面试官拟真人像 | 面试房间 | ✅ | CSS SVG 半身像、口型、眨眼、情绪（smile/serious）；非 Live2D |
+| 真实语音 | Edge TTS | ✅ | 串行队列；可配置 5 种中文音色 |
+| GitHub 项目核验 | 面试/准备工具 | ✅ | 用户/仓库/README/commit/PR/文件/语言（REST + function tools） |
+| 公司 RAG | 面试回合 | ✅ | local Chroma / StepFun retrieval / none 三后端；数据来自内置 7 家 |
 | 动态追问 | Runner | ✅ | 结构化信号 + 工具证据 |
 | 长上下文 | context manager | ✅ | 30% 阈值压缩 + 结构化 agent_state |
-| 面试报告 | `/report/[id]` | ✅ | 多维评分、建议、训练计划；SSE 流式 |
-| 成长追踪 | `/growth` | ✅ | 弱项聚合 + 系统自我成长洞察 |
+| 面试报告 | `/report/[id]` | ✅ | 多维评分、建议、训练计划；SSE 单次 LLM 流式，避免双倍计费 |
+| 成长追踪 | `/growth` | ✅ | 候选人弱项 + 系统自我成长洞察（`system_learning.json`） |
 | 历史会话 | `/history` | ✅ | 会话列表 |
 | 本地数据 | SQLite + Chroma | ✅ | 无强制登录 |
 
@@ -55,14 +56,17 @@
 
 | 功能 | 现状 | 建议 |
 |------|------|------|
-| 「等待叫号」队列 | 未做叫号 UI；创建会话即开始 | 若需大厅感，可加 pending 队列状态机 |
+| 「等待叫号」队列 | 未做叫号 UI；创建会话即开始 | 若需大厅感，可加 `waiting` 队列状态机 |
 | 官方 MCP 传输 | 当前为 **REST 工具层（MCP 语义）** | 可再挂 stdio/HTTP MCP 适配器 |
 | LangGraph | 自研 Runner + 状态机 | 可选迁移；非阻塞 |
-| Live2D / 视频人像 | CSS 拟真半身像 | 可替换 `InterviewerAvatar` 为 Live2D |
-| 面经众包上传 | 内置种子 + web_search | 可加用户上传面经入库 |
+| Live2D / 视频人像 | CSS SVG 拟真半身像 | 可替换 `InterviewerAvatar` 为 Live2D；接口（avatar_id/emotion/audio_b64）保持稳定 |
+| 面经众包上传 | 内置 7 家 + web_search（duckduckgo） | 可加用户上传面经入库（合规内） |
 | 多用户鉴权 | 本地单用户 | 产品化需账号体系（PRD 有，MVP 刻意不做） |
 | 40–60 分钟实战压测 | 机制具备 | 需真实 LLM 长测优化摘要质量 |
-| 系统学习闭环 | 写 memory + 展示 | 尚未自动改写 prompt/题库策略 |
+| 系统学习闭环 | ✅ 第一阶段已闭环：写 memory + 展示 + **反哺开场 system prompt** | 第二阶段：表现最差"公司×岗位×阶段"组合加入重点追问指令 |
+| `interview_style` 一致性 | ✅ 已修复：前后端均为 4 种（guided/deep_dive/continuous/challenging） | — |
+| 客户端实时人脸检测 | 当前依赖前端可选上传 `face_analysis` | 前端 `VideoPanel` 接入 `MediaPipe` / `face-api.js` 自动产出 |
+| `system_learning.json` 并发写 | 单 worker 下 `_load/_save` 同步读写 | 加锁 / 迁 SQLite |
 
 ### 2.3 明确未做（合规/范围）
 
@@ -135,24 +139,36 @@ SQLite · Chroma · uploads · system_learning.json
 
 ---
 
-## 4. 本轮实现要点（`feat/complete-platform-v1`）
+## 4. 当前分支与近期变更（`main`）
 
-1. **GitHub 工具层** `backend/app/services/github/`
+1. **GitHub 工具层** `backend/app/services/github/`（REST + OpenAI function tools，语义对齐常见 GitHub MCP）
 2. **面试 function calling 循环** + 无工具短路（避免双倍延迟）
-3. **富简历评价 schema + 前端展示 + 删除**
-4. **档案扩展字段 + 迁移**
-5. **拟真 CSS 面试官**
-6. **系统成长 memory + API + 成长页区块**
-7. **结构化 agent_state 注入 system prompt**
-8. **Prep Agent 支持 GitHub**
-9. **测试**：`test_github_tools` / `test_resume_analysis_normalize` / `test_growth_learning` 等通过
-10. **文档**：README / ARCHITECTURE / API / CHANGELOG / InterviewOS 产品决策
+3. **富简历评价 schema + 前端展示 + 删除**（8 维 + ATS + 风险点 + 改写示例 + 预测题 + 叙事）
+4. **档案扩展字段 + 迁移**（GitHub/作品集/LinkedIn/城市/语言/亮点/远程/到岗）
+5. **拟真 CSS SVG 面试官**（半身像 + 口型 + 眨眼 + 情绪）
+6. **系统成长 memory + API + 成长页区块**（`system_learning.json`）
+7. **结构化 agent_state 注入 system prompt**（asked_questions / weak_points / tool_trace / github_findings）
+8. **Prep Agent 支持 GitHub**（同步 + 流式双接口）
+9. **WS 单会话单连接**（`fix/ws-single-session-mutex`）
+10. **报告 SSE 单次 LLM**（`fix/report-stream-single-llm`）
+11. **出站 DNS pin**（`fix/ssrf-pin-ip-transport`，缓解 DNS rebinding TOCTOU）
+12. **前端同源代理 + Google MD3 风格 UI**（`feat/frontend`）
+13. **测试**：18 个测试文件（`test_*.py` 16 个 + `conftest` / `fakes`），含 `test_github_tools` / `test_resume_analysis_normalize` / `test_growth_learning` / `test_rag_backends` / `test_security` / `test_security_extra` / `test_report_stream` / `test_migrate` / `test_llm_client_retry` 等通过
 
-### Git 记录
+### 主要 Git 分支
 
-- 分支：`feat/complete-platform-v1`
-- 提交：`feat: complete interview agent tools and platform core features`（及后续 docs 提交）
-- 作者：`daftpunkwav` &lt;daftpunk.wav@outlook.com&gt;
+| 分支 | 主题 |
+|------|------|
+| `main` | 当前；接收各 fix / refactor 合并 |
+| `feat/complete-platform-v1` | 综合功能汇总分支（含 GitHub 工具 + 拟真人像 + 系统学习等） |
+| `feat/v2-realtime-core` | 实时核心（WS handler 重构） |
+| `feat/m0-bootstrap-tests` ~ `feat/m4-rag-company-kb` | 分阶段里程碑 |
+| `feat/rag-multibackend` | RAG 多后端抽象 |
+| `fix/ssrf-pin-ip-transport` | 出站 DNS pin |
+| `fix/ws-single-session-mutex` | WS 单会话单连接 |
+| `fix/report-stream-single-llm` | 报告 SSE 单次 LLM |
+| `fix/security-hardening` | 安全加固（AES-GCM / SSRF / WS 心跳 / 限流） |
+| `refactor/*` | 代码现代化与安全加固 |
 
 ---
 
@@ -162,16 +178,16 @@ SQLite · Chroma · uploads · system_learning.json
 |------------------------|--------|------|
 | 摄像头面试 | ✅ | VideoPanel + 多模态帧 |
 | 提交简历 | ✅ | 多份 + 评价 |
-| 按简历/岗位提问与追问 | ✅ | Agent + followup |
-| 候选人反问公司 | ✅ | 反问阶段 + 公司知识 |
+| 按简历/岗位提问与追问 | ✅ | Agent + followup（阶段感知 + 薄弱线索记录 + 每回合刷新结构化记忆） |
+| 候选人反问公司 | ✅ | 反问阶段 + 专门公司代表 prompt（角色切换 + 公司资料 + 坦诚说明） |
 | 态度/严厉度 | ✅ | personality + strictness 1–10 |
 | 模拟字节/腾讯等 | ✅ | 公司选项 + RAG/知识 |
 | 面经收集 | ⚠️ | 种子 + 搜索；不爬虫 |
 | BYOK | ✅ | |
-| ≥40 分钟上下文 | ⚠️ 机制 ✅ | 需长测；压缩 + 结构化记忆已上 |
+| ≥40 分钟上下文 | ⚠️ 机制 ✅ | 需长测；压缩 + 结构化记忆每回合刷新已上 |
 | 工具调用 | ✅ | |
 | GitHub MCP | ✅ 语义 | REST 实现，非 MCP 进程 |
-| 自我成长 | ✅ 双轨 | 候选人 + 系统 memory |
+| 自我成长 | ✅ 双轨闭环 | 候选人 + 系统 memory（反哺开场 system prompt） |
 | 多 workflow | ✅ | technical / hr / management |
 | RAG 决策 | ✅ | 公司用 RAG，简历/GitHub 不用 |
 | 拟真人像 + 真声 | ✅ | CSS 人像 + Edge TTS |
