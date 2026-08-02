@@ -13,34 +13,36 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 
 ## 1. REST 概览
 
+> 所有路径前缀 `/api/v1`；兼容别名 `/api` 由 `app/api/router.py` 注入，3 个月内保留，2026-10-01 后将逐步移除。下表以权威路径 `/api/v1` 列出。
+
 | 方法 | 路径 | 入参 | 返回 | 备注 |
 |---|---|---|---|---|
-| GET | `/health` | — | `{status,service,version}` | 健康探针 |
-| GET | `/api/v1/options` | — | `Options` | 启动初始化：岗位/职级/公司/工作流/AVATAR/SCENE |
+| GET | `/health` | — | `{status,service,version}` | 健康探针（未挂在 `/api/v1` 下） |
+| GET | `/api/v1/options` | — | `Options` | 启动初始化：岗位/职级/公司/工作流/人像/场景/TTS 音色 |
 | GET | `/api/v1/settings/llm` | — | `LLMSettings` | 仅 1 行，id=1 |
-| PUT | `/api/v1/settings/llm` | `LLMSettingsUpdate` | `LLMSettings` | 同时设 api_key（"keep" 表示不变） |
+| PUT | `/api/v1/settings/llm` | `LLMSettingsUpdate` | `LLMSettings` | 同时设 api_key（`"keep"` 表示不变；新值会被 at-rest AES-256-GCM 加密） |
 | POST | `/api/v1/settings/llm/test` | — | `LLMTestResponse` | SSRF 防御 + 真实连通 |
 | GET | `/api/v1/profile` | — | `UserProfile` | 自动创建 id=1 |
-| PUT | `/api/v1/profile` | `UserProfileUpdate` | `UserProfile` | |
-| POST | `/api/v1/resume/upload` | multipart `file` | `Resume` | **10MB 上限 + MIME 嗅探 + 路径越界防御** |
+| PUT | `/api/v1/profile` | `UserProfileUpdate` | `UserProfile` | 含 GitHub 用户名 / 作品集 / LinkedIn / 城市 / 语言 / 职业亮点 / 远程 / 到岗周期 |
+| POST | `/api/v1/resume/upload` | multipart `file` | `Resume` | **10MB 上限 + 魔数嗅探 + 路径越界防御**；PDF/DOCX/MD/TXT |
 | GET | `/api/v1/resume/list` | — | `Resume[]` | |
 | GET | `/api/v1/resume/{id}` | — | `Resume` | |
-| POST | `/api/v1/resume/{id}/activate` | — | `{id,is_active}` | |
+| POST | `/api/v1/resume/{id}/activate` | — | `{id,is_active}` | 行锁互斥 |
 | DELETE | `/api/v1/resume/{id}` | — | `{ok,id}` | 删除简历与尝试清理上传文件 |
 | POST | `/api/v1/resume/{id}/analyze` | — | `ResumeAnalysis` | 多维度 Agent 评价（强校验 + 容错规范化） |
-| POST | `/api/v1/interview/sessions` | `InterviewConfig` | `InterviewSession` | |
+| POST | `/api/v1/interview/sessions` | `InterviewConfig` | `InterviewSession` | schema 中 `interview_style` 仅允许 `deep_dive` / `concise`；人格严格度 1–10 |
 | GET | `/api/v1/interview/sessions` | — | `InterviewSession[]` | |
 | GET | `/api/v1/interview/sessions/{id}` | — | `InterviewSession` | |
-| POST | `/api/v1/interview/sessions/{id}/start` | — | `{message?,current_phase}` | |
-| POST | `/api/v1/interview/sessions/{id}/message` | `{content,face_analysis?,image_base64?}` | `{message,current_phase,is_complete,phases_remaining}` | |
-| GET | `/api/v1/interview/sessions/{id}/messages` | — | `ChatMessage[]` | 历史消息 |
-| POST | `/api/v1/interview/sessions/{id}/finish` | — | `{session_id,status,overall_score?}` | |
-| GET | `/api/v1/reports/{id}` | — | `{session_id,report,duration_minutes?}` | |
-| GET | `/api/v1/reports/{id}/stream` | — | SSE | 流式生成报告 |
-| GET | `/api/v1/reports/growth/history` | — | `GrowthRecord[]` | |
+| POST | `/api/v1/interview/sessions/{id}/start` | — | `{session_id,message,current_phase}` | 仅返回开场白；不含 `is_complete` |
+| POST | `/api/v1/interview/sessions/{id}/message` | `{content,face_analysis?,image_base64?}` | `{session_id,message,current_phase,is_complete,phases_remaining}` | |
+| GET | `/api/v1/interview/sessions/{id}/messages` | — | `ChatMessage[]` | 历史消息（强校验，坏数据降级为空） |
+| POST | `/api/v1/interview/sessions/{id}/finish` | — | `{session_id,status,overall_score?}` | 提前结束；幂等（已结束则返回 `already_completed`） |
+| GET | `/api/v1/reports/{id}` | — | `{session_id,report,messages_count,duration_minutes?}` | 报告已生成才返回；否则 404 |
+| GET | `/api/v1/reports/{id}/stream` | — | SSE | 流式生成报告；单次 LLM，避免双倍计费 |
+| GET | `/api/v1/reports/growth/history` | — | `GrowthRecord[]` | 最近 20 条 |
 | GET | `/api/v1/reports/growth/system-insights` | — | 系统学习洞察 | 跨面试聚合 tool/公司/薄弱线索 |
 | POST | `/api/v1/prep/sessions` | `{resume_id?,target_role?,target_company?}` | `{id}` | |
-| POST | `/api/v1/prep/sessions/{id}/message` | `{content}` | `{reply,token_usage}` | |
+| POST | `/api/v1/prep/sessions/{id}/message` | `{content}` | `{reply,token_usage}` | 同步版本 |
 | POST | `/api/v1/prep/sessions/{id}/message/stream` | `{content}` | SSE | 流式辅导 |
 | GET | `/api/v1/prep/sessions/{id}/messages` | — | 历史消息 JSON 数组 | 准备会话历史回溯 |
 
@@ -79,7 +81,7 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 
 **端点**：`ws://{host}/api/v1/ws/interview/{session_id}`
 
-所有消息都是 JSON，单层结构、靠 `type` 区分。**客户端事件**：
+所有消息都是 JSON，单层结构、靠 `type` 区分。**客户端事件**（discriminated union，定义见 `frontend/src/types/index.ts:ClientEvent`）：
 
 ```jsonc
 // 用户说完一段（短消息，无音频）
@@ -99,9 +101,12 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 
 // 推送当前画面人脸分析（仅 vision 模式）
 { "type": "vision_update", "face_analysis": { "dominant_emotion": "smile", "eye_contact": true, ... } }
+
+// 收到 server_ping 后 5s 内必须回 pong
+{ "type": "pong", "t": 1700000000 }
 ```
 
-**服务端事件**：
+**服务端事件**（discriminated union，定义见 `frontend/src/types/index.ts:ServerEvent`）：
 
 ```jsonc
 { "type": "turn_state", "state": "IDLE" | "AI_SPEAKING" | "USER_SPEAKING" | "PROCESSING" }
@@ -109,14 +114,20 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 { "type": "stt_final",   "text": "..." }
 { "type": "assistant_token", "token": "...", "phase": "..." }                    // 流式 token
 { "type": "assistant_done",  "content": "...", "phase": "...", "emotion": "smile", "is_complete": false, "audio_b64": "..." }
+{ "type": "assistant_audio_start" }
+{ "type": "assistant_audio_chunk", "data": "<base64>", "idx": 0 }
+{ "type": "assistant_audio_end" }
 { "type": "tts_audio",       "data": "<base64 mp3>", "mime": "audio/mpeg" }
 { "type": "silence_nudge",   "content": "请问还在吗？" }
 { "type": "reference_hint_loading", "question": "..." }
 { "type": "reference_hint",  "content": "...", "question": "..." }
 { "type": "phase_changed",   "phase": "..." }
 { "type": "interview_complete", "report_id": 42 }
+{ "type": "server_ping", "t": 1700000000 }                                       // 心跳：客户端需在 5s 内回 pong
 { "type": "error", "message": "..." }
 ```
+
+> 同一 `session_id` 只允许一条活跃连接，新连接会踢掉旧连接（`fix/ws-single-session-mutex`）。
 
 ### 2.1 前端强类型
 

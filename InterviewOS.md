@@ -90,6 +90,29 @@ agent需要最少40分钟的面试时长.需要有优秀的上下文管理和工
 
 
 
+### 实现状态注脚（2026-07-23）
+
+> 以下标记说明上述各项在仓库 `main` 分支中的**实际落地情况**。原则性 / 决策性表述保持不变，仅补充实现注脚，避免后人误以为全部已实现。
+> 完整进度与修改意见：[`DEVELOPMENT_PROGRESS.md`](./DEVELOPMENT_PROGRESS.md) · [`PROJECT_REPORT.md`](./PROJECT_REPORT.md)。
+
+| 决策 | 实现情况 | 说明 |
+|---|---|---|
+| 候选人成长（GrowthRecord + 成长页） | ✅ | `app/services/growth/learning.py` + `GrowthRecord` 表 + `/api/v1/reports/growth/history` |
+| 系统迭代（`system_learning.json` + 洞察） | ✅ 写入与展示 | **尚未自动反哺 prompt / 题库策略**（属 P1） |
+| GitHub REST 工具层 | ✅ | 语义对齐常见 GitHub MCP；**未走官方 MCP 进程传输**（std/HTTP 适配器见 P2） |
+| RAG 边界（公司用 RAG，简历 / GitHub 不用） | ✅ | 抽象层 `RAGBackend`（`local` Chroma / `stepfun` retrieval / `none`） |
+| 上下文：30% 阈值 + 结构化 agent_state | ✅ | `app/services/context/manager.py` + `InterviewAgent` |
+| 面经数据：内置 + 检索，不爬虫 | ✅ | 当前内置 7 家（字节/腾讯/阿里/美团/米哈游/OpenAI/Google），无众包上传 |
+| 人像：CSS 矢量 + 口型/眨眼/情绪 | ✅ | `frontend/src/features/avatar/InterviewerAvatar.tsx`；**未引入 Live2D**（P1） |
+| 语音：Edge TTS + faster-whisper | ✅ | 串行队列；本地 CPU 推理 |
+| 注册 / 登录 / 多用户隔离 | ❌ 未实现 | MVP 定位本地单机；`profile_id=1` 单行 |
+| 等待叫号 / 候考大厅 | ❌ 未实现 | 创建会话即可开始 |
+| 面经众包上传 | ❌ 未实现 | 仅有 duckduckgo 搜索 |
+| 系统学习自动改写 prompt | ❌ 未实现 | 当前为「记录 + 展示」 |
+| 40–60 分钟实战压测 | ❌ 未做 | 机制具备，待真实 LLM 长测优化摘要质量 |
+
+
+
 # gpt的建议
 
 

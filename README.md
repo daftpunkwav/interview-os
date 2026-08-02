@@ -7,28 +7,32 @@ InterviewOS 是一个基于 AI Agent 的真实面试模拟系统。上传简历�
 
 ## 核心特性
 
-- **BYOK** — 自带 API Key，支持 OpenAI 兼容接口（OpenAI、StepFun、DeepSeek、OpenRouter、Claude via proxy 等）
-- **丰富个人档案** — 教育/求职/GitHub/作品集/职业亮点等，供 Agent 全链路读取
+- **BYOK** — 自带 API Key，支持 OpenAI 兼容接口（OpenAI、StepFun、DeepSeek、OpenRouter、Claude via proxy 等）；API Key 入库前 AES-256-GCM 加密
+- **多字段个人档案** — 基础信息 + 教育/求职 + GitHub 用户名/作品集/LinkedIn/城市/语言/职业亮点/远程偏好/到岗周期
 - **多简历管理** — 上传/激活/删除；Agent 多维度深度评价（结构、量化、技术深度、ATS、风险点、改写示例、预测题）
-- **面试准备 Agent** — 按选定简历 + 目标公司辅导，支持 web_search / 公司知识 / GitHub 工具
-- **企业风格模拟** — 内置字节、腾讯、阿里、美团、米哈游、OpenAI、Google 等面试模型 + RAG
-- **多 Workflow** — 技术面 / HR 面 / 管理岗，完整阶段流转；人格/严厉度/风格可配
-- **实时面试 Agent** — 摄像头 + 麦克风 + 流式 LLM + Edge-TTS；function calling（GitHub 核验真实项目）
-- **动态追问** — 结构化追问信号 + 工具核实 + 40 分钟级上下文压缩与结构化记忆
-- **拟真人像** — CSS 半身面试官 + 口型/眨眼/情绪联动（压迫感语音）
-- **面试报告** — 多维度评分、改进建议、训练计划
-- **双重成长** — 候选人弱项追踪 + 系统跨面试学习 memory
-- **本地优先** — SQLite + Chroma 本地落盘，无需注册登录
+- **面试准备 Agent** — 按选定简历 + 目标公司辅导，支持 web_search（duckduckgo）/ 公司知识 / GitHub 工具
+- **企业风格模拟** — 内置 7 家企业知识（字节、腾讯、阿里、美团、米哈游、OpenAI、Google）+ 可选 Chroma / StepFun 向量检索后端
+- **多 Workflow** — 技术面 / HR 面 / 管理岗，完整阶段流转；人格（5 种）/严格度（1–10）/风格（4 种）/人像/场景可配
+- **实时面试 Agent** — 摄像头 + 麦克风 + 流式 LLM + Edge TTS；function calling（GitHub 核验真实项目）
+- **动态追问** — 结构化追问信号 + 工具核实 + 30% 阈值上下文压缩与结构化记忆
+- **拟真人像** — CSS 矢量半身面试官 + 口型/眨眼/情绪（不依赖 Live2D / 视频）
+- **面试报告** — 多维度评分、改进建议、训练计划；SSE 流式
+- **双重成长** — 候选人弱项追踪（GrowthRecord）+ 系统跨面试学习 memory（`system_learning.json`）
+- **本地优先** — SQLite + Chroma 本地落盘，无注册登录
+
+> 与权威设想（`InterviewOS.md`）对照：**等待叫号队列、官方 MCP 进程传输、Live2D 人像、面经众包、多用户鉴权、40–60 分钟实战压测** 等仍未实现，详见 [PROJECT_REPORT.md](./PROJECT_REPORT.md) §2.2–2.3。
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|---|
 | 后端 | Python 3.11+ · FastAPI · SQLAlchemy 2.0 · SQLite · ChromaDB · Pydantic v2 |
-| 前端 | Next.js 15 · React 19 · TypeScript strict · Tailwind CSS · framer-motion |
-| AI | OpenAI Chat Completions 兼容 API |
-| 语音 | Edge TTS · faster-whisper |
+| 前端 | Next.js 15 · React 19 · TypeScript strict (`noUncheckedIndexedAccess`) · Tailwind CSS · framer-motion |
+| AI | OpenAI Chat Completions 兼容 API（含 embeddings） |
+| 语音 | Edge TTS（`edge-tts`） · faster-whisper |
 | 测试 | pytest / pytest-asyncio |
+
+> 注：GitHub 集成通过 `app/services/github/` 中的 **REST 客户端 + OpenAI function tools** 实现，与常见 GitHub MCP 工具语义对齐；**不是**官方 MCP 进程传输。可后续替换为 stdio/HTTP MCP 适配器（见 [PROJECT_REPORT.md §2.2](./PROJECT_REPORT.md)）。
 
 ## 安全 & 工程
 
@@ -134,38 +138,39 @@ INTERVIEW_MAX_TOOL_ROUNDS=3
 InterviewOS/
 ├── backend/                                 # FastAPI 后端
 │   ├── app/
-│   │   ├── api/                             # REST 路由（含 v1/ 实时）
-│   │   ├── core/                            # 安全/日志/限流/迁移/加密
+│   │   ├── api/                             # REST 路由（v1/ 实时）
+│   │   │   └── v1/                          # api/v1/* 聚合 + 准备 API + WS 路由
+│   │   ├── core/                            # 安全/日志/限流/迁移/加密/prompts/constants
 │   │   ├── models/                          # SQLAlchemy 数据模型
 │   │   ├── schemas/                         # Pydantic v2 类型
 │   │   ├── services/
-│   │   │   ├── llm/                         # BYOK LLM 客户端
-│   │   │   ├── interview/                   # runner / agent / followup / workflows
-│   │   │   ├── rag/                         # Chroma / StepFun RAG
-│   │   │   ├── github/                      # GitHub 核验工具（MCP 语义）
-│   │   │   ├── growth/                      # 系统自我成长 memory
-│   │   │   ├── company/                     # 企业知识
-│   │   │   ├── context/                     # 上下文压缩
-│   │   │   ├── resume/                      # 简历解析
-│   │   │   ├── search/                      # 准备 Agent 联网
-│   │   │   ├── stt/                         # Whisper
+│   │   │   ├── llm/                         # BYOK LLM 客户端（chat/chat_stream/embed/test）
+│   │   │   ├── interview/                   # runner / agent / followup / workflows / tools / events
+│   │   │   ├── rag/                         # RAGBackend 抽象 + local/stepfun/none 三后端 + 公司知识数据层
+│   │   │   ├── github/                      # GitHub REST 客户端 + function tools（MCP 语义）
+│   │   │   ├── growth/                      # 候选人 GrowthRecord（API）+ 系统 system_learning.json
+│   │   │   ├── company/                     # 内置企业知识（7 家）
+│   │   │   ├── context/                     # 上下文压缩与 token 估算（30% 阈值）
+│   │   │   ├── resume/                      # 简历解析（PDF/DOCX/MD/TXT 魔数嗅探）
+│   │   │   ├── search/                      # DuckDuckGo 搜索（Prep Agent 用）
+│   │   │   ├── stt/                         # faster-whisper
 │   │   │   └── tts/                         # Edge TTS
-│   │   ├── realtime/                        # WebSocket 协议 + handler
+│   │   ├── realtime/                        # WebSocket handler + 事件协议
 │   │   ├── agents/                          # orchestrator / vision / prep
+│   │   ├── data/                            # 运行时数据（SQLite/Chroma/system_learning.json/companies）
 │   │   └── main.py                          # FastAPI 入口
-│   ├── tests/                               # pytest 用例（180+ 通过）
+│   ├── tests/                               # pytest 用例（详见 § 开发）
 │   └── requirements.txt
 ├── frontend/                                # Next.js 前端
 │   └── src/
 │       ├── app/                             # 页面（error.tsx / not-found.tsx / loading.tsx 在根）
-│       ├── components/                      # 共享组件（含 Toast / LoadError）
+│       │   └── api/                         # 本地 Next 路由代理（流式请求同源）
+│       ├── components/                      # 共享组件（Toast/LoadError/MarkdownContent/effects/...）
 │       ├── features/                        # avatar / media（WS Hook、TTS、录音）
-│       ├── lib/                             # api.ts / env.ts / utils.ts
-│       ├── types/                           # 全局强类型契约（与后端协议一一对应）
-│       └── ...
-├── docs/                                    # 架构 + API 文档
-├── scripts/                                 # 启动脚本
-├── .env.example                             # 根：指向 backend/.env.example
+│       ├── lib/                             # api.ts / env.ts / utils.ts / thinkStream.ts
+│       └── types/                           # 全局强类型契约（与后端协议一一对应）
+├── docs/                                    # 架构 + API 文档 + PRD
+├── scripts/                                 # 启动脚本（start.ps1 / start.sh）
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 ├── SECURITY.md
@@ -187,7 +192,7 @@ InterviewOS/
 
 ## 开发
 
-- 后端测试：`cd backend && ./.venv/Scripts/python.exe -m pytest -q`
+- 后端测试：`cd backend && ./.venv/Scripts/python.exe -m pytest -q`（当前 16 个 `test_*.py` 与 conftest/fakes，共 18 个测试文件）
 - 前端类型检查：`cd frontend && npx tsc --noEmit`
 - 启动前端：`npm run dev`
 - 启动后端：`uvicorn app.main:app --reload`
@@ -196,6 +201,8 @@ InterviewOS/
 
 - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — 架构图、模块边界、扩展点
 - [docs/API.md](./docs/API.md) — REST / WebSocket / SSE 完整规约
+- [PROJECT_REPORT.md](./PROJECT_REPORT.md) — 项目状态报告（已实现/部分实现/明确未做）
+- [InterviewOS.md](./InterviewOS.md) — 权威设想 + 产品决策 + 实现状态注脚
 - [SECURITY.md](./SECURITY.md) — 威胁模型、缓解清单、报告渠道
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — 仓库约定、提交规范
 - [CHANGELOG.md](./CHANGELOG.md) — 版本变更

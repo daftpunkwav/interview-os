@@ -106,18 +106,19 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
 | 风险点 | 当前实现 | 后续可扩展 |
 |---|---|---|
 | API Key 在 DB 明文 | `app/core/secrets.py` AES-256-GCM（依赖 `cryptography`），`enc:v2:<salt>:<nonce>:<tag>:<ct>`；AEAD 篡改拒绝；旧 `enc:v1:` 显式抛 `LegacySecretFormatError` | KMS 托管 master |
-| SSRF `api_base` | `is_safe_http_url` 多 A 记录遍历 + IPv6 字面量 + 端口白名单（80/443）；dev 模式允许 loopback；本地 LLM 需额外 `INTERVIEWOS_ALLOW_LOCAL_LLM=1` 双重放行 | IP 黑/白名单；httpx transport 层强制 resolved IP 防 DNS rebinding |
-| 文件上传 | 10MB 流式上限 + 魔数嗅探 + `assert_within_dir` | 走对象存储（MVP 单机保留本地） |
+| SSRF `api_base` | `is_safe_http_url` 多 A 记录遍历 + IPv6 字面量 + 端口白名单（80/443）；`app/services/llm/client.py` 进一步在出站 HTTP transport 层 DNS pin 解析结果（缓解 DNS rebinding TOCTOU）；dev 模式允许 loopback；本地 LLM 需额外 `INTERVIEWOS_ALLOW_LOCAL_LLM=1` 双重放行 | IP 黑/白名单；httpx transport 强制复用 pinned IP 防后续 re-resolve |
+| 文件上传 | 10MB 流式上限 + 魔数嗅探（`%PDF-` / `PK\x03\x04` / OLE）+ `assert_within_dir` | 走对象存储（MVP 单机保留本地） |
 | 限流 | `app/core/ratelimit.py` 滑动窗口；`INTERVIEWOS_TRUSTED_PROXY_CIDRS` 控制 X-Forwarded-For 信任 | 替换 Redis；按用户/IP 区分 |
 | 日志脱敏 | `RedactFilter` 覆盖 `record.msg/args/exc_text` 三路径 | 全文加密（KMS） |
-| WebSocket 拒绝服务 | 服务端 30s 心跳发 `server_ping`，客户端 5s 内须回 `pong`，3 次未回 graceful close；audio_buffer 5MB 上限 | JWT 鉴权 / token 续签 |
+| WebSocket 拒绝服务 | 服务端 30s 心跳发 `server_ping`，客户端 5s 内须回 `pong`，3 次未回 graceful close；audio_buffer 5MB 上限；同一 session 仅允许一条活跃连接，新连接踢旧（`fix/ws-single-session-mutex`） | JWT 鉴权 / token 续签 |
 | 路径穿越 | `sanitize_filename` + `assert_within_dir` 双保险 | — |
 | CORS 滥用 | `allow_origins=['*']` + `allow_credentials=True` 启动即拒绝；`PATCH/HEAD` 显式放行；X-Request-Id 输入校验正则 | — |
-| 错误响应不一致 | 统一 envelope `{error: {code, message, trace_id}}`；StarletteHTTPException / HTTPException 共用 handler | — |
+| 错误响应不一致 | 统一 envelope `{error: {code, message, trace_id}}`；StarletteHTTPException / HTTPException / RequestValidationError / UnsafeURLError 共用 handler | — |
+| 报告 SSE 双倍计费 | 报告流式接口复用 `generate_and_persist_report`，单次 LLM 完成生成与持久化（`fix/report-stream-single-llm`） | — |
 
 ## 6. 测试策略
 
-- `backend/tests/` 16 个 `test_*.py`（含 `conftest.py` / `fakes.py` 共 18 文件），核心覆盖 Runner / Followup / RAG（含多后端）/ Context 压缩 / TTS Queue / WS handler / Migrate / Secrets / Security / v1 路径；
+- `backend/tests/` 共 18 个测试文件（`test_*.py` 16 个 + `conftest.py` / `fakes.py`），覆盖 Runner / Followup / RAG（含多后端）/ Context 压缩 / TTS Queue / WS handler / Migrate / Secrets / Security / v1 路径 / 简历评价规范化 / GitHub 工具 / LLM 客户端重试 / 报告 SSE / 成长学习；
 - 新代码要求至少补 1 个单测；与 LLM 交互必须通过 `FakeLLMClient`；
 - 测速脚本 `pytest -q`。
 
@@ -135,8 +136,14 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
 | 加前端事件类型 | 仅在 `src/types/index.ts` 增加 discriminated union 成员；所有 on() 回调自动收紧 |
 | 加全局 Toast 类型 | 已在 `src/components/Toast.tsx` 注册；按需调用 `toast.success/error/...` |
 
-## 8. 已知约束
+## 8. 已知约束与未实现项
 
-- **未实现鉴权**：当前所有接口均无登录；MVP 定位为本地单机工具（详见 `SECURITY.md`）。
+- **未实现鉴权 / 多用户**：当前所有接口均无登录；MVP 定位为本地单机工具（详见 `SECURITY.md` §1）。
+- **未实现叫号 / 排队大厅**：创建会话即可开始，不存在 `pending → called` 状态机。
+- **未实现官方 MCP 传输**：GitHub 工具为 REST 客户端 + function tools，语义对齐常见 MCP；如需 stdio/HTTP MCP 适配器，可在 `app/services/github/` 上挂 adapter。
+- **拟真人像为 CSS 矢量 SVG**：未引入 Live2D / 视频流；如需替换为 Live2D，可整体替换 `frontend/src/features/avatar/InterviewerAvatar.tsx`，对外接口（avatar_id/scene_id）保持稳定。
+- **企业知识当前为内置 7 家硬编码 + RAG 抽象**：`app/services/company/knowledge.py` 维护字节/腾讯/阿里/美团/米哈游/OpenAI/Google 的样例问题与风格描述；`app/services/rag/` 提供 local Chroma / StepFun retrieval / none 三种 RAG 后端抽象，可按 `RAGBackendKind` 切换；尚未接入众包面经或自动爬虫（合规与项目所有者决策）。
+- **未做 40–60 分钟实战压测**：压缩 + 结构化记忆机制已具备（`compress_messages` 30% 阈值 + `agent_state`），但仍需真实 LLM 长测优化摘要质量。
+- **系统学习当前为「写入 + 展示」**：尚未自动反哺 system prompt / 题库策略。
 - **SQLite**：单机部署；如需多人，需切到 Postgres（`app/config.py` 中 DATABASE_URL 即可）。
 - **TLS / 反向代理**：默认 http；生产应在前置 Nginx/ALB 终止。
