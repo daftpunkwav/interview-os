@@ -24,7 +24,7 @@ if (-not (Test-Path $nodeModules)) {
 # 启动后端
 Write-Host "启动后端 (port 8000)..." -ForegroundColor Green
 Start-Process -FilePath "$venvPath\Scripts\python.exe" `
-    -ArgumentList "-m", "uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000" `
+    -ArgumentList "-m", "uvicorn", "app.main:app", "--reload", "--host", "127.0.0.1", "--port", "8000" `
     -WorkingDirectory (Join-Path $Root "backend") `
     -WindowStyle Normal
 

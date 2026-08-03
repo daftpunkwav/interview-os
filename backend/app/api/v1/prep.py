@@ -1,6 +1,7 @@
 """面试准备 API。
 
 SSE 流式错误仅返回脱敏后的提示文案，原始异常走 logger.exception。
+可变操作要求创建时下发的 capability token（``X-Interview-Token``）。
 """
 
 import json
@@ -15,6 +16,7 @@ from app.agents.prep.agent import PrepAgent
 from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, SessionStatus
 from app.core.ratelimit import rate_limit_dep
 from app.core.security import redact_api_key
+from app.core.session_auth import assert_session_token, extract_token, new_access_token
 from app.database import get_db
 from app.models import PrepSession
 from app.services.llm.client import LLMClient
@@ -24,6 +26,7 @@ router = APIRouter()
 
 # SSE 错误事件统一文案（防止上游异常文本泄露 API Key / 内部细节）
 _SSE_ERR_GENERIC = "辅导生成失败，请稍后重试"
+_PREP_FORBIDDEN = "无权访问该辅导会话"
 
 
 class PrepCreateRequest(BaseModel):
@@ -38,11 +41,13 @@ class PrepMessageRequest(BaseModel):
 
 @router.post("/sessions")
 async def create_prep_session(body: PrepCreateRequest, db: Session = Depends(get_db)):
+    token = new_access_token()
     # status 列由模型 + migrate 保证；构造时显式写入 active
     kwargs: dict = {
         "resume_id": body.resume_id,
         "target_role": body.target_role,
         "target_company": body.target_company,
+        "access_token": token,
     }
     # 兼容：若 ORM 已声明 status 则写入
     if hasattr(PrepSession, "status"):
@@ -51,7 +56,7 @@ async def create_prep_session(body: PrepCreateRequest, db: Session = Depends(get
     db.add(session)
     db.commit()
     db.refresh(session)
-    return {"id": session.id}
+    return {"id": session.id, "access_token": token}
 
 
 @router.post(
@@ -65,10 +70,16 @@ async def create_prep_session(body: PrepCreateRequest, db: Session = Depends(get
         )
     ],
 )
-async def prep_message(session_id: int, body: PrepMessageRequest, db: Session = Depends(get_db)):
+async def prep_message(
+    session_id: int,
+    body: PrepMessageRequest,
+    db: Session = Depends(get_db),
+    access: str | None = Depends(extract_token),
+):
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在")
+    assert_session_token(session, access, detail=_PREP_FORBIDDEN)
     if getattr(session, "status", None) == SessionStatus.COMPLETED.value:
         raise HTTPException(status_code=400, detail="会话已结束")
     llm = LLMClient.from_db(db)
@@ -88,10 +99,16 @@ async def prep_message(session_id: int, body: PrepMessageRequest, db: Session = 
         )
     ],
 )
-async def prep_message_stream(session_id: int, body: PrepMessageRequest, db: Session = Depends(get_db)):
+async def prep_message_stream(
+    session_id: int,
+    body: PrepMessageRequest,
+    db: Session = Depends(get_db),
+    access: str | None = Depends(extract_token),
+):
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在")
+    assert_session_token(session, access, detail=_PREP_FORBIDDEN)
     if getattr(session, "status", None) == SessionStatus.COMPLETED.value:
         raise HTTPException(status_code=400, detail="会话已结束")
     llm = LLMClient.from_db(db)
@@ -116,8 +133,13 @@ async def prep_message_stream(session_id: int, body: PrepMessageRequest, db: Ses
 
 
 @router.get("/sessions/{session_id}/messages")
-def get_prep_messages(session_id: int, db: Session = Depends(get_db)):
+def get_prep_messages(
+    session_id: int,
+    db: Session = Depends(get_db),
+    access: str | None = Depends(extract_token),
+):
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在")
+    assert_session_token(session, access, detail=_PREP_FORBIDDEN)
     return json.loads(session.messages or "[]")

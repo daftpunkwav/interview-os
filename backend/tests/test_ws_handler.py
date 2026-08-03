@@ -205,12 +205,15 @@ class TestTraceId:
         class _StubSession:
             id = 1
             status = "completed"  # 让 handle 早退不发 opening
+            access_token = "test-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         mock_db = MagicMock()
         mock_db.query.return_value.filter.return_value.first.return_value = _StubSession()
         monkeypatch.setattr(ws_mod, "SessionLocal", lambda: mock_db)
 
         ws = _make_mock_ws()
-        handler = ws_mod.InterviewWSHandler(ws, session_id=1)
+        handler = ws_mod.InterviewWSHandler(
+            ws, session_id=1, access_token=_StubSession.access_token
+        )
         # 由于 status=completed，handle 会先发送 error 然后 return
         await handler.handle()
 

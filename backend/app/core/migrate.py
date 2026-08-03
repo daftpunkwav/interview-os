@@ -69,6 +69,7 @@ MIGRATIONS: dict[str, list[str]] = {
     ],
     "prep_sessions": [
         "ALTER TABLE prep_sessions ADD COLUMN status VARCHAR(20) DEFAULT 'active'",
+        "ALTER TABLE prep_sessions ADD COLUMN access_token VARCHAR(64) DEFAULT ''",
     ],
 }
 

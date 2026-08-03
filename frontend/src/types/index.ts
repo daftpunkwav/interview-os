@@ -345,6 +345,7 @@ export interface GetReportResponse {
 
 export interface PrepSessionCreateResponse {
   id: number;
+  access_token?: string | null;
 }
 
 export interface PrepMessageResponse {

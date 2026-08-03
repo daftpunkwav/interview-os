@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClientEvent, ServerEvent, TurnState } from "@/types";
 import { getEnv } from "@/lib/env";
-import { getSessionToken } from "@/lib/sessionToken";
+import { getSessionToken, wsTokenSubprotocol } from "@/lib/sessionToken";
 
 type ServerHandler<K extends ServerEvent["type"]> = (
   msg: Extract<ServerEvent, { type: K }>,
@@ -123,9 +123,10 @@ export function useInterviewWS(
 
       const wsBase = getEnv().WS_BASE;
       const token = getSessionToken(sessionId);
-      const tokenQs = token ? `?token=${encodeURIComponent(token)}` : "";
-      const url = `${wsBase}/api/v1/ws/interview/${sessionId}${tokenQs}`;
-      const ws = new WebSocket(url);
+      // 优先 Sec-WebSocket-Protocol 传令牌，避免 query 进访问日志 / Referer
+      const url = `${wsBase}/api/v1/ws/interview/${sessionId}`;
+      const protocols = token ? [wsTokenSubprotocol(token)] : undefined;
+      const ws = protocols ? new WebSocket(url, protocols) : new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {

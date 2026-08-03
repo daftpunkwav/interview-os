@@ -31,7 +31,14 @@ import type {
   UserProfile,
 } from "@/types";
 import { getEnv } from "@/lib/env";
-import { interviewAuthHeaders, saveSessionToken } from "@/lib/sessionToken";
+import {
+  getSessionToken,
+  interviewAuthHeaders,
+  prepAuthHeaders,
+  savePrepToken,
+  saveSessionToken,
+  wsTokenSubprotocol,
+} from "@/lib/sessionToken";
 
 /* ====================================================================== */
 /* 流式 URL 解析                                                            */
@@ -287,18 +294,24 @@ export const api = {
     }),
 
   /* 面试准备 */
-  createPrepSession: (data: {
+  createPrepSession: async (data: {
     resume_id?: number;
     target_role?: string;
     target_company?: string;
-  }) =>
-    request<PrepSessionCreateResponse>("/v1/prep/sessions", {
+  }) => {
+    const session = await request<PrepSessionCreateResponse>("/v1/prep/sessions", {
       method: "POST",
       body: JSON.stringify(data),
-    }),
+    });
+    if (session.access_token) {
+      savePrepToken(session.id, session.access_token);
+    }
+    return session;
+  },
   prepMessage: (sessionId: number, content: string) =>
     request<PrepMessageResponse>(`/v1/prep/sessions/${sessionId}/message`, {
       method: "POST",
+      headers: prepAuthHeaders(sessionId),
       body: JSON.stringify({ content }),
     }),
   prepMessageStream: async (
@@ -313,7 +326,10 @@ export const api = {
     try {
       res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...prepAuthHeaders(sessionId),
+        },
         body: JSON.stringify({ content }),
       });
     } catch {
@@ -381,7 +397,10 @@ export const api = {
     }),
 
   /* 报告 */
-  getReport: (id: number) => request<GetReportResponse>(`/v1/reports/${id}`),
+  getReport: (id: number) =>
+    request<GetReportResponse>(`/v1/reports/${id}`, {
+      headers: interviewAuthHeaders(id),
+    }),
   getGrowthHistory: () => request<GrowthRecord[]>("/v1/reports/growth/history"),
   getSystemInsights: () =>
     request<{

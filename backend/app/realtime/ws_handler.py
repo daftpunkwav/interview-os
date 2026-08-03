@@ -225,10 +225,19 @@ class _SentenceTTSQueue:
 class InterviewWSHandler:
     """管理单个面试 WebSocket 连接的生命周期。"""
 
-    def __init__(self, websocket: WebSocket, session_id: int, access_token: str = ""):
+    def __init__(
+        self,
+        websocket: WebSocket,
+        session_id: int,
+        access_token: str = "",
+        *,
+        ws_subprotocol: str | None = None,
+    ):
         self.ws = websocket
         self.session_id = session_id
         self._client_access_token = (access_token or "").strip()
+        # 握手回显用的子协议名（含令牌时须与客户端请求一致）
+        self._ws_subprotocol = (ws_subprotocol or "").strip() or None
         self.turn_state = TurnState.IDLE
         self.audio_buffer: list[str] = []
         # 累计已缓冲音频解码字节，避免每 chunk 全量重解码
@@ -282,12 +291,14 @@ class InterviewWSHandler:
     # ------------------------------------------------------------------
 
     async def handle(self) -> None:
-        await self.ws.accept()
+        # 若客户端通过 Sec-WebSocket-Protocol 传递令牌，握手须回显该子协议
+        accept_kwargs: dict[str, str] = {}
+        if self._ws_subprotocol:
+            accept_kwargs["subprotocol"] = self._ws_subprotocol
+        await self.ws.accept(**accept_kwargs)
         # 注入 trace_id 便于按 WS 会话串联日志
         ws_tid = f"ws-{self.session_id}-{uuid.uuid4().hex[:8]}"
         set_trace_id(ws_tid)
-        # 单会话单连接：先占租约，再跑业务（新连接踢旧）
-        await claim_session_connection(self)
         db = SessionLocal()
         try:
             session = db.query(InterviewSession).filter(
@@ -296,11 +307,13 @@ class InterviewWSHandler:
             if not session:
                 await self.send("error", message="面试会话不存在")
                 return
+            # 先鉴权再占租约：防止仅凭 session_id 踢掉合法连接
             if not tokens_match(
                 getattr(session, "access_token", None), self._client_access_token
             ):
                 await self.send("error", message="无权访问该面试会话")
                 return
+            await claim_session_connection(self)
 
             self.llm = LLMClient.from_db(db)
             self.agent = InterviewAgent(session, self.llm)

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, SessionStatus
 from app.core.ratelimit import rate_limit_dep
 from app.core.security import redact_api_key
+from app.core.session_auth import assert_session_token, extract_token
 from app.database import get_db
 from app.models import GrowthRecord, InterviewSession
 from app.schemas import InterviewReport, InterviewReportResponse
@@ -83,7 +84,11 @@ def get_system_growth_insights():
         )
     ],
 )
-async def get_report_stream(session_id: int, db: Session = Depends(get_db)):
+async def get_report_stream(
+    session_id: int,
+    db: Session = Depends(get_db),
+    access: str | None = Depends(extract_token),
+):
     """流式返回报告（单次 LLM；与 finish 共用 persist 语义）。
 
     - 已有 report 则短路，不重复调用 LLM；
@@ -93,6 +98,7 @@ async def get_report_stream(session_id: int, db: Session = Depends(get_db)):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="面试会话不存在")
+    assert_session_token(session, access)
     if session.status != SessionStatus.COMPLETED.value:
         raise HTTPException(status_code=400, detail="面试尚未结束")
 
@@ -132,10 +138,15 @@ async def get_report_stream(session_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{session_id}", response_model=InterviewReportResponse)
-def get_report(session_id: int, db: Session = Depends(get_db)):
+def get_report(
+    session_id: int,
+    db: Session = Depends(get_db),
+    access: str | None = Depends(extract_token),
+):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="面试会话不存在")
+    assert_session_token(session, access)
 
     if not session.report or session.report == "{}":
         raise HTTPException(status_code=404, detail="报告尚未生成")

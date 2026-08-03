@@ -13,7 +13,7 @@ from app.services.llm.client import LLMClient
 from tests.fakes import FakeLLMClient
 
 
-def _completed_session(db) -> int:
+def _completed_session(db) -> tuple[int, str]:
     settings = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
     if settings is None:
         settings = LLMSettings(id=1, api_key="x", api_base="http://x", model="m")
@@ -23,6 +23,7 @@ def _completed_session(db) -> int:
         settings.api_key = "x"
         settings.model = "m"
     db.flush()
+    token = "report-test-token-" + ("a" * 16)
     s = InterviewSession(
         profile_id=1,
         role="后端工程师",
@@ -31,6 +32,7 @@ def _completed_session(db) -> int:
         workflow_type="technical",
         status="completed",
         current_phase="summary",
+        access_token=token,
         messages=json.dumps(
             [
                 {"role": "user", "content": "我负责接口优化"},
@@ -42,11 +44,11 @@ def _completed_session(db) -> int:
     db.add(s)
     db.commit()
     db.refresh(s)
-    return s.id
+    return s.id, token
 
 
 def test_report_stream_single_llm_no_stream_calls(db) -> None:
-    sid = _completed_session(db)
+    sid, token = _completed_session(db)
     fake = FakeLLMClient(
         tokens=["MUST_NOT_APPEAR"],
         json_payload={
@@ -72,7 +74,11 @@ def test_report_stream_single_llm_no_stream_calls(db) -> None:
     )
     with patch.object(LLMClient, "from_db", classmethod(lambda cls, db: fake)):
         with TestClient(app) as client:
-            with client.stream("GET", f"/api/reports/{sid}/stream") as resp:
+            with client.stream(
+                "GET",
+                f"/api/reports/{sid}/stream",
+                headers={"X-Interview-Token": token},
+            ) as resp:
                 assert resp.status_code == 200
                 chunks = []
                 for line in resp.iter_lines():

@@ -20,7 +20,7 @@ fi
 
 # 启动后端
 echo "启动后端 (port 8000)..."
-(cd "$ROOT/backend" && "$ROOT/backend/.venv/bin/uvicorn" app.main:app --reload --host 0.0.0.0 --port 8000) &
+(cd "$ROOT/backend" && "$ROOT/backend/.venv/bin/uvicorn" app.main:app --reload --host 127.0.0.1 --port 8000) &
 BACKEND_PID=$!
 
 sleep 2

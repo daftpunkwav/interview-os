@@ -12,6 +12,12 @@ from app.models import InterviewSession, LLMSettings
 from app.services.llm.client import LLMClient
 from tests.fakes import FakeLLMClient
 
+_TOKEN = "report-stream-token-" + ("b" * 12)
+
+
+def _auth_headers(token: str = _TOKEN) -> dict[str, str]:
+    return {"X-Interview-Token": token}
+
 
 def _make_completed_session(db) -> int:
     settings = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
@@ -31,6 +37,7 @@ def _make_completed_session(db) -> int:
         workflow_type="technical",
         status="completed",
         current_phase="summary",
+        access_token=_TOKEN,
         messages=json.dumps([
             {"role": "user", "content": "我负责接口优化"},
             {"role": "assistant", "content": "请说说具体数据"},
@@ -71,7 +78,11 @@ def test_report_stream_emits_token_and_done(db) -> None:
     )
     with patch.object(LLMClient, "from_db", classmethod(lambda cls, db: fake)):
         with TestClient(app) as client:
-            with client.stream("GET", f"/api/reports/{sid}/stream") as resp:
+            with client.stream(
+                "GET",
+                f"/api/reports/{sid}/stream",
+                headers=_auth_headers(),
+            ) as resp:
                 assert resp.status_code == 200
                 chunks = []
                 for line in resp.iter_lines():
@@ -95,8 +106,18 @@ def test_report_stream_emits_token_and_done(db) -> None:
 
 def test_report_stream_404_when_session_missing(db) -> None:
     with TestClient(app) as client:
-        resp = client.get("/api/reports/9999/stream")
+        resp = client.get(
+            "/api/reports/9999/stream",
+            headers=_auth_headers(),
+        )
         assert resp.status_code == 404
+
+
+def test_report_stream_403_without_token(db) -> None:
+    sid = _make_completed_session(db)
+    with TestClient(app) as client:
+        resp = client.get(f"/api/reports/{sid}/stream")
+        assert resp.status_code == 403
 
 
 def test_report_stream_400_when_session_not_completed(db) -> None:
@@ -107,13 +128,15 @@ def test_report_stream_400_when_session_not_completed(db) -> None:
         company="bytedance",
         workflow_type="technical",
         status="active",
+        access_token=_TOKEN,
     )
     db.add(s)
     db.commit()
     db.refresh(s)
-    print(f"DEBUG: created session id={s.id} status={s.status}")
 
     with TestClient(app) as client:
-        resp = client.get(f"/api/reports/{s.id}/stream")
-        print(f"DEBUG: response status={resp.status_code} body={resp.text[:200]}")
+        resp = client.get(
+            f"/api/reports/{s.id}/stream",
+            headers=_auth_headers(),
+        )
         assert resp.status_code == 400

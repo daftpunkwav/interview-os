@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Query, WebSocket
 
+from app.core.session_auth import extract_ws_token, ws_token_subprotocol
 from app.realtime.ws_handler import InterviewWSHandler
 
 router = APIRouter()
@@ -11,7 +12,15 @@ router = APIRouter()
 async def interview_websocket(
     websocket: WebSocket,
     session_id: int,
-    token: str = Query(default="", description="会话能力令牌"),
+    token: str = Query(default="", description="会话能力令牌（兼容；优先子协议）"),
 ):
-    handler = InterviewWSHandler(websocket, session_id, access_token=token)
+    access, chosen_proto = extract_ws_token(websocket, query_token=token)
+    # 若客户端用 interviewos.<token> 子协议传令牌，握手必须回显该子协议
+    echo_proto = chosen_proto or (ws_token_subprotocol(access) if access else None)
+    handler = InterviewWSHandler(
+        websocket,
+        session_id,
+        access_token=access,
+        ws_subprotocol=echo_proto,
+    )
     await handler.handle()
