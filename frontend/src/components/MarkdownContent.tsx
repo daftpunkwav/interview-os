@@ -6,6 +6,21 @@ import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import type { Components } from "react-markdown";
 
+/** 仅允许 http(s) 外链，拒绝 javascript: 等协议。 */
+function safeHttpUrl(url: string | undefined): string | null {
+  if (!url) return null;
+  const t = url.trim();
+  try {
+    const u = new URL(t, "https://example.invalid");
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    // 相对链接：保留原 pathname
+    if (t.startsWith("/") || t.startsWith("#")) return t;
+    return u.href;
+  } catch {
+    return null;
+  }
+}
+
 const components: Components = {
   h1: ({ children }) => (
     <h1 className="text-base font-bold mt-3 mb-1.5 first:mt-0 tracking-tight">{children}</h1>
@@ -46,16 +61,22 @@ const components: Components = {
     </blockquote>
   ),
   hr: () => <hr className="my-3 border-[var(--border)]" />,
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      className="text-[var(--brand)] underline underline-offset-2"
-      target="_blank"
-      rel="noreferrer"
-    >
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => {
+    const safe = safeHttpUrl(href);
+    if (!safe) {
+      return <span className="text-[var(--brand)]">{children}</span>;
+    }
+    return (
+      <a
+        href={safe}
+        className="text-[var(--brand)] underline underline-offset-2"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {children}
+      </a>
+    );
+  },
   // GFM 表格
   table: ({ children }) => (
     <div className="my-3 w-full max-w-full overflow-x-auto rounded-[var(--radius)] border border-[var(--border)]">

@@ -9,6 +9,8 @@ from app.core.constants import (
     DEFAULT_LLM_PROTOCOL,
     DEFAULT_PERSONALITY,
     DEFAULT_INTERVIEW_STYLE,
+    MAX_CONFIG_STR_CHARS,
+    MAX_USER_TEXT_CHARS,
 )
 
 
@@ -229,16 +231,16 @@ class ResumeAnalysis(BaseModel):
 # ── 面试配置 ──────────────────────────────────────────
 
 class InterviewConfig(BaseModel):
-    role: str
-    level: str
-    company: str
+    role: str = Field(..., max_length=MAX_CONFIG_STR_CHARS)
+    level: str = Field(..., max_length=MAX_CONFIG_STR_CHARS)
+    company: str = Field(..., max_length=MAX_CONFIG_STR_CHARS)
     workflow_type: Literal["technical", "hr", "management"] = "technical"
     personality: Literal["gentle", "professional", "pressure", "hr", "expert"] = DEFAULT_PERSONALITY
     strictness: int = Field(default=3, ge=1, le=10)
     interview_style: Literal["guided", "deep_dive", "continuous", "challenging"] = DEFAULT_INTERVIEW_STYLE
     resume_id: int | None = None
-    avatar_id: str = "professional_male"
-    scene_id: str = "meeting_room"
+    avatar_id: str = Field(default="professional_male", max_length=MAX_CONFIG_STR_CHARS)
+    scene_id: str = Field(default="meeting_room", max_length=MAX_CONFIG_STR_CHARS)
 
 
 class InterviewSessionResponse(BaseModel):
@@ -287,7 +289,7 @@ class APIError(BaseModel):
 
 
 class InterviewMessageRequest(BaseModel):
-    content: str
+    content: str = Field(..., max_length=MAX_USER_TEXT_CHARS)
     face_analysis: dict[str, Any] | None = None
     # 当前视频帧 JPEG base64，供多模态 LLM 分析表情与状态
     # 上限约 200KB 原始数据（base64 编码后约 267KB），防止大图消耗过多 token

@@ -20,22 +20,22 @@
 ### 1. 没有内建多用户登录
 
 当前定位为「本地优先、单用户」工具。`profile_id = 1` 是固定常量，
-**没有**用户级 JWT。**请勿在公网直接暴露端口**。
+**没有**用户级登录 / JWT，也**不计划**做成多用户产品。**请勿在公网直接暴露端口**。
 
 默认绑定 `127.0.0.1`；若需局域网访问请显式设置 `HOST=0.0.0.0`，并自行做好网络隔离。
 
-面试 / 辅导会话使用 **capability token**：
+面试 / 辅导会话使用 **capability token**（单用户会话能力令牌，非账号体系）：
 
 - 默认经 **HttpOnly Cookie** 下发（`interviewos_iv_{id}` / `interviewos_prep_{id}`，
   `SameSite=Lax`；HTTPS 时加 `Secure`）；
 - 兼容 Header `X-Interview-Token`（测试与迁移）；
-- WS 优先读 Cookie，其次子协议 / query。
+- WS 优先读 Cookie，其次子协议；**生产环境拒绝** query `?token=`。
 
 仅 Cookie 鉴权的可变请求会校验 `Origin`/`Referer` 落在 `CORS_ORIGINS`
-（缓解 CSRF）。档案 / 简历 / 设置 / 成长洞察等管理 API 另加 **local-only**
-（仅 loopback；测试模式放行）。
+（缓解 CSRF）。档案 / 简历 / 设置 / 成长洞察等管理 API，以及**面试/辅导会话的创建与列表**，另加 **local-only**
+（仅 loopback；测试模式仅在非 prod 放行；`peer=testclient` 始终放行）。
 
-如需多用户鉴权，请参考 `CONTRIBUTING.md` 第 6 节，并阅读 `docs/ARCHITECTURE.md §5`。
+威胁模型与部署约定见 `docs/ARCHITECTURE.md §5`。
 
 ### 2. .env 中的 API Key
 
@@ -52,17 +52,18 @@
 WS 端点 `ws://.../api/v1/ws/interview/{id}` **必须**携带会话 `access_token`：
 
 - 推荐：浏览器自动携带 HttpOnly Cookie（前端直连后端 host，与 REST 一致）；
-- 兼容：`Sec-WebSocket-Protocol: interviewos.<token>`；query `?token=`。
+- 兼容：`Sec-WebSocket-Protocol: interviewos.<token>`；
+- **生产环境拒绝** query `?token=`（防代理/访问日志泄漏）；开发环境仍兼容 query。
 
 鉴权失败不会占用会话连接租约（先鉴权再 claim），防止未授权踢人。
 
 ### 4. 限流策略
 
-按 IP 滑窗（默认 60 req/min，无用户认证时按 IP）。
+按 IP 滑窗（默认 60 req/min；单用户本地工具无登录，限流按 IP）。
 仅当 `request.client.host` 落入可信代理 CIDR
 （`TRUSTED_PROXY_CIDRS` / `INTERVIEWOS_TRUSTED_PROXY_CIDRS`；**默认仅 loopback**）
 时才读取 `X-Forwarded-For`，避免任意客户端伪造 IP 绕过限流。
-多 worker 部署需切 Redis（当前为进程内）。
+默认单进程部署；多 worker 时进程内限流会按 worker 放大（见 `ratelimit.py` 警告）。
 见 `backend/app/core/ratelimit.py`。
 
 ### 5. ENV / ALLOW_LOCAL_LLM 决定 SSRF 与本机模式
@@ -99,11 +100,11 @@ WS 端点 `ws://.../api/v1/ws/interview/{id}` **必须**携带会话 `access_tok
 
 ## 已知可改进项
 
-- 引入用户级 `JWT` + Refresh Token，绑定 session ↔ user；
 - 生产依赖 lockfile / hash pin（当前 `requirements.txt` 仅下限）；
 - 服务端 Sentry；
 - 上传文件走对象存储 + 病毒扫描（ClamAV）；
 - CSP 进一步去掉 `unsafe-eval`（受 TalkingHead/Three 约束）。
+- 多 worker 时限流/学习写改集中存储（当前进程内 + 本地文件锁；单机单进程为默认部署）。
 
 ## License 下的责任边界
 

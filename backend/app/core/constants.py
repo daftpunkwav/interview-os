@@ -173,6 +173,12 @@ class WSClientEvent(StrEnum):
 
 DEFAULT_RATE_LIMIT_PER_MINUTE = 60
 DEFAULT_LLM_RATE_LIMIT_PER_MINUTE = 10
+# 面试/辅导会话创建：防局域网批量建会话烧配额
+DEFAULT_SESSION_CREATE_RATE_LIMIT_PER_MINUTE = 20
+
+# HTTP / WS 用户文本上限（字符）
+MAX_USER_TEXT_CHARS = 16_000
+MAX_CONFIG_STR_CHARS = 200
 
 
 # ── HTTP 头 / 安全 ────────────────────────────────────────

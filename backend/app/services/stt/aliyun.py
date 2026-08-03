@@ -6,8 +6,7 @@ import json
 import logging
 import time
 
-import httpx
-
+from app.core.security import make_pinned_async_client
 from app.services.stt.base import SttCredentials
 from app.services.stt.whisper import pcm_base64_to_wav_bytes
 
@@ -52,7 +51,7 @@ class AliyunProvider:
             "Content-Type": "application/octet-stream",
         }
         try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
+            async with make_pinned_async_client(url, timeout=45.0) as client:
                 resp = await client.post(url, headers=headers, content=wav)
                 resp.raise_for_status()
                 payload = resp.json()

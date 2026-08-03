@@ -8,10 +8,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import TypeAdapter
 from sqlalchemy.orm import Session
 
-from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, SessionStatus
+from app.core.constants import (
+    DEFAULT_LLM_RATE_LIMIT_PER_MINUTE,
+    DEFAULT_SESSION_CREATE_RATE_LIMIT_PER_MINUTE,
+    SessionStatus,
+)
+from app.core.local_only import require_local_peer
 from app.core.ratelimit import rate_limit_dep
 from app.core.session_auth import (
     assert_session_token,
+    cookie_should_be_secure,
     extract_token,
     new_access_token,
     set_session_cookie,
@@ -37,7 +43,19 @@ logger = logging.getLogger(__name__)
 _CHAT_MSG_ADAPTER: TypeAdapter[list[ChatMessage]] = TypeAdapter(list[ChatMessage])
 
 
-@router.post("/sessions", response_model=InterviewSessionResponse)
+@router.post(
+    "/sessions",
+    response_model=InterviewSessionResponse,
+    dependencies=[
+        Depends(require_local_peer),
+        Depends(
+            rate_limit_dep(
+                key="session_create",
+                limit=DEFAULT_SESSION_CREATE_RATE_LIMIT_PER_MINUTE,
+            )
+        ),
+    ],
+)
 def create_session(
     config: InterviewConfig,
     request: Request,
@@ -68,13 +86,17 @@ def create_session(
         scope="iv",
         session_id=session.id,
         token=token,
-        secure=request.url.scheme == "https",
+        secure=cookie_should_be_secure(request),
     )
     # 令牌仅经 HttpOnly Cookie 下发，响应体不再回传
     return _to_response(session, include_token=False)
 
 
-@router.get("/sessions", response_model=list[InterviewSessionResponse])
+@router.get(
+    "/sessions",
+    response_model=list[InterviewSessionResponse],
+    dependencies=[Depends(require_local_peer)],
+)
 def list_sessions(db: Session = Depends(get_db)):
     """历史列表：仅返回元数据，不含 access_token（防枚举窃取能力令牌）。"""
     sessions = db.query(InterviewSession).order_by(InterviewSession.created_at.desc()).all()

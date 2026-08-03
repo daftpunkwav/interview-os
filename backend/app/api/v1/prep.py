@@ -9,15 +9,22 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.agents.prep.agent import PrepAgent
-from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, SessionStatus
+from app.core.constants import (
+    DEFAULT_LLM_RATE_LIMIT_PER_MINUTE,
+    DEFAULT_SESSION_CREATE_RATE_LIMIT_PER_MINUTE,
+    MAX_USER_TEXT_CHARS,
+    SessionStatus,
+)
+from app.core.local_only import require_local_peer
 from app.core.ratelimit import rate_limit_dep
 from app.core.security import redact_api_key
 from app.core.session_auth import (
     assert_session_token,
+    cookie_should_be_secure,
     extract_prep_token,
     new_access_token,
     set_session_cookie,
@@ -41,10 +48,21 @@ class PrepCreateRequest(BaseModel):
 
 
 class PrepMessageRequest(BaseModel):
-    content: str
+    content: str = Field(..., max_length=MAX_USER_TEXT_CHARS)
 
 
-@router.post("/sessions")
+@router.post(
+    "/sessions",
+    dependencies=[
+        Depends(require_local_peer),
+        Depends(
+            rate_limit_dep(
+                key="session_create",
+                limit=DEFAULT_SESSION_CREATE_RATE_LIMIT_PER_MINUTE,
+            )
+        ),
+    ],
+)
 async def create_prep_session(
     body: PrepCreateRequest,
     request: Request,
@@ -71,7 +89,7 @@ async def create_prep_session(
         scope="prep",
         session_id=session.id,
         token=token,
-        secure=request.url.scheme == "https",
+        secure=cookie_should_be_secure(request),
     )
     return {"id": session.id}
 

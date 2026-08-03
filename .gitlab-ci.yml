@@ -1,0 +1,41 @@
+# InterviewOS GitLab CI
+
+stages:
+  - test
+
+backend:
+  stage: test
+  image: python:3.11-slim
+  variables:
+    INTERVIEWOS_TEST_MODE: "1"
+    ENV: "dev"
+    LLM_API_KEY: "test-key"
+    LLM_API_BASE: "http://127.0.0.1:9999/v1"
+    CORS_ORIGINS: "http://localhost:3000"
+  before_script:
+    - cd backend
+    - pip install -q -r requirements.txt
+  script:
+    - pytest -q
+  rules:
+    - changes:
+        - backend/**/*
+        - test/**/*
+        - .gitlab-ci.yml
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+frontend:
+  stage: test
+  image: node:20-slim
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npx tsc --noEmit
+  rules:
+    - changes:
+        - frontend/**/*
+        - .gitlab-ci.yml
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

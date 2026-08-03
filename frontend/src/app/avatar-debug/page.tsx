@@ -1,5 +1,6 @@
 "use client";
 
+import { notFound } from "next/navigation";
 import { TalkingHeadAvatar } from "@/features/avatar/TalkingHeadAvatar";
 
 const CASES = [
@@ -10,6 +11,10 @@ const CASES = [
 
 /** 用真实 TalkingHeadAvatar 组件并排验证三人像（含 Strict Mode 竞态） */
 export default function AvatarDebugPage() {
+  if (process.env.NODE_ENV === "production") {
+    notFound();
+  }
+
   return (
     <div className="p-6 space-y-4">
       <h1 className="text-lg font-bold">Avatar 组件实机调试</h1>

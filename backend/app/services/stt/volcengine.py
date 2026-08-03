@@ -6,8 +6,7 @@ import base64
 import logging
 import uuid
 
-import httpx
-
+from app.core.security import make_pinned_async_client
 from app.services.stt.base import SttCredentials
 from app.services.stt.whisper import pcm_base64_to_wav_bytes
 
@@ -58,7 +57,7 @@ class VolcengineProvider:
             },
         }
         try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
+            async with make_pinned_async_client(_URL, timeout=45.0) as client:
                 resp = await client.post(_URL, headers=headers, json=body)
                 resp.raise_for_status()
                 payload = resp.json()

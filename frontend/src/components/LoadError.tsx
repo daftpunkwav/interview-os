@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle, RefreshCw } from "lucide-react";
+import { getEnv } from "@/lib/env";
 
 /** API 加载失败提示 · Google alert 风格 */
 export function LoadError({
@@ -10,9 +11,13 @@ export function LoadError({
   message: string;
   onRetry?: () => void;
 }) {
-  const backendHint =
-    process.env.NEXT_PUBLIC_API_BASE?.replace(/\/+$/, "") ||
-    `http://127.0.0.1:${process.env.NEXT_PUBLIC_BACKEND_PORT || "8000"}`;
+  let backendHint = "（未配置）";
+  try {
+    const env = getEnv();
+    backendHint = env.STREAM_API_BASE || env.API_BASE;
+  } catch {
+    backendHint = "请检查 NEXT_PUBLIC_* 环境变量";
+  }
 
   return (
     <div className="alert alert-error shadow-sm">

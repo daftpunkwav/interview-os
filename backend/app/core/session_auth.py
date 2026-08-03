@@ -6,10 +6,12 @@ session_id 劫持。
 
 默认经 HttpOnly Cookie 下发（``interviewos_iv_{id}`` / ``interviewos_prep_{id}``）；
 仍兼容 ``X-Interview-Token`` Header（测试与迁移）。
+生产环境拒绝 query ``?token=``，避免代理/访问日志泄漏。
 """
 
 from __future__ import annotations
 
+import logging
 import secrets
 from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
@@ -17,6 +19,8 @@ from urllib.parse import urlparse
 from fastapi import Header, HTTPException, Query, Request, Response, WebSocket
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 HEADER_NAME = "X-Interview-Token"
 # WebSocket 子协议前缀：interviewos.<token>（token 已为 url-safe）
@@ -64,6 +68,34 @@ def assert_session_token(
         raise HTTPException(status_code=403, detail=detail)
 
 
+def _peer_is_trusted_proxy(peer: str) -> bool:
+    """直连对端是否落在可信代理 CIDR（与限流模块语义一致）。"""
+    from app.core.ratelimit import _peer_is_trusted_proxy as _rl_peer
+
+    return _rl_peer(peer)
+
+
+def cookie_should_be_secure(request: Request) -> bool:
+    """是否为会话 Cookie 设置 Secure。
+
+    - ``COOKIE_SECURE=true/false`` 显式覆盖；
+    - 否则：请求 scheme 为 https，或可信代理且 ``X-Forwarded-Proto=https``。
+    """
+    settings = get_settings()
+    if settings.cookie_secure is True:
+        return True
+    if settings.cookie_secure is False:
+        return False
+    if request.url.scheme == "https":
+        return True
+    peer = request.client.host if request.client else None
+    if peer and _peer_is_trusted_proxy(peer):
+        proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+        if proto == "https":
+            return True
+    return False
+
+
 def set_session_cookie(
     response: Response,
     *,
@@ -104,8 +136,6 @@ def _origin_allowed(request: Request) -> bool:
     referer = (request.headers.get("referer") or "").strip()
     if referer:
         try:
-            ref_origin = urlparse(referer)._replace(path="", params="", query="", fragment="").geturl().rstrip("/")
-            # urlparse 可能留下尾斜杠差异
             parsed = urlparse(referer)
             ref_origin = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
             if ref_origin in allowed:
@@ -140,6 +170,9 @@ def _extract_from_request(
     cookie_tok = (request.cookies.get(cookie_name(scope, session_id)) or "").strip()
     header_tok = (x_interview_token or "").strip()
     query_tok = (token or "").strip()
+    if query_tok and get_settings().is_prod:
+        logger.warning("生产环境拒绝 HTTP query token path=%s", request.url.path)
+        query_tok = ""
     used_header = bool(header_tok)
     chosen = header_tok or cookie_tok or query_tok or None
     if chosen and cookie_tok and not header_tok:
@@ -156,9 +189,9 @@ def extract_token(
     session_id: int,
     request: Request,
     x_interview_token: str | None = Header(default=None, alias=HEADER_NAME),
-    token: str | None = Query(default=None, description="会话能力令牌（兼容）"),
+    token: str | None = Query(default=None, description="会话能力令牌（兼容；prod 禁用）"),
 ) -> str | None:
-    """面试 / 报告 HTTP 依赖：Header > Cookie > query。"""
+    """面试 / 报告 HTTP 依赖：Header > Cookie > query（prod 无 query）。"""
     return _extract_from_request(
         request,
         scope="iv",
@@ -172,7 +205,7 @@ def extract_prep_token(
     session_id: int,
     request: Request,
     x_interview_token: str | None = Header(default=None, alias=HEADER_NAME),
-    token: str | None = Query(default=None, description="Prep 能力令牌（兼容）"),
+    token: str | None = Query(default=None, description="Prep 能力令牌（兼容；prod 禁用）"),
 ) -> str | None:
     """Prep HTTP 依赖。"""
     return _extract_from_request(
@@ -200,7 +233,7 @@ def extract_ws_token(
     优先级：
     1. Cookie ``interviewos_iv_{session_id}``（HttpOnly，同源/直连后端）
     2. ``Sec-WebSocket-Protocol: interviewos.<token>``（兼容）
-    3. query ``token=``（兼容旧客户端）
+    3. query ``token=``（仅非生产；生产忽略以防日志泄漏）
 
     Returns:
         ``(access_token, chosen_subprotocol_or_None)``
@@ -221,4 +254,7 @@ def extract_ws_token(
             if tok:
                 return tok, p
     q = (query_token or "").strip()
+    if q and get_settings().is_prod:
+        logger.warning("生产环境拒绝 WebSocket query token")
+        return "", None
     return q, None

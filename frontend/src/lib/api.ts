@@ -62,9 +62,6 @@ function resolveBackendUrl(apiPath: string): string {
   }
 }
 
-/** @deprecated 兼容旧名 */
-const resolveStreamUrl = resolveBackendUrl;
-
 /* ====================================================================== */
 /* 通用 fetch 封装                                                          */
 /* ====================================================================== */

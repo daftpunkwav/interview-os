@@ -81,6 +81,10 @@ class TestRedactApiKey:
         url = "https://user:pass@example.com/api"
         assert redact_api_key(url) == url  # URL 不在内置 Key 形态里
 
+    def test_pem_block_redacted(self) -> None:
+        pem = "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...\n-----END PRIVATE KEY-----"
+        assert redact_api_key(pem) == "***PEM_REDACTED***"
+
 
 # ---------------------------------------------------------------------------
 # sanitize_filename

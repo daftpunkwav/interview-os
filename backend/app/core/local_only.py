@@ -11,14 +11,25 @@ import os
 
 from fastapi import HTTPException, Request
 
+from app.config import get_settings
+
 
 def require_local_peer(request: Request) -> None:
-    """仅允许 loopback 直连；否则 403。"""
+    """仅允许 loopback 直连；否则 403。
+
+    Starlette TestClient 的 peer 为 ``testclient``，始终放行。
+    ``INTERVIEWOS_TEST_MODE=1`` 仅在非生产环境放行真实 HTTP；
+    ``env=prod`` 时忽略该开关，防止误部署绕过。
+    """
     peer = request.client.host if request.client else None
     if not peer:
         raise HTTPException(status_code=403, detail="仅允许本机访问管理接口")
-    # Starlette TestClient / 测试模式放行
-    if peer == "testclient" or os.environ.get("INTERVIEWOS_TEST_MODE") == "1":
+    if peer == "testclient":
+        return
+    if (
+        os.environ.get("INTERVIEWOS_TEST_MODE") == "1"
+        and not get_settings().is_prod
+    ):
         return
     try:
         ip = ipaddress.ip_address(peer.strip("[]"))

@@ -68,6 +68,13 @@ const securityHeaders = [
   },
 ];
 
+if (process.env.NODE_ENV === "production") {
+  securityHeaders.push({
+    key: "Strict-Transport-Security",
+    value: "max-age=63072000; includeSubDomains; preload",
+  });
+}
+
 const nextConfig = {
   transpilePackages: ["@met4citizen/talkinghead", "three"],
   async headers() {

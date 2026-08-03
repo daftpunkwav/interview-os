@@ -32,7 +32,7 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 | POST | `/api/v1/resume/{id}/activate` | — | `{id,is_active}` | 行锁互斥 |
 | DELETE | `/api/v1/resume/{id}` | — | `{ok,id}` | 删除简历与尝试清理上传文件 |
 | POST | `/api/v1/resume/{id}/analyze` | — | `ResumeAnalysis` | 多维度 Agent 评价（强校验 + 容错规范化） |
-| POST | `/api/v1/interview/sessions` | `InterviewConfig` | `InterviewSession` | schema 中 `interview_style` 仅允许 `deep_dive` / `concise`；人格严格度 1–10 |
+| POST | `/api/v1/interview/sessions` | `InterviewConfig` | `InterviewSession` | `interview_style` 允许 `guided` / `deep_dive` / `continuous` / `challenging`；人格严格度 1–10；本机限流创建 |
 | GET | `/api/v1/interview/sessions` | — | `InterviewSession[]` | |
 | GET | `/api/v1/interview/sessions/{id}` | — | `InterviewSession` | |
 | POST | `/api/v1/interview/sessions/{id}/start` | — | `{session_id,message,current_phase}` | 仅返回开场白；不含 `is_complete` |

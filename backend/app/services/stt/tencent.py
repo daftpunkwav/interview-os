@@ -9,8 +9,7 @@ import json
 import logging
 import time
 
-import httpx
-
+from app.core.security import make_pinned_async_client
 from app.services.stt.base import SttCredentials
 from app.services.stt.whisper import pcm_base64_to_wav_bytes
 
@@ -109,7 +108,9 @@ class TencentProvider:
             secret_id=secret_id, secret_key=secret_key, payload=payload, timestamp=ts
         )
         try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
+            async with make_pinned_async_client(
+                f"https://{_HOST}", timeout=45.0
+            ) as client:
                 resp = await client.post(
                     f"https://{_HOST}", headers=headers, content=payload
                 )

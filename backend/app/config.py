@@ -84,6 +84,12 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Cookie Secure：None=自动（https 或可信代理 X-Forwarded-Proto=https）
+    cookie_secure: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("COOKIE_SECURE", "INTERVIEWOS_COOKIE_SECURE"),
+    )
+
     @field_validator("cors_origins")
     @classmethod
     def _strip_cors(cls, v: str) -> str:

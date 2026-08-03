@@ -46,6 +46,7 @@ export default function InterviewRoomPage() {
   const params = useParams();
   const router = useRouter();
   const sessionId = Number(params.id);
+  const sessionIdValid = Number.isFinite(sessionId) && sessionId > 0;
   const [tokenMissing, setTokenMissing] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
@@ -557,7 +558,30 @@ export default function InterviewRoomPage() {
     IDLE: "待命",
   };
 
-  // 首次连接失败：整页错误；曾连上后断线：保留房间 UI，避免摄像头卸载闪屏
+  // 非法会话 ID / 首次连接失败：整页错误；曾连上后断线：保留房间 UI，避免摄像头卸载闪屏
+  if (!sessionIdValid) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center gap-4 bg-gray-950 text-gray-200 px-6 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+          <AlertTriangle className="text-amber-400" size={26} />
+        </div>
+        <div>
+          <p className="text-base font-medium">无效的会话 ID</p>
+          <p className="text-sm text-gray-500 mt-1.5 max-w-sm">
+            请从「面试配置」页重新开始一场面试。
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => router.push("/interview")}
+          className="px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700"
+        >
+          返回配置页
+        </button>
+      </div>
+    );
+  }
+
   if (tokenMissing) {
     return (
       <div className="h-screen flex flex-col items-center justify-center gap-4 bg-gray-950 text-gray-200 px-6 text-center">
@@ -565,9 +589,9 @@ export default function InterviewRoomPage() {
           <AlertTriangle className="text-amber-400" size={26} />
         </div>
         <div>
-          <p className="text-base font-medium">缺少本场面试验证令牌</p>
+          <p className="text-base font-medium">会话无效或无权访问</p>
           <p className="text-sm text-gray-500 mt-1.5 max-w-sm">
-            请从「面试配置」页重新开始一场面试。直接打开历史链接无法恢复访问凭证。
+            请从「面试配置」页重新开始一场面试。直接打开历史链接可能缺少能力令牌 Cookie。
           </p>
         </div>
         <button

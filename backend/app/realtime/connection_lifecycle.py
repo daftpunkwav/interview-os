@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.vision.agent import VisionAgent
 from app.config import get_settings
-from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, SessionStatus
+from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, MAX_USER_TEXT_CHARS, SessionStatus
 from app.core.logging import set_trace_id
 from app.core.ratelimit import try_rate_limit_by_id
 from app.core.session_auth import tokens_match
@@ -318,6 +318,12 @@ class ConnectionLifecycleMixin:
             self._spawn(self._on_candidate_barge_in())
         elif msg_type == "user_text":
             text = data.get("text", "").strip()
+            if len(text) > MAX_USER_TEXT_CHARS:
+                await self.send(
+                    "error",
+                    message=f"文本过长（上限 {MAX_USER_TEXT_CHARS} 字符）",
+                )
+                return
             if (
                 text
                 and self.turn_state == TurnState.USER_SPEAKING

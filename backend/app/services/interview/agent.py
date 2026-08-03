@@ -774,6 +774,9 @@ async def generate_report(
         raise
 
 
+_REPORT_GENERATING_SENTINEL = '{"_generating":true}'
+
+
 async def generate_and_persist_report(
     session: InterviewSession,
     llm: LLMClient,
@@ -783,8 +786,10 @@ async def generate_and_persist_report(
     """生成报告并写入 session / GrowthRecord（同一事务）。
 
     任意阶段失败整体回滚，避免「session 已 completed 但 GrowthRecord 缺失」。
-    同 session 并发调用时加锁，并在已有报告时直接返回，避免 WS/HTTP 双打。
+    同 session 并发调用时加进程内锁 + DB 哨兵 CAS，避免 WS/HTTP / 多 worker 双打。
     """
+    from sqlalchemy import or_, update
+
     from app.core.constants import SessionStatus
     from app.models import GrowthRecord
 
@@ -796,40 +801,134 @@ async def generate_and_persist_report(
         except Exception:
             pass
         raw = (session.report or "").strip()
-        if raw and raw != "{}":
+        if raw and raw != "{}" and raw != _REPORT_GENERATING_SENTINEL:
             try:
                 return InterviewReport.model_validate_json(raw)
             except Exception:
                 pass
-
-        report = await generate_report(session, llm, face_records)
-        report = _apply_interrupt_politeness_penalty(session, report)
-
-        growth = GrowthRecord(
-            profile_id=session.profile_id,
-            session_id=session.id,
-            weak_skills=json.dumps(report.weaknesses, ensure_ascii=False),
-            common_mistakes=json.dumps(report.weaknesses[:3], ensure_ascii=False),
-            training_plan=json.dumps(report.training_plan, ensure_ascii=False),
-        )
-
-        try:
-            session.report = report.model_dump_json()
-            session.overall_score = report.overall_score
-            session.status = SessionStatus.COMPLETED.value
-            session.ended_at = datetime.now(timezone.utc)
-            db.add(growth)
-            db.commit()
+        if raw == _REPORT_GENERATING_SENTINEL:
+            # 另一路径正在生成：短暂等待后若已落库则返回
+            for _ in range(30):
+                await asyncio.sleep(0.2)
+                try:
+                    db.refresh(session)
+                except Exception:
+                    break
+                cur = (session.report or "").strip()
+                if cur and cur != _REPORT_GENERATING_SENTINEL and cur != "{}":
+                    try:
+                        return InterviewReport.model_validate_json(cur)
+                    except Exception:
+                        break
+            # 超时仍卡在哨兵：清哨兵后由本路径重试
             try:
-                from app.services.growth.learning import record_interview_learning
-
-                record_interview_learning(session, report=report.model_dump())
+                db.execute(
+                    update(InterviewSession)
+                    .where(InterviewSession.id == sid)
+                    .where(InterviewSession.report == _REPORT_GENERATING_SENTINEL)
+                    .values(report="{}")
+                )
+                db.commit()
             except Exception:
-                pass
+                db.rollback()
+
+        # DB CAS：仅当报告仍为空时写入哨兵
+        claimed = False
+        try:
+            result = db.execute(
+                update(InterviewSession)
+                .where(InterviewSession.id == sid)
+                .where(
+                    or_(
+                        InterviewSession.report.is_(None),
+                        InterviewSession.report == "",
+                        InterviewSession.report == "{}",
+                    )
+                )
+                .values(report=_REPORT_GENERATING_SENTINEL)
+            )
+            db.commit()
+            claimed = (result.rowcount or 0) > 0
         except Exception:
             db.rollback()
+            claimed = False
+
+        if not claimed:
+            try:
+                db.refresh(session)
+            except Exception:
+                pass
+            cur = (session.report or "").strip()
+            if cur and cur != _REPORT_GENERATING_SENTINEL and cur != "{}":
+                try:
+                    return InterviewReport.model_validate_json(cur)
+                except Exception:
+                    pass
+            # 可能刚被其他方设为哨兵：再等一轮
+            if cur == _REPORT_GENERATING_SENTINEL:
+                for _ in range(30):
+                    await asyncio.sleep(0.2)
+                    try:
+                        db.refresh(session)
+                    except Exception:
+                        break
+                    cur2 = (session.report or "").strip()
+                    if cur2 and cur2 != _REPORT_GENERATING_SENTINEL and cur2 != "{}":
+                        try:
+                            return InterviewReport.model_validate_json(cur2)
+                        except Exception:
+                            break
+
+        try:
+            # 确保 ORM 对象与哨兵一致
+            try:
+                db.refresh(session)
+            except Exception:
+                pass
+            report = await generate_report(session, llm, face_records)
+            report = _apply_interrupt_politeness_penalty(session, report)
+
+            growth = GrowthRecord(
+                profile_id=session.profile_id,
+                session_id=session.id,
+                weak_skills=json.dumps(report.weaknesses, ensure_ascii=False),
+                common_mistakes=json.dumps(report.weaknesses[:3], ensure_ascii=False),
+                training_plan=json.dumps(report.training_plan, ensure_ascii=False),
+            )
+
+            try:
+                session.report = report.model_dump_json()
+                session.overall_score = report.overall_score
+                session.status = SessionStatus.COMPLETED.value
+                session.ended_at = datetime.now(timezone.utc)
+                db.add(growth)
+                db.commit()
+                try:
+                    from app.services.growth.learning import record_interview_learning
+
+                    record_interview_learning(session, report=report.model_dump())
+                except Exception:
+                    pass
+            except Exception:
+                db.rollback()
+                raise
+            return report
+        except Exception:
+            # 异常路径清哨兵，避免永久卡住
+            try:
+                db.execute(
+                    update(InterviewSession)
+                    .where(InterviewSession.id == sid)
+                    .where(InterviewSession.report == _REPORT_GENERATING_SENTINEL)
+                    .values(report="{}")
+                )
+                db.commit()
+            except Exception:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
             raise
-        return report
 
 
 async def stream_report(

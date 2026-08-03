@@ -75,7 +75,7 @@ def assert_within_dir(path: Path, root: Path) -> Path:
 
 # ── URL / SSRF ────────────────────────────────────
 
-# 默认拒绝的网段：loopback、link-local、private、multicast、reserved、IPv6 等价
+# 默认拒绝的网段：loopback、link-local、private、CGNAT、multicast、reserved、IPv6 等价
 _DEFAULT_BLOCKED_NETS = [
     ipaddress.ip_network("127.0.0.0/8"),
     ipaddress.ip_network("10.0.0.0/8"),
@@ -83,9 +83,13 @@ _DEFAULT_BLOCKED_NETS = [
     ipaddress.ip_network("192.168.0.0/16"),
     ipaddress.ip_network("169.254.0.0/16"),
     ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("100.64.0.0/10"),  # CGNAT / 运营商共享
+    ipaddress.ip_network("224.0.0.0/4"),  # multicast
+    ipaddress.ip_network("240.0.0.0/4"),  # reserved
     ipaddress.ip_network("::1/128"),
     ipaddress.ip_network("fc00::/7"),
     ipaddress.ip_network("fe80::/10"),
+    ipaddress.ip_network("ff00::/8"),  # IPv6 multicast
     # IPv4-mapped IPv6（攻击者常用绕路）
     ipaddress.ip_network("::ffff:0:0/96"),
 ]
@@ -147,6 +151,14 @@ def _ip_is_safe(ip: ipaddress._BaseAddress, *, allow_local: bool) -> bool:
     for net in _DEFAULT_BLOCKED_NETS:
         if ip in net:
             return False
+    # 额外属性：reserved / multicast（覆盖未列入显式网段的边界情况）
+    try:
+        if getattr(ip, "is_multicast", False) or getattr(ip, "is_reserved", False):
+            return False
+        if getattr(ip, "is_unspecified", False):
+            return False
+    except Exception:
+        pass
     return True
 
 
@@ -425,6 +437,7 @@ def redact_api_key(value: str | None) -> str:
     同时覆盖:
     - 各家 Key（OpenAI/Anthropic/Google/StepFun）；
     - ``Authorization: Bearer xxxx`` / ``authorization=xxxx`` 头形式；
+    - PEM 私钥块（含换行）；
     - 启发式认为"长度足够 + 字母数字混合 + 无空格"的 token。
 
     普通短语、日志模板（``HTTP/%s ...``）不会被误判。
@@ -435,6 +448,10 @@ def redact_api_key(value: str | None) -> str:
     if len(v) <= 8:
         # 短字符串默认不脱敏，避免误伤中文短语/路径/短 token 自身
         return v
+
+    # PEM / 证书块：含换行，启发式会漏掉
+    if "-----BEGIN" in v.upper():
+        return "***PEM_REDACTED***"
 
     # Authorization / authorization=xxx 形式：只保留 scheme，后续 token 整体遮蔽
     lowered = v.lower()

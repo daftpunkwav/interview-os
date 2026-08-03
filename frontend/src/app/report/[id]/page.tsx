@@ -36,37 +36,14 @@ export default function ReportPage() {
   };
 
   useEffect(() => {
+    if (!Number.isFinite(sessionId) || sessionId <= 0) {
+      setError("无效的会话 ID");
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
-    const ctrl = new AbortController();
 
-    const startPolling = () => {
-      let attempts = 0;
-      const maxAttempts = 45;
-      const tick = () => {
-        if (cancelled) return;
-        attempts += 1;
-        api.getReport(sessionId)
-          .then((data) => {
-            if (cancelled) return;
-            applyPayload(data);
-            setError("");
-            setLoading(false);
-          })
-          .catch((e) => {
-            if (cancelled) return;
-            const msg = e instanceof Error ? e.message : String(e);
-            if (attempts < maxAttempts && /尚未|不存在|404|生成/.test(msg)) {
-              setTimeout(tick, 2000);
-              return;
-            }
-            setError(msg);
-            setLoading(false);
-          });
-      };
-      tick();
-    };
-
-    // 先读报告；仅缺失/生成中时才触发 finish 补生成
+    // 只读拉取；缺报告时不自动 finish（避免打开链接即触发昂贵 LLM）
     api
       .getReport(sessionId)
       .then((data) => {
@@ -75,37 +52,22 @@ export default function ReportPage() {
         setError("");
         setLoading(false);
       })
-      .catch(async (e) => {
+      .catch((e) => {
         if (cancelled) return;
         const msg = e instanceof Error ? e.message : String(e);
-        const missing = /尚未|不存在|404|生成/.test(msg) || (e && typeof e === "object" && "status" in e && Number(e.status) === 404);
+        const missing =
+          /尚未|不存在|404|生成/.test(msg) ||
+          (e && typeof e === "object" && "status" in e && Number(e.status) === 404);
         if (missing) {
-          void api.finishInterview(sessionId).catch(() => undefined);
-          try {
-            const streamedReport = await api.getReportStream(
-              sessionId,
-              () => {},
-              ctrl.signal,
-            );
-            if (cancelled) return;
-            setReport(streamedReport);
-            setError("");
-            setLoading(false);
-            api.getReport(sessionId).then((data) => {
-              if (!cancelled) applyPayload(data);
-            }).catch(() => undefined);
-          } catch {
-            if (!cancelled) startPolling();
-          }
-          return;
+          setError("报告尚未生成。可点击下方按钮生成或重新加载。");
+        } else {
+          setError(msg);
         }
-        setError(msg);
         setLoading(false);
       });
 
     return () => {
       cancelled = true;
-      ctrl.abort();
     };
   }, [sessionId]);
 
@@ -126,14 +88,15 @@ export default function ReportPage() {
             type="button"
             className="btn-secondary inline-flex items-center gap-2"
             onClick={() => {
-              // 若 WS 后台未落库，补一次 HTTP 生成后再拉取
+              // 用户主动触发：补一次 HTTP 生成后再拉取
+              setLoading(true);
               api
                 .finishInterview(sessionId)
                 .catch(() => undefined)
                 .finally(() => loadReport());
             }}
           >
-            <RefreshCw size={16} /> 重新加载
+            <RefreshCw size={16} /> 生成 / 重新加载
           </button>
           <Link href="/interview" className="btn-primary">返回面试</Link>
         </div>

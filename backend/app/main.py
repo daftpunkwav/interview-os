@@ -274,11 +274,11 @@ async def _starlette_http_handler(
 
 @app.exception_handler(UnsafeURLError)
 async def _unsafe_url_handler(request: Request, exc: UnsafeURLError) -> JSONResponse:
-    """统一处理 SSRF / URL 校验失败。"""
+    """统一处理 SSRF / URL 校验失败；对外不回显完整 URL。"""
     logger.warning("URL 校验失败: %s path=%s", exc, request.url.path)
     return _envelope(
         code="unsafe_url",
-        message=str(exc) or "URL 不合法",
+        message="URL 不安全",
         status=400,
         request=request,
     )

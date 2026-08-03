@@ -38,8 +38,12 @@ _TAG_BYTES = 16
 _KEY_BYTES = 32
 _KDF_ITERATIONS = 200_000
 
-_BACKEND_DATA = Path(__file__).resolve().parent.parent / "data"
+# 与 DB / uploads 同目录：backend/data/.secret.key
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
+_BACKEND_DATA = _BACKEND_ROOT / "data"
 _DEFAULT_KEYFILE = _BACKEND_DATA / ".secret.key"
+# 历史误放路径（backend/app/data/.secret.key），启动时自动迁移
+_LEGACY_KEYFILE = Path(__file__).resolve().parent.parent / "data" / ".secret.key"
 
 _INTERVIEWOS_MASTER_SALT = b"interviewos-master-v2"
 
@@ -57,6 +61,29 @@ def _derive_key(master: bytes, salt: bytes) -> bytes:
     )
 
 
+def _migrate_legacy_keyfile() -> None:
+    """若新路径不存在而旧路径存在，复制并告警。"""
+    if _DEFAULT_KEYFILE.exists():
+        return
+    if not _LEGACY_KEYFILE.exists():
+        return
+    try:
+        _BACKEND_DATA.mkdir(parents=True, exist_ok=True)
+        data = _LEGACY_KEYFILE.read_text(encoding="utf-8")
+        _DEFAULT_KEYFILE.write_text(data, encoding="utf-8")
+        try:
+            os.chmod(_DEFAULT_KEYFILE, 0o600)
+        except OSError:
+            pass
+        logger.warning(
+            "已将 master key 从旧路径迁移到 %s（原 %s）；请确认后可删除旧文件",
+            _DEFAULT_KEYFILE,
+            _LEGACY_KEYFILE,
+        )
+    except OSError as e:
+        logger.error("迁移 master key 失败: %s", e)
+
+
 def _load_secret_bytes() -> bytes:
     """返回原始 master 密钥（≥32 字节）。"""
     raw = os.environ.get("INTERVIEWOS_SECRET_KEY")
@@ -71,6 +98,7 @@ def _load_secret_bytes() -> bytes:
         return _derive_key(raw.encode("utf-8"), _INTERVIEWOS_MASTER_SALT)
 
     # 持久化 fallback
+    _migrate_legacy_keyfile()
     _BACKEND_DATA.mkdir(parents=True, exist_ok=True)
     if _DEFAULT_KEYFILE.exists():
         try:

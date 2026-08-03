@@ -44,10 +44,8 @@ from app.core.security import (
     make_pinned_async_client,
     redact_api_key,
 )
-from app.services.company.knowledge import BUILTIN_COMPANIES
 from app.services.llm.client import LLMClient
-
-from . import company_rag
+from app.services.rag._kb_data import _build_documents
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +62,7 @@ def _serialize_documents_to_jsonl() -> bytes:
     ``company_id`` / ``company_name`` / ``section``,便于 StepFun 服务端
     做召回时的过滤参考。
     """
-    texts, metadatas, _ = company_rag._build_documents()
+    texts, metadatas, _ = _build_documents()
     lines: list[str] = []
     for text, meta in zip(texts, metadatas):
         lines.append(json.dumps({"text": text, "metadata": meta}, ensure_ascii=False))

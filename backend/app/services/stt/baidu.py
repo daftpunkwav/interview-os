@@ -5,8 +5,7 @@ from __future__ import annotations
 import base64
 import logging
 
-import httpx
-
+from app.core.security import make_pinned_async_client
 from app.services.stt.base import SttCredentials
 from app.services.stt.whisper import pcm_base64_to_wav_bytes
 
@@ -27,7 +26,7 @@ class BaiduProvider:
             return ""
 
         try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
+            async with make_pinned_async_client(_TOKEN_URL, timeout=20.0) as client:
                 tr = await client.get(
                     _TOKEN_URL,
                     params={
@@ -62,7 +61,7 @@ class BaiduProvider:
             "dev_pid": 1537,
         }
         try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
+            async with make_pinned_async_client(_ASR_URL, timeout=45.0) as client:
                 resp = await client.post(_ASR_URL, json=body)
                 resp.raise_for_status()
                 payload = resp.json()

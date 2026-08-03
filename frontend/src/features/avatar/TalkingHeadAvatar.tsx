@@ -307,13 +307,13 @@ export function TalkingHeadAvatar({
         }
         const lockGaze = () => {
           try {
-            head.setBaselineValue?.("eyesLookDown", 0);
-            head.setFixedValue?.("eyesLookDown", 0, 200);
-            head.setValue("eyesLookDown", 0, 200);
-            head.setValue("eyesLookUp", 0.08, 200);
-            head.setValue("headRotateX", 0.1, 300);
-            head.lookAtCamera?.(1500);
-            head.makeEyeContact?.(3000);
+            head?.setBaselineValue?.("eyesLookDown", 0);
+            head?.setFixedValue?.("eyesLookDown", 0, 200);
+            head?.setValue("eyesLookDown", 0, 200);
+            head?.setValue("eyesLookUp", 0.08, 200);
+            head?.setValue("headRotateX", 0.1, 300);
+            head?.lookAtCamera?.(1500);
+            head?.makeEyeContact?.(3000);
           } catch {
             /* ignore */
           }

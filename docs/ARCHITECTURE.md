@@ -115,7 +115,7 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
 | 文件上传 | 10MB 流式上限 + 魔数嗅探（`%PDF-` / `PK\x03\x04` / OLE）+ `assert_within_dir` | 走对象存储（MVP 单机保留本地） |
 | 限流 | `app/core/ratelimit.py` 滑动窗口；`INTERVIEWOS_TRUSTED_PROXY_CIDRS` 控制 X-Forwarded-For 信任 | 替换 Redis；按用户/IP 区分 |
 | 日志脱敏 | `RedactFilter` 覆盖 `record.msg/args/exc_text` 三路径 | 全文加密（KMS） |
-| WebSocket 拒绝服务 | 服务端 30s 心跳发 `server_ping`，客户端 5s 内须回 `pong`，3 次未回 graceful close；audio_buffer 5MB 上限；同一 session 仅允许一条活跃连接，新连接踢旧（`fix/ws-single-session-mutex`） | JWT 鉴权 / token 续签 |
+| WebSocket 拒绝服务 | 服务端 30s 心跳发 `server_ping`，客户端 5s 内须回 `pong`，3 次未回 graceful close；audio_buffer 5MB 上限；同一 session 仅允许一条活跃连接，新连接踢旧（`fix/ws-single-session-mutex`） | 能力令牌续签 / 心跳调参 |
 | 路径穿越 | `sanitize_filename` + `assert_within_dir` 双保险 | — |
 | CORS 滥用 | `allow_origins=['*']` + `allow_credentials=True` 启动即拒绝；`PATCH/HEAD` 显式放行；X-Request-Id 输入校验正则 | — |
 | 错误响应不一致 | 统一 envelope `{error: {code, message, trace_id}}`；StarletteHTTPException / HTTPException / RequestValidationError / UnsafeURLError 共用 handler | — |
@@ -143,12 +143,12 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
 
 ## 8. 已知约束与未实现项
 
-- **未实现鉴权 / 多用户**：当前所有接口均无登录；MVP 定位为本地单机工具（详见 `SECURITY.md` §1）。
+- **刻意不做多用户 / 账号体系**：本地单机单用户；`profile_id=1`；会话用 capability token + Cookie，无登录（详见 `SECURITY.md` §1）。
 - **未实现叫号 / 排队大厅**：创建会话即可开始，不存在 `pending → called` 状态机。
 - **未实现官方 MCP 传输**：GitHub 工具为 REST 客户端 + function tools，语义对齐常见 MCP；如需 stdio/HTTP MCP 适配器，可在 `app/services/github/` 上挂 adapter。
 - **拟真人像为 CSS 矢量 SVG**：未引入 Live2D / 视频流；如需替换为 Live2D，可整体替换 `frontend/src/features/avatar/InterviewerAvatar.tsx`，对外接口（avatar_id/scene_id）保持稳定。
 - **企业知识当前为内置 7 家硬编码 + RAG 抽象**：`app/services/company/knowledge.py` 维护字节/腾讯/阿里/美团/米哈游/OpenAI/Google 的样例问题与风格描述；`app/services/rag/` 提供 local Chroma / StepFun retrieval / none 三种 RAG 后端抽象，可按 `RAGBackendKind` 切换；尚未接入众包面经或自动爬虫（合规与项目所有者决策）。
 - **未做 40–60 分钟实战压测**：压缩 + 结构化记忆机制已具备（`compress_messages` 30% 阈值 + `agent_state`），但仍需真实 LLM 长测优化摘要质量。
 - **系统学习当前为「写入 + 展示」**：尚未自动反哺 system prompt / 题库策略。
-- **SQLite**：单机部署；如需多人，需切到 Postgres（`app/config.py` 中 DATABASE_URL 即可）。
-- **TLS / 反向代理**：默认 http；生产应在前置 Nginx/ALB 终止。
+- **SQLite**：单机部署为设计前提。
+- **TLS / 反向代理**：默认 http；若对外暴露应在前置 Nginx/ALB 终止 HTTPS。

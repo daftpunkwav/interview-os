@@ -228,7 +228,7 @@ export interface InterviewSession {
   started_at?: string;
   ended_at?: string;
   created_at: string;
-  /** 仅 create 响应返回；后续请求从 localStorage 读取 */
+  /** 仅 create 历史兼容字段；现经 HttpOnly Cookie 下发，响应体通常为 null */
   access_token?: string | null;
 }
 
