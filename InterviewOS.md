@@ -86,7 +86,7 @@ agent需要最少40分钟的面试时长.需要有优秀的上下文管理和工
 ### 人像与语音
 
 - 面试官：CSS 拟真半身像 + 口型/眨眼/情绪（可替换 Live2D）；前端亦可 TalkingHead 3D。
-- 语音管道三阶段：独立 ASR（多厂商 / 本地 Whisper）→ 文本 LLM 思考（推荐 MiniMax）→ Edge 或 MiniMax Speech 播报；摄像头多模态。
+- 语音管道三阶段：独立 ASR（多厂商 / 本地 Whisper）→ 文本 LLM 思考 → TTS 播报（Edge / MiniMax Speech 等，可仅字幕）；摄像头多模态。
 
 
 

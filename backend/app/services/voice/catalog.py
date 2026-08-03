@@ -46,7 +46,7 @@ REASONING_PROVIDERS: list[dict[str, Any]] = [
         can_interview_reason=True,
         default_model="MiniMax-M3",
         default_api_base="https://api.minimaxi.com/v1",
-        hint="推荐用于面试思考；不负责听麦/出声",
+        hint="文本 LLM；不负责听麦/出声",
     ),
     _p(
         id="openai",
@@ -88,7 +88,7 @@ REASONING_PROVIDERS: list[dict[str, Any]] = [
         recognize_via="native_audio",
         speak_via="native_audio",
         status="coming_soon",
-        hint="可听可说；面试思考能力通常弱于 MiniMax，不推荐作思考处理者",
+        hint="可听可说；本轮原生会话未接通；思考阶段仍须选择文本 LLM",
     ),
 ]
 
@@ -101,7 +101,7 @@ RECOGNIZE_PROVIDERS: list[dict[str, Any]] = [
         recognize_via="transcribe_only",
         default_model="FunAudioLLM/SenseVoiceSmall",
         default_api_base="https://api.siliconflow.cn/v1",
-        hint="需独立转写 Key；勿用 MiniMax Coding Plan Key",
+        hint="需独立转写 Key；勿复用思考 LLM Key",
     ),
     _p(
         id="xfyun",
@@ -176,7 +176,7 @@ SPEAK_PROVIDERS: list[dict[str, Any]] = [
         can_speech_speak=True,
         speak_via="tts_from_text",
         default_model="zh-CN-XiaoxiaoNeural",
-        hint="当前默认；听感偏机械",
+        hint="当前默认播报处理者",
     ),
     _p(
         id="minimax_speech",
@@ -185,7 +185,7 @@ SPEAK_PROVIDERS: list[dict[str, Any]] = [
         speak_via="tts_from_text",
         default_model="speech-2.8-hd",
         default_api_base="https://api.minimaxi.com/v1",
-        hint="可用与思考相同的 MiniMax Key，听感通常更好",
+        hint="T2A 文本转语音；可单独配置 TTS Key",
     ),
     _p(
         id="none",

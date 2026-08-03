@@ -29,7 +29,7 @@ InterviewOS 是一个基于 AI Agent 的真实面试模拟系统。上传简历�
 | 后端 | Python 3.11+ · FastAPI · SQLAlchemy 2.0 · SQLite · ChromaDB · Pydantic v2 |
 | 前端 | Next.js 15 · React 19 · TypeScript strict (`noUncheckedIndexedAccess`) · Tailwind CSS · framer-motion |
 | AI | OpenAI Chat Completions 兼容 API（含 embeddings） |
-| 语音 | **三处理器**：多厂商 ASR（OpenAI 兼容 / 讯飞 / 豆包 / 阿里 / 腾讯 / 百度）+ 本地 faster-whisper 回退；思考 LLM（推荐 MiniMax-M3）；播报 Edge TTS 或 MiniMax Speech（T2A） |
+| 语音 | **三处理器**：多厂商 ASR（OpenAI 兼容 / 讯飞 / 豆包 / 阿里 / 腾讯 / 百度）+ 本地 faster-whisper 回退；文本 LLM 思考；播报 Edge TTS 或 MiniMax Speech（T2A）等 |
 | 测试 | pytest / pytest-asyncio |
 
 > 注：GitHub 集成通过 `app/services/github/` 中的 **REST 客户端 + OpenAI function tools** 实现，与常见 GitHub MCP 工具语义对齐；**不是**官方 MCP 进程传输。可后续替换为 stdio/HTTP MCP 适配器（见 [PROJECT_REPORT.md §2.2](./PROJECT_REPORT.md)）。
@@ -110,18 +110,18 @@ npm run dev
 
 ## BYOK 配置
 
-在「设置」页分别配置三个处理器（推荐），或用 `backend/.env` 提供思考 LLM 的默认回退：
+在「设置」页分别配置三个处理器，或用 `backend/.env` 提供思考 LLM 的默认回退：
 
 | 阶段 | 说明 | 凭证 |
 |------|------|------|
-| 语音识别 | 云端 ASR 或本地 Whisper；**禁止**用 MiniMax Coding Plan 思考 Key 当 ASR Key | 设置页 ASR 字段 / 独立供应商 Key |
-| 面试思考 | 必须是文本 LLM（推荐 MiniMax-M3） | `LLM_API_*` 或设置页思考区 |
-| 语音输出 | Edge（默认）/ MiniMax Speech / 仅字幕 | 设置页播报区；MiniMax Speech 可复用思考 Key |
+| 语音识别 | 云端 ASR 或本地 Whisper；思考 LLM 的 Key **不得**用作 ASR Key | 设置页 ASR 字段 / 独立供应商 Key |
+| 面试思考 | 必须是文本 LLM（OpenAI 兼容） | `LLM_API_*` 或设置页思考区 |
+| 语音输出 | Edge（默认）/ MiniMax Speech / 仅字幕 | 设置页播报区；同供应商时可单独填写或复用已配置的 TTS Key |
 
 ```env
-LLM_API_BASE=https://api.minimaxi.com/v1
+LLM_API_BASE=https://api.openai.com/v1
 LLM_API_KEY=sk-your-real-key-here
-LLM_MODEL=MiniMax-M3
+LLM_MODEL=gpt-4o
 LLM_MAX_TOKENS=4096
 LLM_CONTEXT_WINDOW=128000
 

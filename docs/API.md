@@ -130,7 +130,7 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 { "type": "error", "message": "..." }
 ```
 
-> 实时语音路径：麦克风 PCM → **独立 ASR 凭证**转写（失败回退本地 Whisper）→ 思考 LLM → TTS（Edge / MiniMax Speech / 仅字幕）。思考 Key **不会**静默充当 ASR Key。
+> 实时语音路径：麦克风 PCM → **独立 ASR 凭证**转写（失败回退本地 Whisper）→ 思考 LLM → TTS（按设置页播报处理者；可仅字幕）。思考 LLM 的 Key **不会**静默充当 ASR Key。
 >
 > 同一 `session_id` 只允许一条活跃连接，新连接会踢掉旧连接（`fix/ws-single-session-mutex`）。
 

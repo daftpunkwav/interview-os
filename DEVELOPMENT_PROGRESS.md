@@ -163,7 +163,7 @@
        ├─ 视觉（face_analysis → VisionAgent.summarize）
        ├─ 组装 user_text / user_turn_end 帧
        ▼
-InterviewRunner.stream_turn   ← 思考：文本 LLM（推荐 MiniMax）
+InterviewRunner.stream_turn   ← 思考：文本 LLM（BYOK）
        1) 追问信号分析（followup.analyze）
        2) RAG 检索（CompanyKnowledgeRAG / StepFun retrieval tool）
        3) 上下文压缩（30% 阈值）
@@ -171,7 +171,7 @@ InterviewRunner.stream_turn   ← 思考：文本 LLM（推荐 MiniMax）
        5) 组装 system prompt + 结构化 agent_state → LLM 流式
        6) assistant_token / assistant_done（含 emotion）
        ▼
-TTS Queue → Edge / MiniMax Speech / 仅字幕 → tts_audio → useTTSPlayer
+TTS Queue → 已配置播报处理者 / 仅字幕 → tts_audio → useTTSPlayer
        ▼
 [结束] /finish → generate_and_persist_report → GrowthRecord + system_learning.json
 ```
@@ -377,6 +377,6 @@ TTS Queue → Edge / MiniMax Speech / 仅字幕 → tts_audio → useTTSPlayer
 
 ## 8. 一句话总结
 
-> 仓库当前在 `main` 分支，已具备 **三处理器 BYOK（独立 ASR → 思考 LLM → Edge/MiniMax Speech）+ 多简历 + 实时面试（WS + 拟真人像）+ 追问（阶段感知 + 薄弱线索记录）+ 压缩 + 结构化记忆每回合刷新 + 工具循环（GitHub）+ RAG（local/stepfun/none）+ 多 Workflow + 反问环节公司代表 prompt + 多维评价 + 报告 + 双重成长（系统学习反哺 prompt）** 的闭环。
+> 仓库当前在 `main` 分支，已具备 **三处理器 BYOK（独立 ASR → 思考 LLM → TTS 播报）+ 多简历 + 实时面试（WS + 拟真人像）+ 追问（阶段感知 + 薄弱线索记录）+ 压缩 + 结构化记忆每回合刷新 + 工具循环（GitHub）+ RAG（local/stepfun/none）+ 多 Workflow + 反问环节公司代表 prompt + 多维评价 + 报告 + 双重成长（系统学习反哺 prompt）** 的闭环。
 > 主要缺口：**叫号大厅、Live2D、官方 MCP 传输、面经众包、多用户鉴权、40–60 分钟实战压测、语音 LLM 原生听/说（coming_soon）**。
 > 这些不影响主路径演示，但需要在文档与代码中**明确标注为未实现**，避免后续贡献者按文档宣传反向误解项目状态。

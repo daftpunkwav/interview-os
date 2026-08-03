@@ -64,7 +64,7 @@ export default function SettingsPage() {
       settings.speech_recognize_handler === settings.provider &&
       settings.provider === settings.speech_speak_handler;
     if (same) {
-      return "三阶段都选了同一语音 LLM：允许，但面试思考更建议仍用 MiniMax 文本模型。";
+      return "当前三阶段选择了同一语音 LLM：允许，但思考阶段仍须为具备文本推理能力的模型。";
     }
     return "";
   }, [settings]);
@@ -234,7 +234,7 @@ export default function SettingsPage() {
       ) : settings && catalog ? (
         <div className="space-y-4">
           <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--brand-softer)]/40 px-4 py-3 text-sm text-[var(--text-secondary)]">
-            推荐组合：识别 = ASR（如 SenseVoice / 讯飞）· 思考 = MiniMax · 播报 = Edge 或 MiniMax Speech
+            管道顺序：语音识别 → 面试思考（文本 LLM）→ 语音输出；各阶段凭证相互独立。
           </div>
           {comboWarning && (
             <div className="alert alert-error text-sm">{comboWarning}</div>
@@ -244,7 +244,7 @@ export default function SettingsPage() {
           <StageSection
             icon={Mic}
             title="语音识别处理器"
-            hint="听麦 → 文字；勿使用 MiniMax Coding Plan Key"
+            hint="听麦 → 文字；使用独立 ASR 凭证，勿复用思考 LLM Key"
             testing={testing === "recognize"}
             onTest={() => handleTest("recognize")}
             testResult={testResults.recognize}
@@ -323,7 +323,7 @@ export default function SettingsPage() {
           <StageSection
             icon={Brain}
             title="面试思考处理器"
-            hint="必须是文本 LLM；推荐 MiniMax-M3"
+            hint="必须是文本 LLM（OpenAI 兼容）"
             testing={testing === "reason"}
             onTest={() => handleTest("reason")}
             testResult={testResults.reason}
@@ -408,7 +408,7 @@ export default function SettingsPage() {
                 className="sm:col-span-2"
               />
               <Field
-                label="TTS API Key（可选，MiniMax 可留空复用思考 Key）"
+                label="TTS API Key（可选；留空则按后端规则使用已保存凭证）"
                 value={settings.tts_api_key || ""}
                 onChange={(v) => setSettings({ ...settings, tts_api_key: v })}
                 type="password"

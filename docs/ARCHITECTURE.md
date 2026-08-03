@@ -32,8 +32,8 @@
        │ OpenAI Chat Completions   │ ASR 适配层         │ TTS 适配层
        ▼                          ▼                   ▼
    ┌─────────────┐          ┌──────────────┐    ┌──────────────────┐
-   │ 思考 LLM    │          │ 多厂商 ASR   │    │ Edge / MiniMax   │
-   │ (MiniMax…)  │          │ + local 回退 │    │ Speech (T2A)     │
+   │ 思考 LLM    │          │ 多厂商 ASR   │    │ TTS 适配层       │
+   │ (BYOK)      │          │ + local 回退 │    │ (Edge / 等)      │
    └─────────────┘          └──────────────┘    └──────────────────┘
                   数据层
    SQLite (./data/interviewos.db) · Chroma · 上传目录 ./uploads · STT fixtures
@@ -91,7 +91,7 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
   │  Vision (FaceDetector) ──► face_analysis JSON
   │  拼装 user_text 或 user_turn_end 帧
   ▼
-[InterviewRunner.stream_turn]  ← 阶段2 思考：文本 LLM（推荐 MiniMax）
+[InterviewRunner.stream_turn]  ← 阶段2 思考：文本 LLM（BYOK）
   │ 1) 追问信号分析 (followup.py)
   │ 2) RAG 检索 (company_rag.py / StepFun retrieval)
   │ 3) 上下文压缩 (context/manager.py)  超阈值时触发
@@ -99,7 +99,7 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
   │ 5) 组装 system prompt + 结构化记忆 + 历史 → LLM 流式
   │ 6) assistant_token / assistant_done（含情绪）
   ▼
-[阶段3 播报：TTS Queue → Edge / MiniMax Speech / 仅字幕]  ──► tts_audio 帧
+[阶段3 播报：TTS Queue → 已配置播报处理者 / 仅字幕]  ──► tts_audio 帧
   ▼
 [静默计时]  无新 partial → silence_timeout → 触发追问
   ▼
