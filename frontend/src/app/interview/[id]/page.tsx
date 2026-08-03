@@ -434,6 +434,9 @@ export default function InterviewRoomPage() {
     on("interview_complete", () => {
       void finishOnceAndNavigate();
     });
+    on("info", (msg) => {
+      if (msg.message) toast.info(String(msg.message));
+    });
     on("error", (msg) => {
       setMessages((prev) => [...prev, { role: "assistant", content: `⚠️ ${msg.message}` }]);
       if (msg.message.includes("收尾") || msg.message.includes("结束面试")) {

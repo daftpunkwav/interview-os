@@ -1,7 +1,6 @@
 """TTS 串行队列单元测试。
 
-通过 patch 掉 synthesize_to_base64 与 tts_voice 设置，
-验证队列串行播放、不与入队相互阻塞。
+通过 patch 掉 synthesize_speech，验证队列串行播放、不与入队相互阻塞。
 """
 
 from __future__ import annotations
@@ -11,13 +10,13 @@ import asyncio
 from app.realtime.ws_handler import _SentenceTTSQueue
 
 
-async def _fake_synth(sentence: str, voice: str = "", **_kwargs) -> str:
+async def _fake_synth(sentence: str, *, creds=None, rate="+0%", pitch="+0Hz") -> str:
     return f"audio:{sentence}"
 
 
 async def test_enqueue_processes_in_order(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.realtime.ws_handler.synthesize_to_base64", _fake_synth,
+        "app.realtime.ws_handler.synthesize_speech", _fake_synth,
     )
 
     sent: list[tuple[str, str]] = []
@@ -40,7 +39,7 @@ async def test_enqueue_processes_in_order(monkeypatch) -> None:
 
 async def test_enqueue_skips_empty(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.realtime.ws_handler.synthesize_to_base64", _fake_synth,
+        "app.realtime.ws_handler.synthesize_speech", _fake_synth,
     )
     sent: list[str] = []
 
@@ -60,12 +59,12 @@ async def test_enqueue_skips_empty(monkeypatch) -> None:
 async def test_enqueue_does_not_block_producer(monkeypatch) -> None:
     """入队操作应是非阻塞的，生产者不会被 TTS 合成延迟。"""
 
-    async def slow_synth(sentence, voice="", **_kwargs):
+    async def slow_synth(sentence, *, creds=None, rate="+0%", pitch="+0Hz"):
         await asyncio.sleep(0.2)
         return f"audio:{sentence}"
 
     monkeypatch.setattr(
-        "app.realtime.ws_handler.synthesize_to_base64", slow_synth,
+        "app.realtime.ws_handler.synthesize_speech", slow_synth,
     )
 
     sent: list[str] = []
@@ -77,6 +76,7 @@ async def test_enqueue_does_not_block_producer(monkeypatch) -> None:
     await q.start(send_cb)
 
     import time
+
     t0 = time.monotonic()
     for i in range(5):
         await q.enqueue(f"句{i}。")

@@ -48,8 +48,14 @@ def _make_handler() -> ws_handler.InterviewWSHandler:
     h.llm = MagicMock()
     h.llm.api_base = "https://api.openai.com/v1"
     h.llm.api_key = "sk-test"
-    h._stt_api_base = h.llm.api_base
-    h._stt_api_key = h.llm.api_key
+    from app.services.stt import SttCredentials
+
+    h._stt_creds = SttCredentials(
+        provider="openai_compat",
+        api_base="https://api.openai.com/v1",
+        api_key="sk-stt-only",
+        model="whisper-1",
+    )
     h._whisper_model = "whisper-1"
     return h
 
@@ -76,30 +82,38 @@ class TestCloudSttPath:
                 session=MagicMock(),
             )
             mock_tr.assert_awaited()
+            # 必须传入独立 creds，不得静默用思考 Key
+            kwargs = mock_tr.await_args.kwargs
+            assert kwargs.get("creds") is h._stt_creds
+            assert h._stt_creds.api_key == "sk-stt-only"
+            assert h._stt_creds.api_key != h.llm.api_key
             args = h._process_user_text.await_args
             assert args.args[0] == "你好面试官都能听到的"
 
     @pytest.mark.asyncio
     async def test_transcribe_utterance_cloud_first(self) -> None:
-        from app.services.stt import transcribe_utterance
+        from app.services.stt import SttCredentials, transcribe_utterance
 
         with (
             patch(
-                "app.services.stt.transcribe_pcm_cloud",
+                "app.services.stt.openai_compat.transcribe_pcm_cloud",
                 new_callable=AsyncMock,
                 return_value="云端结果正确",
             ) as cloud,
             patch(
-                "app.services.stt.transcribe_local_async",
+                "app.services.stt.local.transcribe_pcm_base64_async",
                 new_callable=AsyncMock,
                 return_value="本地",
             ) as local,
         ):
             text = await transcribe_utterance(
                 "AAAA",
-                model="whisper-1",
-                api_base="https://api.openai.com/v1",
-                api_key="sk-x",
+                creds=SttCredentials(
+                    provider="openai_compat",
+                    api_base="https://api.openai.com/v1",
+                    api_key="sk-x",
+                    model="whisper-1",
+                ),
             )
             assert text == "云端结果正确"
             cloud.assert_awaited()
@@ -107,25 +121,42 @@ class TestCloudSttPath:
 
     @pytest.mark.asyncio
     async def test_transcribe_falls_back_local(self) -> None:
-        from app.services.stt import transcribe_utterance
+        from app.services.stt import SttCredentials, transcribe_utterance
 
         with (
             patch(
-                "app.services.stt.transcribe_pcm_cloud",
+                "app.services.stt.openai_compat.transcribe_pcm_cloud",
                 new_callable=AsyncMock,
                 return_value="",
             ),
             patch(
-                "app.services.stt.transcribe_local_async",
+                "app.services.stt.local.transcribe_pcm_base64_async",
                 new_callable=AsyncMock,
                 return_value="本地回退",
             ) as local,
         ):
             text = await transcribe_utterance(
                 "AAAA",
-                model="whisper-1",
-                api_base="https://api.openai.com/v1",
-                api_key="sk-x",
+                creds=SttCredentials(
+                    provider="openai_compat",
+                    api_base="https://api.openai.com/v1",
+                    api_key="sk-x",
+                    model="whisper-1",
+                ),
             )
             assert text == "本地回退"
+            local.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_llm_key_without_asr_creds_goes_local(self) -> None:
+        """未配置独立 ASR 时不得用思考 Key；无 creds 旧参无 Key → 本地。"""
+        from app.services.stt import transcribe_utterance
+
+        with patch(
+            "app.services.stt.transcribe_local_async",
+            new_callable=AsyncMock,
+            return_value="仅本地",
+        ) as local:
+            text = await transcribe_utterance("AAAA", model="base")
+            assert text == "仅本地"
             local.assert_awaited()

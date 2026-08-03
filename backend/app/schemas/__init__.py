@@ -27,6 +27,22 @@ class LLMSettingsUpdate(BaseModel):
     supports_audio: bool = False
     stt_model: str = "whisper-1"
     tts_voice: str = "zh-CN-XiaoxiaoNeural"
+    # 三阶段指派
+    speech_recognize_handler: str = "local"
+    speech_recognize_mode: str = "transcribe"
+    asr_api_base: str = ""
+    asr_api_key: str = ""
+    asr_model: str = ""
+    asr_app_id: str = ""
+    asr_api_secret: str = ""
+    asr_access_key: str = ""
+    asr_resource_id: str = ""
+    asr_app_key: str = ""
+    speech_speak_handler: str = "edge"
+    speech_speak_mode: str = "tts_from_text"
+    tts_api_base: str = ""
+    tts_api_key: str = ""
+    tts_model: str = ""
 
 
 class LLMSettingsResponse(BaseModel):
@@ -42,6 +58,22 @@ class LLMSettingsResponse(BaseModel):
     stt_model: str = "whisper-1"
     tts_voice: str = "zh-CN-XiaoxiaoNeural"
     has_api_key: bool
+    # 三阶段指派（密钥仅返回 has_* 布尔）
+    speech_recognize_handler: str = "local"
+    speech_recognize_mode: str = "transcribe"
+    asr_api_base: str = ""
+    asr_model: str = ""
+    asr_app_id: str = ""
+    asr_resource_id: str = ""
+    asr_app_key: str = ""
+    has_asr_api_key: bool = False
+    has_asr_api_secret: bool = False
+    has_asr_access_key: bool = False
+    speech_speak_handler: str = "edge"
+    speech_speak_mode: str = "tts_from_text"
+    tts_api_base: str = ""
+    tts_model: str = ""
+    has_tts_api_key: bool = False
     updated_at: datetime | None = None
 
 
@@ -49,6 +81,14 @@ class LLMTestResponse(BaseModel):
     success: bool
     message: str
     model: str | None = None
+    transcript: str | None = None
+    audio_base64: str | None = None
+    fallback: str | None = None
+
+
+class StageTestRequest(BaseModel):
+    """可选覆盖；默认用库内已保存配置。"""
+    stage: Literal["recognize", "reason", "speak"] | None = None
 
 
 # ── 用户档案 ──────────────────────────────────────────

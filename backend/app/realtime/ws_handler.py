@@ -42,16 +42,18 @@ from app.services.interview.agent import (
 from app.services.interview.events import EventKind, StreamEvent
 from app.services.interview.runner import InterviewRunner
 from app.services.llm.client import LLMClient
-from app.services.stt import transcribe_utterance, warmup_whisper
+from app.services.stt import SttCredentials, transcribe_utterance, warmup_whisper
 from app.services.stt.cloud import is_local_stt_model
+from app.services.tts import TtsCredentials, synthesize_speech
 from app.services.tts.edge import (
     extract_emotion,
     next_soft_min,
     should_flush_sentence_buffer,
-    synthesize_to_base64,
     _plain_text_for_tts,
 )
 from app.services.tts.voice_resolve import VoiceProsody, resolve_prosody, with_emotion
+from app.services.voice.catalog import find_provider
+from app.services.voice.credentials import build_stt_credentials, build_tts_credentials
 from app.realtime.session_registry import (
     _active_handlers,  # noqa: F401 — 测试仍通过 ws_handler 访问
     claim_session_connection,
@@ -157,6 +159,7 @@ class _SentenceTTSQueue:
         self._on_sent: Any = None
         # 打断世代：clear 后旧合成结果不再发出
         self._speak_gen: int = 0
+        self._tts_creds: TtsCredentials = TtsCredentials(handler="edge")
 
     def set_voice(self, voice: str) -> None:
         """兼容旧调用：仅更新音色，保留现有 rate/pitch。"""
@@ -166,10 +169,16 @@ class _SentenceTTSQueue:
                 rate=self._prosody.rate,
                 pitch=self._prosody.pitch,
             )
+            self._tts_creds.voice = voice
 
     def set_prosody(self, prosody: VoiceProsody) -> None:
         """绑定本场会话的基线音色与韵律。"""
         self._prosody = prosody
+        self._tts_creds.voice = prosody.voice
+
+    def set_tts_creds(self, creds: TtsCredentials) -> None:
+        """绑定语音输出处理器凭证。"""
+        self._tts_creds = creds
 
     def set_on_sent(self, callback) -> None:
         """每成功发出一条 tts_audio 时回调（用于等待客户端播完）。"""
@@ -243,12 +252,20 @@ class _SentenceTTSQueue:
                     if gen != self._speak_gen:
                         continue
                     try:
-                        audio_b64 = await synthesize_to_base64(
-                            text, p.voice, rate=p.rate, pitch=p.pitch
+                        tts_creds = TtsCredentials(
+                            handler=self._tts_creds.handler,
+                            mode=self._tts_creds.mode,
+                            api_base=self._tts_creds.api_base,
+                            api_key=self._tts_creds.api_key,
+                            model=self._tts_creds.model,
+                            voice=p.voice or self._tts_creds.voice,
+                        )
+                        audio_b64 = await synthesize_speech(
+                            text, creds=tts_creds, rate=p.rate, pitch=p.pitch
                         )
                     except Exception as e:
                         self._fail_count += 1
-                        logger.error("Edge TTS 失败 voice=%s: %s", p.voice, e)
+                        logger.error("TTS 失败 voice=%s: %s", p.voice, e)
                         if self._fail_count <= 3:
                             try:
                                 await self._send(
@@ -306,8 +323,8 @@ class InterviewWSHandler:
         self.tts_voice = settings.tts_voice
         self._session_prosody: VoiceProsody = VoiceProsody(voice=settings.tts_voice)
         self._whisper_model = settings.whisper_model
-        self._stt_api_base: str = ""
-        self._stt_api_key: str = ""
+        self._stt_creds: SttCredentials = SttCredentials(provider="local", model="base")
+        self._tts_creds: TtsCredentials = TtsCredentials(handler="edge")
         self._tts_queue = _SentenceTTSQueue()
         # 被同 session 新连接顶替时置 True，主循环应尽快退出
         self._superseded = False
@@ -409,12 +426,9 @@ class InterviewWSHandler:
 
             self.llm = LLMClient.from_db(db)
             if not self.llm.api_key:
-                await self.send("error", message="请先配置 LLM API Key")
+                await self.send("error", message="请先配置面试思考处理器的 API Key")
                 return
             self.agent = InterviewAgent(session, self.llm)
-            # 云端 STT 复用同一套 BYOK
-            self._stt_api_base = self.llm.api_base
-            self._stt_api_key = self.llm.api_key
 
             # 企业知识库 RAG
             rag = None
@@ -429,11 +443,42 @@ class InterviewWSHandler:
 
             row = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
             settings_voice = None
+            # 三处理器：识别 / 思考(已是 llm) / 播报 —— 禁止把思考 Key 当 ASR
+            self._stt_creds = build_stt_credentials(row)
+            self._tts_creds = build_tts_credentials(row)
             if row:
                 if row.tts_voice:
                     settings_voice = row.tts_voice
                     self.tts_voice = row.tts_voice
-                self._whisper_model = row.stt_model or settings.whisper_model
+                asr_model = getattr(row, "asr_model", None) or row.stt_model
+                self._whisper_model = asr_model or settings.whisper_model
+                # native_audio coming_soon → 提示并按转写路径运行
+                rec_meta = find_provider("recognize", self._stt_creds.provider)
+                if rec_meta and rec_meta.get("status") == "coming_soon":
+                    await self.send(
+                        "info",
+                        message=(
+                            f"识别处理者「{rec_meta.get('label')}」尚未接通运行时，"
+                            "已回退本地 Whisper 转写"
+                        ),
+                    )
+                    self._stt_creds = SttCredentials(provider="local", model="base")
+                speak_meta = find_provider("speak", self._tts_creds.handler)
+                if speak_meta and speak_meta.get("status") == "coming_soon":
+                    await self.send(
+                        "info",
+                        message=(
+                            f"播报处理者「{speak_meta.get('label')}」尚未接通运行时，"
+                            "已回退 Edge TTS"
+                        ),
+                    )
+                    self._tts_creds = TtsCredentials(
+                        handler="edge",
+                        mode="tts_from_text",
+                        voice=self._tts_creds.voice or settings.tts_voice,
+                    )
+                if self._tts_creds.mode == "text_only" or self._tts_creds.handler == "none":
+                    await self.send("info", message="已启用仅字幕模式，不播报语音")
             else:
                 self._whisper_model = settings.whisper_model
 
@@ -446,21 +491,24 @@ class InterviewWSHandler:
                 llm_settings_voice=settings_voice or self.tts_voice,
             )
             self.tts_voice = self._session_prosody.voice
+            self._tts_creds.voice = self.tts_voice
             self._tts_queue.set_prosody(self._session_prosody)
+            self._tts_queue.set_tts_creds(self._tts_creds)
             self._tts_queue.set_on_sent(self._mark_tts_sent)
             logger.info(
-                "TTS 会话绑定 sid=%s avatar=%s voice=%s rate=%s pitch=%s",
+                "管道绑定 sid=%s asr=%s speak=%s voice=%s rate=%s pitch=%s",
                 self.session_id,
-                getattr(session, "avatar_id", None),
+                self._stt_creds.provider,
+                self._tts_creds.handler,
                 self._session_prosody.voice,
                 self._session_prosody.rate,
                 self._session_prosody.pitch,
             )
-            # 本地 Whisper 预热（云端模型无需）；失败可忽略
-            if is_local_stt_model(self._whisper_model):
-                asyncio.create_task(warmup_whisper(self._whisper_model))
+            # 本地 Whisper 预热；云端 ASR 时仍预热 base 作回退
+            if self._stt_creds.provider == "local" or is_local_stt_model(self._whisper_model):
+                local_m = self._whisper_model if is_local_stt_model(self._whisper_model) else "base"
+                asyncio.create_task(warmup_whisper(local_m))
             else:
-                # 云端为主时仍预热 base，作断网/接口失败回退
                 asyncio.create_task(warmup_whisper("base"))
 
             # 状态判断统一走枚举值
@@ -756,9 +804,7 @@ class InterviewWSHandler:
             asr_text = await transcribe_utterance(
                 pcm_b64,
                 sample_rate=sample_rate,
-                model=self._whisper_model,
-                api_base=self._stt_api_base or (self.llm.api_base if self.llm else ""),
-                api_key=self._stt_api_key or (self.llm.api_key if self.llm else ""),
+                creds=self._stt_creds,
             )
         elif self.audio_buffer and not browser_text:
             pcm = "".join(self.audio_buffer)
@@ -773,9 +819,7 @@ class InterviewWSHandler:
                 return
             asr_text = await transcribe_utterance(
                 pcm,
-                model=self._whisper_model,
-                api_base=self._stt_api_base or (self.llm.api_base if self.llm else ""),
-                api_key=self._stt_api_key or (self.llm.api_key if self.llm else ""),
+                creds=self._stt_creds,
             )
         elif self.audio_buffer:
             # 已有浏览器文本时仍清空缓冲，避免下次串音
@@ -1291,11 +1335,24 @@ class InterviewWSHandler:
         emo = extract_emotion(sentence)
         p = with_emotion(base, emo)
         try:
-            audio_b64 = await synthesize_to_base64(
-                clean, p.voice, rate=p.rate, pitch=p.pitch
+            tts_creds = getattr(self, "_tts_creds", None) or TtsCredentials(
+                handler="edge", voice=p.voice
+            )
+            audio_b64 = await synthesize_speech(
+                clean,
+                creds=TtsCredentials(
+                    handler=tts_creds.handler,
+                    mode=tts_creds.mode,
+                    api_base=tts_creds.api_base,
+                    api_key=tts_creds.api_key,
+                    model=tts_creds.model,
+                    voice=p.voice or tts_creds.voice,
+                ),
+                rate=p.rate,
+                pitch=p.pitch,
             )
         except Exception as e:
-            logger.error("Edge TTS 短句失败: %s", e)
+            logger.error("TTS 短句失败: %s", e)
             await self.send(
                 "error",
                 message="语音合成失败，请检查网络（文字内容仍可用）",

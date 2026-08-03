@@ -153,8 +153,12 @@ class TestSttAlwaysRuns:
         h.turn_state = TurnState.USER_SPEAKING
         h.agent = None
         h.llm = MagicMock(api_base="https://api.openai.com/v1", api_key="sk-t")
-        h._stt_api_base = h.llm.api_base
-        h._stt_api_key = h.llm.api_key
+        h._stt_creds = ws_handler.SttCredentials(
+            provider="openai_compat",
+            api_base=h.llm.api_base,
+            api_key="sk-stt",
+            model="whisper-1",
+        )
         h._process_user_text = AsyncMock()
         with patch(
             "app.realtime.ws_handler.transcribe_utterance",
@@ -179,8 +183,12 @@ class TestSttAlwaysRuns:
         h.turn_state = TurnState.USER_SPEAKING
         h.agent = None
         h.llm = MagicMock(api_base="https://api.openai.com/v1", api_key="sk-t")
-        h._stt_api_base = h.llm.api_base
-        h._stt_api_key = h.llm.api_key
+        h._stt_creds = ws_handler.SttCredentials(
+            provider="openai_compat",
+            api_base=h.llm.api_base,
+            api_key="sk-stt",
+            model="whisper-1",
+        )
         h._process_user_text = AsyncMock()
         with patch(
             "app.realtime.ws_handler.transcribe_utterance",

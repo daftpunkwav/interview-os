@@ -256,6 +256,10 @@ export const api = {
       body: JSON.stringify(data),
     }),
   testLLM: () => request<LLMTestResponse>("/v1/settings/llm/test", { method: "POST" }),
+  getVoiceCatalog: () =>
+    request<import("@/types").VoiceCatalog>("/v1/settings/catalog"),
+  testPipelineStage: (stage: "recognize" | "reason" | "speak") =>
+    request<LLMTestResponse>(`/v1/settings/test/${stage}`, { method: "POST" }),
 
   /* 档案 */
   getProfile: () => request<UserProfile>("/v1/profile"),

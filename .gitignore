@@ -26,7 +26,10 @@ htmlcov/
 *.db
 *.sqlite3
 data/*.db
-backend/app/data/
+# 运行时数据目录默认忽略；标准 STT fixture 需入库供连通性测试
+backend/app/data/**
+!backend/app/data/stt_fixtures/
+!backend/app/data/stt_fixtures/**
 
 # Node
 node_modules/

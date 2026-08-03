@@ -14,12 +14,12 @@ async def test_flush_waits_for_all_enqueued(monkeypatch: pytest.MonkeyPatch) -> 
     order: list[str] = []
     delays = {"你好。": 0.05, "第二句。": 0.05, "第三句。": 0.05}
 
-    async def slow_synth(sentence: str, voice: str) -> str:
+    async def slow_synth(sentence: str, *, creds=None, rate="+0%", pitch="+0Hz") -> str:
         await asyncio.sleep(delays.get(sentence, 0.01))
         return f"audio:{sentence}"
 
     monkeypatch.setattr(
-        "app.realtime.ws_handler.synthesize_to_base64",
+        "app.realtime.ws_handler.synthesize_speech",
         slow_synth,
     )
 
@@ -43,10 +43,10 @@ async def test_flush_remainder_enqueues_trailing(monkeypatch: pytest.MonkeyPatch
 
     sent: list[str] = []
 
-    async def synth(sentence: str, voice: str) -> str:
+    async def synth(sentence: str, *, creds=None, rate="+0%", pitch="+0Hz") -> str:
         return f"a:{sentence}"
 
-    monkeypatch.setattr("app.realtime.ws_handler.synthesize_to_base64", synth)
+    monkeypatch.setattr("app.realtime.ws_handler.synthesize_speech", synth)
 
     async def send_cb(msg_type, **payload):
         sent.append(payload["sentence"])

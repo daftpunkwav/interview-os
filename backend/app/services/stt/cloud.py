@@ -1,7 +1,7 @@
 """OpenAI 兼容云端语音转写（/v1/audio/transcriptions）。
 
-复用 LLM BYOK 的 api_base / api_key，对接 OpenAI、Groq、SiliconFlow 等
-提供 Whisper 兼容接口的第三方成品，不再依赖浏览器 Web Speech 做终稿。
+使用**独立 ASR 凭证**对接 OpenAI、Groq、SiliconFlow 等；
+禁止静默复用面试思考 LLM（如 MiniMax Coding Plan）的 Key。
 """
 
 from __future__ import annotations

@@ -83,8 +83,27 @@ class LLMSettings(Base):
     reasoning_effort: Mapped[str] = mapped_column(String(20), default="medium")
     supports_vision: Mapped[bool] = mapped_column(Boolean, default=True)
     supports_audio: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 兼容旧字段：识别模型 / Edge 音色
     stt_model: Mapped[str] = mapped_column(String(50), default="whisper-1")
     tts_voice: Mapped[str] = mapped_column(String(100), default="zh-CN-XiaoxiaoNeural")
+    # ── 三阶段处理器指派 ──────────────────────────────
+    # 阶段1 语音识别
+    speech_recognize_handler: Mapped[str] = mapped_column(String(50), default="local")
+    speech_recognize_mode: Mapped[str] = mapped_column(String(30), default="transcribe")
+    asr_api_base: Mapped[str] = mapped_column(String(500), default="")
+    asr_api_key: Mapped[str] = mapped_column(String(500), default="")
+    asr_model: Mapped[str] = mapped_column(String(100), default="")
+    asr_app_id: Mapped[str] = mapped_column(String(100), default="")
+    asr_api_secret: Mapped[str] = mapped_column(String(500), default="")
+    asr_access_key: Mapped[str] = mapped_column(String(500), default="")
+    asr_resource_id: Mapped[str] = mapped_column(String(100), default="")
+    asr_app_key: Mapped[str] = mapped_column(String(100), default="")
+    # 阶段3 语音输出（阶段2 复用上方 provider/api_* / model）
+    speech_speak_handler: Mapped[str] = mapped_column(String(50), default="edge")
+    speech_speak_mode: Mapped[str] = mapped_column(String(30), default="tts_from_text")
+    tts_api_base: Mapped[str] = mapped_column(String(500), default="")
+    tts_api_key: Mapped[str] = mapped_column(String(500), default="")
+    tts_model: Mapped[str] = mapped_column(String(100), default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 

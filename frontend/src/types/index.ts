@@ -17,18 +17,70 @@ export interface LLMSettings {
   stt_model?: string;
   tts_voice?: string;
   has_api_key: boolean;
+  // 三阶段处理器
+  speech_recognize_handler?: string;
+  speech_recognize_mode?: string;
+  asr_api_base?: string;
+  asr_model?: string;
+  asr_app_id?: string;
+  asr_resource_id?: string;
+  asr_app_key?: string;
+  has_asr_api_key?: boolean;
+  has_asr_api_secret?: boolean;
+  has_asr_access_key?: boolean;
+  speech_speak_handler?: string;
+  speech_speak_mode?: string;
+  tts_api_base?: string;
+  tts_model?: string;
+  has_tts_api_key?: boolean;
   updated_at?: string;
   /**
    * 仅在 settings 编辑态下使用,后端 ``LLMSettingsResponse`` 不会返回真实 key。
    * 写入时:留空或传 ``"keep"`` 表示不修改已有 key,新值会被后端 at-rest 加密。
    */
   api_key?: string;
+  asr_api_key?: string;
+  asr_api_secret?: string;
+  asr_access_key?: string;
+  tts_api_key?: string;
 }
 
 /** 写 LLM 设置时携带 ``api_key`` placeholder (``"keep"`` 表示不修改)。 */
-export type LLMSettingsWrite = Omit<LLMSettings, "has_api_key" | "updated_at"> & {
+export type LLMSettingsWrite = Omit<
+  LLMSettings,
+  | "has_api_key"
+  | "has_asr_api_key"
+  | "has_asr_api_secret"
+  | "has_asr_access_key"
+  | "has_tts_api_key"
+  | "updated_at"
+> & {
   api_key?: string;
+  asr_api_key?: string;
+  asr_api_secret?: string;
+  asr_access_key?: string;
+  tts_api_key?: string;
 };
+
+export interface VoiceProviderOption {
+  id: string;
+  label: string;
+  can_speech_recognize: boolean;
+  can_interview_reason: boolean;
+  can_speech_speak: boolean;
+  recognize_via: "native_audio" | "transcribe_only" | "none";
+  speak_via: "native_audio" | "tts_from_text" | "none";
+  status: "ready" | "coming_soon";
+  default_model?: string;
+  default_api_base?: string;
+  hint?: string;
+}
+
+export interface VoiceCatalog {
+  reasoning: VoiceProviderOption[];
+  recognize: VoiceProviderOption[];
+  speak: VoiceProviderOption[];
+}
 
 export interface UserProfile {
   id: number;
@@ -374,6 +426,9 @@ export interface LLMTestResponse {
   success: boolean;
   message: string;
   model?: string | null;
+  transcript?: string | null;
+  audio_base64?: string | null;
+  fallback?: string | null;
 }
 
 /* ====================================================================== */
