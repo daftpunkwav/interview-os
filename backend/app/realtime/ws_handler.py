@@ -47,6 +47,12 @@ from app.services.tts.edge import (
     synthesize_to_base64,
 )
 from app.services.tts.voice_resolve import VoiceProsody, resolve_prosody, with_emotion
+from app.realtime.session_registry import (
+    _active_handlers,  # noqa: F401 — 测试仍通过 ws_handler 访问
+    claim_session_connection,
+    release_session_connection,
+    reset_session_registry_for_tests,
+)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -58,51 +64,6 @@ _HEARTBEAT_MAX_MISSES: int = 3
 _AUDIO_BUFFER_MAX_BYTES: int = 5 * 1024 * 1024  # 5 MB
 # 与 HTTP InterviewMessageRequest.image_base64 对齐的视觉帧长度上限
 _IMAGE_BASE64_MAX_LEN: int = 300_000
-
-# ── 单会话单连接注册表 ────────────────────────────────────────
-# session_id -> 当前持有租约的 handler；新连接 claim 时踢掉旧连接
-_active_handlers: dict[int, InterviewWSHandler] = {}
-_registry_lock = asyncio.Lock()
-
-
-async def claim_session_connection(handler: InterviewWSHandler) -> None:
-    """为 handler 占用 session 租约；若已有旧连接则通知并关闭旧连接。"""
-    old: InterviewWSHandler | None = None
-    async with _registry_lock:
-        old = _active_handlers.get(handler.session_id)
-        _active_handlers[handler.session_id] = handler
-        handler._superseded = False
-    if old is not None and old is not handler:
-        old._superseded = True
-        logger.info(
-            "WS 会话租约被顶替 session=%s old=%s new=%s",
-            handler.session_id,
-            id(old),
-            id(handler),
-        )
-        try:
-            await old.send(
-                "error",
-                message="该面试已在其他连接中打开，本连接将关闭",
-            )
-        except Exception:
-            pass
-        try:
-            await old.ws.close(code=4000)
-        except Exception:
-            pass
-
-
-async def release_session_connection(handler: InterviewWSHandler) -> None:
-    """仅当 handler 仍持有租约时释放（被顶替的旧连接不得误删新连接）。"""
-    async with _registry_lock:
-        if _active_handlers.get(handler.session_id) is handler:
-            _active_handlers.pop(handler.session_id, None)
-
-
-def reset_session_registry_for_tests() -> None:
-    """测试用：清空会话连接注册表。"""
-    _active_handlers.clear()
 
 
 class _SentenceTTSQueue:
