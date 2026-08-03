@@ -1,10 +1,22 @@
-"""面试流程 Workflow 定义。"""
+"""面试流程 Workflow 定义（阶段元数据唯一数据源）。
+
+阶段 id / 中文名 / 描述 / 题量上下限只在本模块维护。
+``app.core.constants.InterviewPhaseId`` 仅作 id 枚举与类型约束；
+前端展示文案应与本模块一致（由 options API 的 ``phase_labels`` 下发，
+``frontend/src/config/phases.ts`` 作离线回退并由单测锁同步）。
+"""
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from app.core.constants import InterviewPhaseId, WorkflowType
 
-@dataclass
-class InterviewPhase:
+
+@dataclass(frozen=True)
+class PhaseDef:
+    """单个面试阶段的运行时定义。"""
+
     id: str
     name: str
     description: str
@@ -16,60 +28,85 @@ class InterviewPhase:
 class Workflow:
     id: str
     name: str
-    phases: list[InterviewPhase] = field(default_factory=list)
+    phases: list[PhaseDef] = field(default_factory=list)
+
+
+def _p(
+    phase_id: InterviewPhaseId,
+    name: str,
+    description: str,
+    min_q: int = 1,
+    max_q: int = 3,
+) -> PhaseDef:
+    return PhaseDef(phase_id.value, name, description, min_q, max_q)
 
 
 TECHNICAL_WORKFLOW = Workflow(
-    id="technical",
+    id=WorkflowType.TECHNICAL.value,
     name="技术面",
     phases=[
-        InterviewPhase("identity_check", "身份确认", "确认候选人身份，简短寒暄", 1, 1),
-        InterviewPhase("self_intro", "自我介绍", "请候选人做自我介绍", 1, 1),
-        InterviewPhase("basic_knowledge", "基础知识", "考察岗位相关基础知识", 2, 4),
-        InterviewPhase("project_deep_dive", "项目深挖", "深入追问简历中的项目经历", 3, 6),
-        InterviewPhase("technical_deep", "技术深挖", "针对技术栈进行深度考察", 2, 4),
-        InterviewPhase("system_design", "系统设计", "设计类问题或架构讨论", 1, 2),
-        InterviewPhase("scenario", "情景问题", "模拟真实工作场景的问题", 1, 2),
-        InterviewPhase("reverse_qa", "反问环节", "候选人向面试官提问", 1, 3),
-        InterviewPhase("summary", "总结评价", "面试官做简要总结", 1, 1),
+        _p(InterviewPhaseId.IDENTITY_CHECK, "身份确认", "确认候选人身份，简短寒暄", 1, 1),
+        _p(InterviewPhaseId.SELF_INTRO, "自我介绍", "请候选人做自我介绍", 1, 1),
+        _p(InterviewPhaseId.BASIC_KNOWLEDGE, "基础知识", "考察岗位相关基础知识", 2, 4),
+        _p(InterviewPhaseId.PROJECT_DEEP_DIVE, "项目深挖", "深入追问简历中的项目经历", 3, 6),
+        _p(InterviewPhaseId.TECHNICAL_DEEP, "技术深挖", "针对技术栈进行深度考察", 2, 4),
+        _p(InterviewPhaseId.SYSTEM_DESIGN, "系统设计", "设计类问题或架构讨论", 1, 2),
+        _p(InterviewPhaseId.SCENARIO, "情景问题", "模拟真实工作场景的问题", 1, 2),
+        _p(InterviewPhaseId.REVERSE_QA, "反问环节", "候选人向面试官提问", 1, 3),
+        _p(InterviewPhaseId.SUMMARY, "总结评价", "面试官做简要总结", 1, 1),
     ],
 )
 
 HR_WORKFLOW = Workflow(
-    id="hr",
+    id=WorkflowType.HR.value,
     name="HR 面",
     phases=[
-        InterviewPhase("identity_check", "身份确认", "确认身份", 1, 1),
-        InterviewPhase("self_intro", "自我介绍", "自我介绍", 1, 1),
-        InterviewPhase("career_plan", "职业规划", "了解职业发展方向", 2, 3),
-        InterviewPhase("teamwork", "团队合作", "团队协作经历", 2, 3),
-        InterviewPhase("pressure", "压力问题", "压力与冲突处理", 1, 2),
-        InterviewPhase("salary", "薪资沟通", "薪资期望（模拟）", 1, 1),
-        InterviewPhase("reverse_qa", "反问环节", "候选人提问", 1, 3),
-        InterviewPhase("summary", "总结评价", "总结", 1, 1),
+        _p(InterviewPhaseId.IDENTITY_CHECK, "身份确认", "确认身份", 1, 1),
+        _p(InterviewPhaseId.SELF_INTRO, "自我介绍", "自我介绍", 1, 1),
+        _p(InterviewPhaseId.CAREER_PLAN, "职业规划", "了解职业发展方向", 2, 3),
+        _p(InterviewPhaseId.TEAMWORK, "团队合作", "团队协作经历", 2, 3),
+        _p(InterviewPhaseId.PRESSURE, "压力问题", "压力与冲突处理", 1, 2),
+        _p(InterviewPhaseId.SALARY, "薪资沟通", "薪资期望（模拟）", 1, 1),
+        _p(InterviewPhaseId.REVERSE_QA, "反问环节", "候选人提问", 1, 3),
+        _p(InterviewPhaseId.SUMMARY, "总结评价", "总结", 1, 1),
     ],
 )
 
 MANAGEMENT_WORKFLOW = Workflow(
-    id="management",
+    id=WorkflowType.MANAGEMENT.value,
     name="管理岗面",
     phases=[
-        InterviewPhase("identity_check", "身份确认", "确认身份", 1, 1),
-        InterviewPhase("self_intro", "自我介绍", "自我介绍", 1, 1),
-        InterviewPhase("leadership", "领导经验", "团队管理经验", 2, 4),
-        InterviewPhase("decision_making", "决策能力", "关键决策案例", 2, 3),
-        InterviewPhase("conflict", "冲突处理", "团队冲突解决", 1, 2),
-        InterviewPhase("business", "业务理解", "业务战略理解", 2, 3),
-        InterviewPhase("reverse_qa", "反问环节", "候选人提问", 1, 3),
-        InterviewPhase("summary", "总结评价", "总结", 1, 1),
+        _p(InterviewPhaseId.IDENTITY_CHECK, "身份确认", "确认身份", 1, 1),
+        _p(InterviewPhaseId.SELF_INTRO, "自我介绍", "自我介绍", 1, 1),
+        _p(InterviewPhaseId.LEADERSHIP, "领导经验", "团队管理经验", 2, 4),
+        _p(InterviewPhaseId.DECISION_MAKING, "决策能力", "关键决策案例", 2, 3),
+        _p(InterviewPhaseId.CONFLICT, "冲突处理", "团队冲突解决", 1, 2),
+        _p(InterviewPhaseId.BUSINESS, "业务理解", "业务战略理解", 2, 3),
+        _p(InterviewPhaseId.REVERSE_QA, "反问环节", "候选人提问", 1, 3),
+        _p(InterviewPhaseId.SUMMARY, "总结评价", "总结", 1, 1),
     ],
 )
 
 WORKFLOWS: dict[str, Workflow] = {
-    "technical": TECHNICAL_WORKFLOW,
-    "hr": HR_WORKFLOW,
-    "management": MANAGEMENT_WORKFLOW,
+    WorkflowType.TECHNICAL.value: TECHNICAL_WORKFLOW,
+    WorkflowType.HR.value: HR_WORKFLOW,
+    WorkflowType.MANAGEMENT.value: MANAGEMENT_WORKFLOW,
 }
+
+
+def phase_label_map() -> dict[str, str]:
+    """全 workflow 阶段 id → 展示名（技术面优先，其它补全）。"""
+    labels: dict[str, str] = {}
+    # 先技术面（与前端离线回退一致），再其它
+    for wf in (TECHNICAL_WORKFLOW, HR_WORKFLOW, MANAGEMENT_WORKFLOW):
+        for p in wf.phases:
+            labels.setdefault(p.id, p.name)
+    return labels
+
+
+def technical_phase_order() -> tuple[str, ...]:
+    """技术面阶段 id 顺序（唯一权威来源）。"""
+    return tuple(p.id for p in TECHNICAL_WORKFLOW.phases)
 
 
 PERSONALITY_PROMPTS = {
@@ -103,3 +140,7 @@ STRICTNESS_DESCRIPTIONS = {
 
 def get_workflow(workflow_id: str) -> Workflow:
     return WORKFLOWS.get(workflow_id, TECHNICAL_WORKFLOW)
+
+
+# 向后兼容别名（旧名 InterviewPhase 指 dataclass）
+InterviewPhase = PhaseDef

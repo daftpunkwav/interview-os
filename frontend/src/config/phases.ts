@@ -1,8 +1,9 @@
 /**
- * 面试阶段展示映射
+ * 面试阶段展示映射（离线回退）。
  *
- * 后端 ``app/services/interview/workflows.py`` 内的 phase 列表与此处一一对应。
- * 阶段名修改时需同步修改后端；新增阶段要么先在后端加，再到此处填文案。
+ * 权威数据源：后端 ``app/services/interview/workflows.py``（PhaseDef）。
+ * options API 下发 ``phase_labels``；本文件仅作首屏/离线回退，
+ * 并由 ``backend/tests/test_phase_ssot.py`` 与后端技术面顺序锁同步。
  */
 export const PHASE_LABELS: Record<string, string> = {
   identity_check: "身份确认",
@@ -14,8 +15,18 @@ export const PHASE_LABELS: Record<string, string> = {
   scenario: "情景问题",
   reverse_qa: "反问环节",
   summary: "总结评价",
+  // HR / 管理（options 也会下发；此处补全避免未知 id 闪烁）
+  career_plan: "职业规划",
+  teamwork: "团队合作",
+  pressure: "压力问题",
+  salary: "薪资沟通",
+  leadership: "领导经验",
+  decision_making: "决策能力",
+  conflict: "冲突处理",
+  business: "业务理解",
 } as const;
 
+/** 技术面默认顺序（与 ``technical_phase_order()`` 一致） */
 export const PHASE_ORDER: readonly string[] = [
   "identity_check",
   "self_intro",

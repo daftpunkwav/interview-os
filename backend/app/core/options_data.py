@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from app.schemas import WorkflowTypeOption
 from app.services.company.knowledge import get_all_companies
-from app.services.interview.workflows import WORKFLOWS
+from app.services.interview.workflows import WORKFLOWS, phase_label_map
 
 ROLES = [
     "后端工程师", "前端工程师", "全栈工程师", "AI 工程师",
@@ -75,6 +75,7 @@ def build_options_payload() -> dict:
         "personalities": PERSONALITIES,
         "interview_styles": INTERVIEW_STYLES,
         "workflow_types": WORKFLOW_TYPES,
+        "phase_labels": phase_label_map(),
         "avatars": AVATARS,
         "scenes": SCENES,
         "tts_voices": TTS_VOICES,

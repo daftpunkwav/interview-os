@@ -188,6 +188,8 @@ export interface Options {
   personalities: { id: string; name: string; description: string }[];
   interview_styles: { id: string; name: string; description: string }[];
   workflow_types: { id: string; name: string; phases: string[] }[];
+  /** 阶段 id → 中文名（权威来源：后端 workflows） */
+  phase_labels?: Record<string, string>;
   avatars?: { id: string; name: string; voice?: string }[];
   scenes?: { id: string; name: string }[];
   tts_voices?: { id: string; name: string }[];

@@ -50,7 +50,7 @@
 | `app/services/stt/` | 语音识别适配 | `router.py` 按 handler 分发；**禁止**静默回落思考 LLM Key |
 | `app/services/tts/` | 语音输出适配 | `edge.py` + `minimax.py`；统一入口 `synthesize_speech` |
 | `app/services/voice/` | 三处理器目录与测试 | `catalog.py` 能力标签；`stage_tests.py` 连通性；`credentials.py` 装配凭证 |
-| `app/services/interview/` | 业务编排 | `runner.py` 是回合执行器；`agent.py` 是会话状态机；`followup.py` 是追问信号器；`tools.py` 注册 GitHub/公司/简历 function tools |
+| `app/services/interview/` | 业务编排 | `runner.py` 是回合执行器；`agent.py` 是会话状态机；`followup.py` 是追问信号器；`tools.py` 注册 GitHub/公司/简历 function tools；**阶段元数据唯一源**为 `workflows.py`（`PhaseDef`），`constants.InterviewPhaseId` 仅约束 id |
 | `app/services/github/` | GitHub 核验 | REST 客户端 + OpenAI tools 定义；语义对齐 MCP，面试/准备 Agent 共用 |
 | `app/services/growth/` | 自我成长 | 候选人 GrowthRecord（报告路径）+ 系统 `system_learning.json` 聚合 |
 | `app/services/rag/` | RAG 多后端 | `base.py` 定义 `RAGBackend` 协议；`factory.build_rag_backend` 按 `RAGBackendKind` 选型（local/stepfun/none）；`_kb_data.py` 为纯数据层（`COLLECTION_NAME` / `_build_documents` / `format_context`），被 `company_rag` / `local_backend` / 测试共用，无业务依赖，避免循环导入 |

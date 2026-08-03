@@ -55,7 +55,9 @@ class WorkflowType(StrEnum):
     MANAGEMENT = "management"
 
 
-class InterviewPhase(StrEnum):
+class InterviewPhaseId(StrEnum):
+    """全部工作流用到的阶段 id（枚举约束；元数据见 ``workflows.PhaseDef``）。"""
+
     IDENTITY_CHECK = "identity_check"
     SELF_INTRO = "self_intro"
     BASIC_KNOWLEDGE = "basic_knowledge"
@@ -65,20 +67,27 @@ class InterviewPhase(StrEnum):
     SCENARIO = "scenario"
     REVERSE_QA = "reverse_qa"
     SUMMARY = "summary"
+    # HR
+    CAREER_PLAN = "career_plan"
+    TEAMWORK = "teamwork"
+    PRESSURE = "pressure"
+    SALARY = "salary"
+    # 管理岗
+    LEADERSHIP = "leadership"
+    DECISION_MAKING = "decision_making"
+    CONFLICT = "conflict"
+    BUSINESS = "business"
 
 
-# 默认 technical workflow 的阶段顺序（与 ``PHASE_ORDER`` 前端常量一致）
-TECHNICAL_PHASE_ORDER: tuple[InterviewPhase, ...] = (
-    InterviewPhase.IDENTITY_CHECK,
-    InterviewPhase.SELF_INTRO,
-    InterviewPhase.BASIC_KNOWLEDGE,
-    InterviewPhase.PROJECT_DEEP_DIVE,
-    InterviewPhase.TECHNICAL_DEEP,
-    InterviewPhase.SYSTEM_DESIGN,
-    InterviewPhase.SCENARIO,
-    InterviewPhase.REVERSE_QA,
-    InterviewPhase.SUMMARY,
-)
+# 兼容旧名：历史代码 / 文档中的 InterviewPhase 指阶段 id 枚举
+InterviewPhase = InterviewPhaseId
+
+
+def technical_phase_order() -> tuple[str, ...]:
+    """技术面阶段顺序：委托 workflows，避免与 PhaseDef 双轨。"""
+    from app.services.interview.workflows import technical_phase_order as _order
+
+    return _order()
 
 
 # ── 面试官人格 / 风格 ────────────────────────────────────────

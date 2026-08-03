@@ -361,6 +361,7 @@ class OptionsResponse(BaseModel):
     personalities: list[dict[str, str]]
     interview_styles: list[dict[str, str]]
     workflow_types: list[WorkflowTypeOption]
+    phase_labels: dict[str, str] = Field(default_factory=dict)
     avatars: list[dict[str, str]] = Field(default_factory=list)
     scenes: list[dict[str, str]] = Field(default_factory=list)
     tts_voices: list[dict[str, str]] = Field(default_factory=list)
