@@ -158,7 +158,12 @@ export function useInterviewWS(
 
         retryCountRef.current += 1;
         if (retryCountRef.current > maxRetries) {
+          // 快速重试耗尽：UI 标记 failed，但后台保持长间隔重连（20s）
           setConnectionState("failed");
+          clearRetryTimer();
+          retryTimerRef.current = window.setTimeout(() => {
+            if (isCurrent()) connect();
+          }, 20_000);
           return;
         }
         setReconnectAttempt(retryCountRef.current);

@@ -27,30 +27,43 @@ DEFAULT_VOICE = VOICE_PRESETS["xiaoxiao"]
 _HARD_END = frozenset("。！？!?；;…\n")
 # 长句软切分（字数达标后）
 _SOFT_BREAK = frozenset("，、,")
-_SOFT_MIN_CHARS = 24
+# 软切字数在短/中/长之间轮转，避免句句等长、不真实
+_SOFT_MIN_ROTATION = (10, 14, 18, 24, 32)
+_SOFT_MIN_CHARS = 18
 
 
 def split_sentences(text: str) -> list[str]:
     """按中英文句号切分，用于流式 TTS。"""
-    clean = re.sub(r"\[(PHASE_COMPLETE|INTERVIEW_COMPLETE|emotion:\w+)\]", "", text)
+    clean = _plain_text_for_tts(text)
     parts = re.split(r"(?<=[。！？!?；;…\.\n])", clean)
     return [p.strip() for p in parts if p.strip()]
 
 
-def should_flush_sentence_buffer(buf: str) -> bool:
+def should_flush_sentence_buffer(buf: str, soft_min: int | None = None) -> bool:
     """流式缓冲是否应立刻入队合成。
 
     - 遇硬句末标点 → 切
-    - 长度 ≥ 24 且遇逗号/顿号 → 软切，降低首包延迟
+    - 长度 ≥ soft_min 且遇逗号/顿号 → 软切（soft_min 由调用方轮转，模拟长短句）
+    - 超长硬切：≥ 48 字无标点也切，避免单句过长
     """
     if not buf:
         return False
     last = buf[-1]
     if last in _HARD_END:
         return True
-    if len(buf) >= _SOFT_MIN_CHARS and last in _SOFT_BREAK:
+    min_chars = soft_min if soft_min is not None else _SOFT_MIN_CHARS
+    if len(buf) >= min_chars and last in _SOFT_BREAK:
+        return True
+    if len(buf) >= 48:
         return True
     return False
+
+
+def next_soft_min(index: int) -> tuple[int, int]:
+    """返回 (本轮 soft_min, 下一轮 index)。"""
+    mins = _SOFT_MIN_ROTATION
+    i = index % len(mins)
+    return mins[i], index + 1
 
 
 def extract_emotion(text: str) -> str:
@@ -59,8 +72,19 @@ def extract_emotion(text: str) -> str:
 
 
 def _plain_text_for_tts(text: str) -> str:
-    """去掉控制标记，保留可朗读正文。"""
+    """去掉控制标记与 markdown 装饰，避免 TTS 念出「星号」。"""
     clean = re.sub(r"\[(PHASE_COMPLETE|INTERVIEW_COMPLETE|emotion:\w+)\]", "", text)
+    # **粗体** / *斜体* → 保留正文
+    clean = re.sub(r"\*\*([^*]+)\*\*", r"\1", clean)
+    clean = re.sub(r"\*([^*]+)\*", r"\1", clean)
+    clean = re.sub(r"__([^_]+)__", r"\1", clean)
+    clean = re.sub(r"_([^_]+)_", r"\1", clean)
+    clean = re.sub(r"`+", "", clean)
+    clean = re.sub(r"#{1,6}\s*", "", clean)
+    clean = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", clean)
+    # 残留孤立星号（含全角＊）
+    clean = re.sub(r"[*＊]+", "", clean)
+    clean = re.sub(r"[ \t]{2,}", " ", clean)
     return clean.strip()
 
 

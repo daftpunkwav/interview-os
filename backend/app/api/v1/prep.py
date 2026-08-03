@@ -116,8 +116,13 @@ async def prep_message_stream(
 
     async def event_stream():
         try:
-            async for token in agent.chat_stream(body.content, db):
-                yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
+            async for chunk in agent.chat_stream(body.content, db):
+                if isinstance(chunk, dict):
+                    # Agent 产出的结构化事件（如 search_results）直接透传
+                    event = chunk if chunk.get("type") else {"type": "token", "content": str(chunk)}
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'token_usage': session.token_usage})}\n\n"
         except Exception as e:
             # 脱敏：仅写日志原文，对外只返通用文案

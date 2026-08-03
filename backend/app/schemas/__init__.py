@@ -25,7 +25,7 @@ class LLMSettingsUpdate(BaseModel):
     reasoning_effort: str = "medium"
     supports_vision: bool = True
     supports_audio: bool = False
-    stt_model: str = "base"
+    stt_model: str = "whisper-1"
     tts_voice: str = "zh-CN-XiaoxiaoNeural"
 
 
@@ -39,7 +39,7 @@ class LLMSettingsResponse(BaseModel):
     reasoning_effort: str = "medium"
     supports_vision: bool = True
     supports_audio: bool = False
-    stt_model: str = "base"
+    stt_model: str = "whisper-1"
     tts_voice: str = "zh-CN-XiaoxiaoNeural"
     has_api_key: bool
     updated_at: datetime | None = None
@@ -270,6 +270,7 @@ class ScoreBreakdown(BaseModel):
     project_depth: int = 0
     problem_solving: int = 0
     presence: int = 0
+    politeness: int = 0
     overall: int = 0
 
 
@@ -321,3 +322,4 @@ class OptionsResponse(BaseModel):
     avatars: list[dict[str, str]] = Field(default_factory=list)
     scenes: list[dict[str, str]] = Field(default_factory=list)
     tts_voices: list[dict[str, str]] = Field(default_factory=list)
+    silence_nudge_seconds: int = 25

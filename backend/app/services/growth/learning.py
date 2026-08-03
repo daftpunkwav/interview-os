@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,9 @@ from app.config import get_settings
 from app.models import InterviewSession
 
 logger = logging.getLogger(__name__)
+
+# 单进程内串行化写操作，防止并发回合同时更新 JSON 导致数据丢失
+_write_lock = threading.Lock()
 
 
 def _memory_path() -> Path:
@@ -50,7 +54,8 @@ def _load() -> dict[str, Any]:
 def _save(data: dict[str, Any]) -> None:
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
     path = _memory_path()
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    with _write_lock:
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def record_interview_learning(

@@ -336,10 +336,12 @@ class LLMClient:
         payload = self._build_payload(messages, temperature, stream=True, tools=tools)
         headers = self._headers()
 
-        # 建连阶段对 429/5xx 与瞬时网络错误重试；一旦开始读流体则不再整段重放
+        # 建连阶段对 429/5xx 与瞬时网络错误重试；一旦已 yield token 则不再整段重放
         max_retries = 3
         backoff = 0.5
         last_exc: Exception | None = None
+        # 已输出 token 后禁止重试，避免 TTS 重复播报相同片段
+        tokens_yielded = False
         async with make_pinned_async_client(
             self.api_base, allow_local=_is_local_allowed(), timeout=120.0
         ) as client:
@@ -381,6 +383,7 @@ class LLMClient:
                                 token = delta.get("content") or ""
                                 if isinstance(reasoning, str) and reasoning:
                                     if not reasoning_open:
+                                        tokens_yielded = True
                                         yield "<think>"
                                         reasoning_open = True
                                     # 思考过程同样禁止 emoji
@@ -393,6 +396,7 @@ class LLMClient:
                                         reasoning_open = False
                                     cleaned = strip_emojis(token)
                                     if cleaned:
+                                        tokens_yielded = True
                                         yield cleaned
                             except (json.JSONDecodeError, KeyError, IndexError):
                                 continue
@@ -405,6 +409,9 @@ class LLMClient:
                     httpx.WriteError,
                     httpx.RemoteProtocolError,
                 ) as e:
+                    # 已输出 token：不重试，直接抛出，避免 TTS 收到重复片段
+                    if tokens_yielded:
+                        raise
                     last_exc = e
                     if attempt < max_retries:
                         await asyncio.sleep(backoff * (2 ** attempt))
@@ -540,11 +547,15 @@ class LLMClient:
             "model": model or settings.effective_embeddings_model,
             "input": texts,
         }
-        # embeddings 使用专用 key（如有），否则回退已解密的 chat key。
-        # Settings 中的 key 可能是明文或 enc:v2；与 from_db 路径保持一致。
+        # embeddings 使用专用 key（如有），否则回退到 chat key。
+        # Settings 中的 key 可能是明文或 enc:v2；回退路径同样过 decrypt_secret，
+        # 保证直接实例化（非 from_db）且传入加密串时也能正确解密。
         raw_embed = settings.effective_embeddings_key
         try:
-            embed_key = (decrypt_secret(raw_embed) if raw_embed else None) or self.api_key
+            embed_key = (decrypt_secret(raw_embed) if raw_embed else None)
+            if not embed_key:
+                # 回退到 chat key 时同样解密，兼容直接构造传入 enc:v2 串的场景
+                embed_key = decrypt_secret(self.api_key) if self.api_key else ""
         except LegacySecretFormatError as e:
             logger.error("Embeddings API Key 使用旧版加密格式，请重新保存: %s", e)
             embed_key = self.api_key

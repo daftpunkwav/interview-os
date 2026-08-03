@@ -55,7 +55,7 @@ export default function SettingsPage() {
         reasoning_effort: settings.reasoning_effort || "medium",
         supports_vision: settings.supports_vision ?? true,
         supports_audio: settings.supports_audio ?? false,
-        stt_model: settings.stt_model || "base",
+        stt_model: settings.stt_model || "whisper-1",
         tts_voice: settings.tts_voice || "zh-CN-XiaoxiaoNeural",
       });
       setMsg("已保存");
@@ -224,13 +224,35 @@ export default function SettingsPage() {
           </Section>
 
           {/* 语音 */}
-          <Section icon={Mic} title="语音" hint="STT / TTS">
+          <Section
+            icon={Mic}
+            title="语音"
+            hint="STT 默认走 LLM 同 Key 的云端 /audio/transcriptions；浏览器识别仅作预览"
+          >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field
-                label="Whisper 模型"
-                value={settings.stt_model || "base"}
-                onChange={(v) => setSettings({ ...settings, stt_model: v })}
-              />
+              <div>
+                <label className="field-label">语音识别模型</label>
+                <select
+                  className="field-input"
+                  value={settings.stt_model || "whisper-1"}
+                  onChange={(e) => setSettings({ ...settings, stt_model: e.target.value })}
+                >
+                  <optgroup label="云端（推荐）">
+                    <option value="whisper-1">whisper-1（OpenAI 兼容）</option>
+                    <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe</option>
+                    <option value="gpt-4o-transcribe">gpt-4o-transcribe</option>
+                    <option value="whisper-large-v3">whisper-large-v3（Groq 等）</option>
+                  </optgroup>
+                  <optgroup label="本地回退">
+                    <option value="base">base（本地 CPU）</option>
+                    <option value="small">small（本地）</option>
+                    <option value="medium">medium（本地，更慢）</option>
+                  </optgroup>
+                </select>
+                <p className="text-xs text-[var(--muted)] mt-1.5">
+                  需供应商支持 OpenAI 兼容 Transcriptions；不支持时自动回退本地 Whisper
+                </p>
+              </div>
               <Field
                 label="Edge TTS 音色"
                 value={settings.tts_voice || "zh-CN-XiaoxiaoNeural"}

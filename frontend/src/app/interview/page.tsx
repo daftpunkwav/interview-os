@@ -163,7 +163,12 @@ export default function InterviewSetupPage() {
                   value={config.interview_style}
                   options={options.interview_styles.map((s) => s.id)}
                   labels={options.interview_styles.map((s) => s.name)}
-                  onChange={(v) => setConfig({ ...config, interview_style: v })}
+                  onChange={(v) =>
+                    setConfig({
+                      ...config,
+                      interview_style: v as import("@/types").InterviewStyleId,
+                    })
+                  }
                 />
               </div>
             </div>

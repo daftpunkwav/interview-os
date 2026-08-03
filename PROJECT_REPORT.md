@@ -41,7 +41,7 @@
 | 面试准备 Agent | `/prep` | ✅ | 绑定简历 + 公司；ReAct 工具（搜索/公司/出题/**GitHub**） |
 | 面试配置 | `/interview` | ✅ | 岗位/职级/公司/工作流/人格/严厉度/风格/人像/场景/简历 |
 | 实时面试房间 | `/interview/[id]` | ✅ | WS、摄像头、STT、TTS、文字、阶段流转；同会话单连接（新连接踢旧） |
-| 面试官拟真人像 | 面试房间 | ✅ | CSS SVG 半身像、口型、眨眼、情绪（smile/serious）；非 Live2D |
+| 面试官拟真人像 | 面试房间 | ✅ | TalkingHead 3D GLB（口型/情绪）+ WebGL 失败时回退 CSS SVG 半身像 |
 | 真实语音 | Edge TTS | ✅ | 串行队列；可配置 5 种中文音色 |
 | GitHub 项目核验 | 面试/准备工具 | ✅ | 用户/仓库/README/commit/PR/文件/语言（REST + function tools） |
 | 公司 RAG | 面试回合 | ✅ | local Chroma / StepFun retrieval / none 三后端；数据来自内置 7 家 |

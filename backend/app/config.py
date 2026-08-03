@@ -58,10 +58,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("ENV", "INTERVIEWOS_ENV"),
     )
 
-    # 语音
-    whisper_model: str = "base"
+    # 语音：默认走 OpenAI 兼容云端 transcriptions（复用 LLM BYOK）；
+    # 填 tiny/base/small/... 时偏向本地 faster-whisper。
+    whisper_model: str = "whisper-1"
     tts_voice: str = "zh-CN-XiaoxiaoNeural"
-    silence_nudge_seconds: int = Field(default=10, ge=1, le=600)
+    silence_nudge_seconds: int = Field(default=25, ge=1, le=600)
 
     # GitHub（面试核验工具；可选 PAT，提高 API 配额）
     github_token: str = ""

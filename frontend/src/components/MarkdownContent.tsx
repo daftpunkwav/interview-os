@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeSanitize from "rehype-sanitize";
 import type { Components } from "react-markdown";
 
 const components: Components = {
@@ -264,7 +265,11 @@ export function MarkdownContent({
 
   return (
     <div className={`markdown-body text-sm min-w-0 max-w-full overflow-x-auto ${className}`}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeSanitize]}
+        components={components}
+      >
         {normalized}
       </ReactMarkdown>
     </div>

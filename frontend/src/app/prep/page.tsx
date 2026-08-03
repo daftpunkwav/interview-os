@@ -3,8 +3,9 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { api } from "@/lib/api";
 import { PREP_QUICK_PROMPTS } from "@/config/prepPrompts";
-import type { Resume } from "@/types";
+import type { PrepSearchGroup, Resume } from "@/types";
 import { ThinkAnswerMessage } from "@/components/ThinkAnswerMessage";
+import { SearchResultCards } from "@/components/prep/SearchResultCards";
 import {
   Send,
   Loader2,
@@ -25,6 +26,7 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   streaming?: boolean;
+  searchGroups?: PrepSearchGroup[];
 }
 
 export default function PrepPage() {
@@ -109,13 +111,29 @@ export default function PrepPage() {
     ]);
 
     try {
-      const result = await api.prepMessageStream(sid, userMsg, (token) => {
-        setMessages((m) =>
-          m.map((msg) =>
-            msg.id === assistantId ? { ...msg, content: msg.content + token } : msg,
-          ),
-        );
-      });
+      const result = await api.prepMessageStream(
+        sid,
+        userMsg,
+        (token) => {
+          setMessages((m) =>
+            m.map((msg) =>
+              msg.id === assistantId ? { ...msg, content: msg.content + token } : msg,
+            ),
+          );
+        },
+        (groups) => {
+          setMessages((m) =>
+            m.map((msg) =>
+              msg.id === assistantId
+                ? {
+                    ...msg,
+                    searchGroups: [...(msg.searchGroups ?? []), ...groups],
+                  }
+                : msg,
+            ),
+          );
+        },
+      );
       setTokenUsage(result.token_usage);
       setMessages((m) =>
         m.map((msg) => (msg.id === assistantId ? { ...msg, streaming: false } : msg)),
@@ -247,12 +265,17 @@ export default function PrepPage() {
                       }`}
                     >
                       {m.role === "assistant" ? (
-                        m.content || m.streaming ? (
-                          <ThinkAnswerMessage
-                            content={m.content}
-                            streaming={!!m.streaming}
-                          />
-                        ) : null
+                        <>
+                          {m.content || m.streaming ? (
+                            <ThinkAnswerMessage
+                              content={m.content}
+                              streaming={!!m.streaming}
+                            />
+                          ) : null}
+                          {m.searchGroups && m.searchGroups.length > 0 ? (
+                            <SearchResultCards groups={m.searchGroups} />
+                          ) : null}
+                        </>
                       ) : (
                         m.content
                       )}
@@ -365,7 +388,7 @@ export default function PrepPage() {
               使用提示
             </h2>
             <ul className="text-xs text-[var(--muted)] space-y-2 leading-relaxed">
-              <li>· 可要求 Agent 搜索真实面经并提炼考点</li>
+              <li>· 可要求 Agent 搜索真实面经；结果以可点击来源卡片展示</li>
               <li>· 描述目标公司与岗位，获得针对性模拟题</li>
               <li>· 回答后请教练点评，识别表达漏洞</li>
               <li>· 支持 Markdown 流式回复</li>

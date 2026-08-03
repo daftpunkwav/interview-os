@@ -3,7 +3,6 @@
 import base64
 import io
 import logging
-import struct
 import wave
 from functools import lru_cache
 
@@ -11,6 +10,12 @@ logger = logging.getLogger(__name__)
 
 _whisper_model = None
 _model_name = "base"
+
+# 技术面试常见中英混说，帮助模型保留英文术语
+_BILINGUAL_PROMPT = (
+    "以下是中英文技术面试对话，可能包含 API、Python、JavaScript、React、"
+    "Agent、GitHub、Docker、Kubernetes、SQL、HTTP、REST 等英文术语。"
+)
 
 
 def set_whisper_model(name: str) -> None:
@@ -43,7 +48,7 @@ def pcm_base64_to_wav_bytes(pcm_b64: str, sample_rate: int = 16000) -> bytes:
 
 
 def transcribe_pcm_base64(pcm_b64: str, sample_rate: int = 16000, model_size: str = "base") -> str:
-    """转写 PCM 音频，失败或判定为无语音时返回空字符串。"""
+    """转写 PCM 音频，失败或判定为无语音时返回空字符串。自动检测中/英。"""
     model = _get_model(model_size)
     if model is None:
         return ""
@@ -54,16 +59,19 @@ def transcribe_pcm_base64(pcm_b64: str, sample_rate: int = 16000, model_size: st
         if len(raw) < sample_rate * 2 * 0.35:  # < ~0.35s 的 int16 mono
             return ""
         wav_bytes = pcm_base64_to_wav_bytes(pcm_b64, sample_rate)
+        # language=None：自动检测，避免强制 zh 把英文听成乱码
         segments, info = model.transcribe(
             io.BytesIO(wav_bytes),
-            language="zh",
-            beam_size=1,
+            language=None,
+            beam_size=2,
             vad_filter=True,
             no_speech_threshold=0.6,
+            initial_prompt=_BILINGUAL_PROMPT,
         )
-        # faster-whisper 可能提供 no_speech_prob
         try:
-            if getattr(info, "language_probability", 1.0) is not None and getattr(info, "language_probability", 1) < 0.35:
+            lang_prob = getattr(info, "language_probability", None)
+            # 自动语种时置信度过低才丢弃；勿用「像不像中文」误杀英文
+            if lang_prob is not None and lang_prob < 0.25:
                 return ""
         except Exception:
             pass

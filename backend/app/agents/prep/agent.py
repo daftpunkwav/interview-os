@@ -16,7 +16,7 @@ from app.models import PrepSession, Resume
 from app.services.company.knowledge import get_company_context
 from app.services.context.manager import compress_messages, estimate_tokens
 from app.services.llm.client import LLMClient
-from app.services.search.web import web_search
+from app.services.search.web import SearchHit, web_search_with_hits
 
 logger = logging.getLogger(__name__)
 
@@ -180,33 +180,46 @@ class PrepAgent:
             {"role": "system", "content": f"{PREP_SYSTEM}\n\n{company}\n{ctx}"},
         ]
 
-    async def _run_tool(self, tool_call: dict[str, Any], db: Session) -> str:
-        """执行单个工具；同步 IO（如 DDGS）放到线程池，避免阻塞 SSE 事件循环。"""
+    async def _run_tool(
+        self, tool_call: dict[str, Any], db: Session
+    ) -> tuple[str, list[SearchHit]]:
+        """执行单个工具；同步 IO（如 DDGS）放到线程池，避免阻塞 SSE 事件循环。
+
+        返回 ``(observation_text, search_hits)``；非搜索工具 hits 为空。
+        """
         tool = tool_call.get("tool", "")
         if tool == "web_search":
             query = str(tool_call.get("query", "") or "")
-            return await asyncio.to_thread(
-                web_search, query, _WEB_SEARCH_MAX_RESULTS
+            text, hits = await asyncio.to_thread(
+                web_search_with_hits, query, _WEB_SEARCH_MAX_RESULTS
             )
+            return text, hits
         if tool == "company_info":
             company = str(tool_call.get("company", "") or "")
-            return await asyncio.to_thread(get_company_context, company)
+            return await asyncio.to_thread(get_company_context, company), []
         if tool == "quiz":
-            return f"已出题：{tool_call.get('question', '')}（类型：{tool_call.get('type', 'open')}）"
+            return (
+                f"已出题：{tool_call.get('question', '')}（类型：{tool_call.get('type', 'open')}）",
+                [],
+            )
         if tool in ("github_list_repos", "github_get_readme", "github_get_repo", "github_list_commits"):
             from app.services.github.tools import execute_github_tool
 
             name = tool if tool.startswith("github_") else f"github_{tool}"
             args = {k: v for k, v in tool_call.items() if k != "tool"}
-            return await execute_github_tool(name, args)
-        return f"未知工具：{tool}"
+            return await execute_github_tool(name, args), []
+        return f"未知工具：{tool}", []
 
-    async def _run_tool_safe(self, tool_call: dict[str, Any], db: Session) -> str:
+    async def _run_tool_safe(
+        self, tool_call: dict[str, Any], db: Session
+    ) -> tuple[str, dict[str, Any] | None]:
+        """返回 ``(observation, search_group)``；search_group 仅 web_search 有结果时非空。"""
         label = tool_call.get("tool", "?")
         query = tool_call.get("query") or tool_call.get("company") or tool_call.get("repo") or ""
         header = f"[{label}] {query}".strip()
+        hits: list[SearchHit] = []
         try:
-            obs = await asyncio.wait_for(
+            obs, hits = await asyncio.wait_for(
                 self._run_tool(tool_call, db),
                 timeout=_TOOL_TIMEOUT_SEC,
             )
@@ -219,21 +232,28 @@ class PrepAgent:
         except Exception as e:
             logger.warning("工具执行失败 %s: %s", tool_call, e)
             obs = f"执行失败：{e}"
-        return f"{header}\n{obs}"
+        group: dict[str, Any] | None = None
+        if label == "web_search" and hits:
+            group = {"query": str(query or ""), "results": hits}
+        return f"{header}\n{obs}", group
 
-    async def _run_tools(self, calls: list[dict[str, Any]], db: Session) -> str:
+    async def _run_tools(
+        self, calls: list[dict[str, Any]], db: Session
+    ) -> tuple[str, list[dict[str, Any]]]:
         limited = calls[:_MAX_TOOLS_PER_ROUND]
         # 并行执行，且每项有超时；避免串行 DDGS 把流式响应卡死数分钟
-        chunks = await asyncio.gather(
+        pairs = await asyncio.gather(
             *[self._run_tool_safe(call, db) for call in limited]
         )
+        chunks = [p[0] for p in pairs]
+        groups = [p[1] for p in pairs if p[1] is not None]
         body = "\n\n---\n\n".join(chunks)
         if "SEARCH_UNAVAILABLE" in body or "搜索暂时不可用" in body:
             body += (
                 "\n\n【系统约束】检索未成功。禁止编造「搜索到的结果」清单、链接或 [1][2] 引用；"
                 "请用通用知识继续辅导，并写明「基于通用知识整理，非实时搜索」。"
             )
-        return body
+        return body, groups
 
     async def chat(self, user_text: str, db: Session) -> str:
         self._ensure_system(db)
@@ -245,7 +265,7 @@ class PrepAgent:
             calls = extract_tool_calls(reply)
             if not calls:
                 break
-            observation = await self._run_tools(calls, db)
+            observation, _ = await self._run_tools(calls, db)
             self.messages.append({"role": "assistant", "content": reply})
             self.messages.append({
                 "role": "user",
@@ -265,8 +285,13 @@ class PrepAgent:
         self._save(db)
         return final
 
-    async def chat_stream(self, user_text: str, db: Session) -> AsyncIterator[str]:
-        """流式辅导：抑制 tool JSON；多工具执行后再流式输出最终回答。"""
+    async def chat_stream(
+        self, user_text: str, db: Session
+    ) -> AsyncIterator[str | dict[str, Any]]:
+        """流式辅导：抑制 tool JSON；多工具执行后再流式输出最终回答。
+
+        产出 ``str``（token）或 ``dict``（如 ``search_results`` 事件，供 SSE 透传）。
+        """
         self._ensure_system(db)
         self.messages.append({"role": "user", "content": user_text})
         self.messages = compress_messages(self.messages, 128000)
@@ -297,7 +322,9 @@ class PrepAgent:
             yield f"\n\n正在检索：{'；'.join(labels)}…\n\n"
             await asyncio.sleep(0)
 
-            observation = await self._run_tools(calls, db)
+            observation, search_groups = await self._run_tools(calls, db)
+            if search_groups:
+                yield {"type": "search_results", "groups": search_groups}
             yield "检索完成，正在整理要点…\n\n"
             await asyncio.sleep(0)
 

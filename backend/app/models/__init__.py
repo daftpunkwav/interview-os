@@ -83,7 +83,7 @@ class LLMSettings(Base):
     reasoning_effort: Mapped[str] = mapped_column(String(20), default="medium")
     supports_vision: Mapped[bool] = mapped_column(Boolean, default=True)
     supports_audio: Mapped[bool] = mapped_column(Boolean, default=False)
-    stt_model: Mapped[str] = mapped_column(String(50), default="base")
+    stt_model: Mapped[str] = mapped_column(String(50), default="whisper-1")
     tts_voice: Mapped[str] = mapped_column(String(100), default="zh-CN-XiaoxiaoNeural")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 

@@ -116,6 +116,58 @@ def check_rate_limit(
         bucket.last_access = now
 
 
+def check_rate_limit_by_id(
+    *,
+    key: str,
+    client_id: str,
+    limit: int,
+    window_seconds: int = 60,
+) -> None:
+    """按任意 client_id（如 session_id）限流；越界抛 ``HTTPException(429)``。
+
+    供 WebSocket 等无 ``Request`` 的路径复用同一滑动窗口实现。
+    """
+    _ensure_cleanup_thread()
+    bucket_key = (key, client_id or "unknown")
+    now = time.monotonic()
+    with _LOCK:
+        bucket = _BUCKETS.get(bucket_key)
+        if bucket is None:
+            bucket = _Bucket(timestamps=deque())
+            _BUCKETS[bucket_key] = bucket
+        while bucket.timestamps and bucket.timestamps[0] <= now - window_seconds:
+            bucket.timestamps.popleft()
+        if len(bucket.timestamps) >= limit:
+            retry_after = max(1, int(window_seconds - (now - bucket.timestamps[0])))
+            raise HTTPException(
+                status_code=429,
+                detail=f"请求过于频繁，请在 {retry_after}s 后重试",
+                headers={"Retry-After": str(retry_after)},
+            )
+        bucket.timestamps.append(now)
+        bucket.last_access = now
+
+
+def try_rate_limit_by_id(
+    *,
+    key: str,
+    client_id: str,
+    limit: int,
+    window_seconds: int = 60,
+) -> bool:
+    """WS 友好封装：超限返回 False，不抛异常。"""
+    try:
+        check_rate_limit_by_id(
+            key=key,
+            client_id=client_id,
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+        return True
+    except HTTPException:
+        return False
+
+
 def rate_limit_dep(*, key: str, limit: int, window_seconds: int = 60):
     """返回可挂到 FastAPI ``dependencies=`` 的限流 Depends 回调。"""
 

@@ -267,20 +267,26 @@ class InterviewRunner:
                     "工具调用: session=%s round=%s tool=%s",
                     self.session.id, round_i, name,
                 )
-                result = await execute_interview_tool(
-                    name,
-                    args,
-                    db=db,
-                    resume_id=self.session.resume_id,
-                    profile_id=self.session.profile_id,
-                    agent_state=self.agent.agent_state,
-                )
+                try:
+                    result = await execute_interview_tool(
+                        name,
+                        args,
+                        db=db,
+                        resume_id=self.session.resume_id,
+                        profile_id=self.session.profile_id,
+                        agent_state=self.agent.agent_state,
+                    )
+                    tool_ok = True
+                except Exception as tool_exc:
+                    result = f"工具执行失败: {tool_exc}"
+                    tool_ok = False
+                    logger.warning("工具执行异常 tool=%s: %s", name, tool_exc)
                 working.append({
                     "role": "tool",
                     "tool_call_id": tc_id,
                     "content": result,
                 })
-                trace.append({"round": round_i, "tool": name, "ok": "error" not in result[:80]})
+                trace.append({"round": round_i, "tool": name, "ok": tool_ok})
             if len(trace) > 40:
                 del trace[:-40]
 

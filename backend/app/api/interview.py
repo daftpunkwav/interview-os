@@ -58,15 +58,21 @@ def create_session(config: InterviewConfig, db: Session = Depends(get_db)):
 
 @router.get("/sessions", response_model=list[InterviewSessionResponse])
 def list_sessions(db: Session = Depends(get_db)):
+    """历史列表：仅返回元数据，不含 access_token（防枚举窃取能力令牌）。"""
     sessions = db.query(InterviewSession).order_by(InterviewSession.created_at.desc()).all()
-    return [_to_response(s) for s in sessions]
+    return [_to_response(s, include_token=False) for s in sessions]
 
 
 @router.get("/sessions/{session_id}", response_model=InterviewSessionResponse)
-def get_session(session_id: int, db: Session = Depends(get_db)):
+def get_session(
+    session_id: int,
+    db: Session = Depends(get_db),
+    access: str | None = Depends(extract_token),
+):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="面试会话不存在")
+    assert_session_token(session, access)
     return _to_response(session)
 
 

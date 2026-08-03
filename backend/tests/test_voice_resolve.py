@@ -83,12 +83,19 @@ def test_split_sentences_includes_semicolon_ellipsis():
 def test_soft_flush_on_comma_after_min_chars():
     short = "你好，世界"
     assert not should_flush_sentence_buffer(short)
-    # 明确构造 ≥24 字并以逗号结尾
-    long = ("测" * 23) + "，"
-    assert len(long) >= 24
-    assert should_flush_sentence_buffer(long)
+    long = ("测" * 17) + "，"
+    assert should_flush_sentence_buffer(long, soft_min=14)
     assert should_flush_sentence_buffer("说完了。")
     assert should_flush_sentence_buffer("好的；")
+    assert should_flush_sentence_buffer("字" * 48)
+
+
+def test_plain_text_strips_markdown_stars():
+    from app.services.tts.edge import _plain_text_for_tts
+
+    assert _plain_text_for_tts("请确认 **GitHub** 用户名") == "请确认 GitHub 用户名"
+    assert "*" not in _plain_text_for_tts("这是*斜体*与**粗体**")
+    assert "星" not in _plain_text_for_tts("正常文本")
 
 
 def test_extract_emotion_from_marker():

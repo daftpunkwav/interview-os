@@ -38,14 +38,20 @@ WORKFLOW_TYPES = [
 
 AVATARS = [
     {"id": "professional_male", "name": "专业男面试官", "voice": "zh-CN-YunyangNeural"},
-    {"id": "gentle_female", "name": "温和女面试官", "voice": "zh-CN-XiaoxiaoNeural"},
+    {"id": "senior_male", "name": "资深男面试官", "voice": "zh-CN-YunjianNeural"},
     {"id": "strict_expert", "name": "严厉技术专家", "voice": "zh-CN-YunjianNeural"},
+    {"id": "gentle_female", "name": "温和女面试官", "voice": "zh-CN-XiaoxiaoNeural"},
+    {"id": "hr_female", "name": "HR 女面试官", "voice": "zh-CN-XiaoyiNeural"},
+    {"id": "young_female", "name": "青年女面试官", "voice": "zh-CN-XiaoxiaoNeural"},
 ]
 
 SCENES = [
     {"id": "meeting_room", "name": "企业会议室"},
     {"id": "glass_office", "name": "玻璃隔断办公室"},
     {"id": "online_interview", "name": "线上面试间"},
+    {"id": "boardroom", "name": "董事会会议室"},
+    {"id": "startup_loft", "name": "创业公司开放工位"},
+    {"id": "library_corner", "name": "安静洽谈角"},
 ]
 
 TTS_VOICES = [
@@ -59,6 +65,8 @@ TTS_VOICES = [
 
 def build_options_payload() -> dict:
     """供 options API 组装响应。"""
+    from app.config import get_settings
+
     return {
         "roles": ROLES,
         "levels": LEVELS,
@@ -70,4 +78,6 @@ def build_options_payload() -> dict:
         "avatars": AVATARS,
         "scenes": SCENES,
         "tts_voices": TTS_VOICES,
+        # 前端据此设置静默追问计时器，与后端配置保持一致
+        "silence_nudge_seconds": get_settings().silence_nudge_seconds,
     }

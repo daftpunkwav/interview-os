@@ -139,7 +139,12 @@ export interface Options {
   avatars?: { id: string; name: string; voice?: string }[];
   scenes?: { id: string; name: string }[];
   tts_voices?: { id: string; name: string }[];
+  /** 后端配置的静默追问触发秒数，前端据此设置计时器 */
+  silence_nudge_seconds?: number;
 }
+
+/** 与后端 ``InterviewStyle`` 枚举保持一致 */
+export type InterviewStyleId = "guided" | "deep_dive" | "continuous" | "challenging";
 
 export interface InterviewConfig {
   role: string;
@@ -148,7 +153,7 @@ export interface InterviewConfig {
   workflow_type: string;
   personality: string;
   strictness: number;
-  interview_style: string;
+  interview_style: InterviewStyleId;
   resume_id?: number | null;
   avatar_id?: string;
   scene_id?: string;
@@ -187,6 +192,7 @@ export interface ScoreBreakdown {
   project_depth: number;
   problem_solving: number;
   presence?: number;
+  politeness?: number;
   overall: number;
 }
 
@@ -237,8 +243,20 @@ export interface SSEErrorEvent {
 }
 
 /** 通用 SSE envelope，使用 discriminated union 保留强类型。 */
+export interface PrepSearchHit {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+export interface PrepSearchGroup {
+  query: string;
+  results: PrepSearchHit[];
+}
+
 export type PrepSSEEvent =
   | { type: "token"; content: string }
+  | { type: "search_results"; groups: PrepSearchGroup[] }
   | { type: "done"; token_usage: number }
   | SSEErrorEvent;
 
@@ -265,9 +283,6 @@ export type ServerEvent =
       audio_b64?: string;
       playback_generation?: number;
     }
-  | { type: "assistant_audio_start" }
-  | { type: "assistant_audio_chunk"; data: string; idx?: number }
-  | { type: "assistant_audio_end" }
   | { type: "stt_partial"; text: string }
   | { type: "stt_final"; text: string }
   | {
@@ -278,11 +293,12 @@ export type ServerEvent =
       playback_generation?: number;
     }
   | { type: "tts_failed"; message: string }
-  | { type: "silence_nudge"; content: string }
+  | { type: "tts_interrupted"; reason?: string; candidate_interrupts?: number; playback_generation?: number }
+  | { type: "silence_nudge"; content: string; ai_interrupts?: number }
   | { type: "reference_hint_loading"; question: string }
   | { type: "reference_hint"; content: string; question: string }
   | { type: "phase_changed"; phase: string }
-  | { type: "interview_complete"; report_id?: number }
+  | { type: "interview_complete"; session_id?: number; overall_score?: number | null; report_id?: number }
   | { type: "server_ping"; t: number }
   | SSEErrorEvent;
 
@@ -303,6 +319,7 @@ export type ClientEvent =
     }
   | { type: "stt_text"; text: string }
   | { type: "silence_timeout" }
+  | { type: "barge_in" }
   | { type: "request_hint"; question: string }
   | { type: "request_finish" }
   | { type: "vision_update"; face_analysis: FaceAnalysis }

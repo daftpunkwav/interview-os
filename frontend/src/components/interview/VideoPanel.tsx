@@ -48,6 +48,8 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
     const acquiringRef = useRef(false);
     const [faceStatus, setFaceStatus] = useState<string>("未检测");
     const jitterHistory = useRef<number[]>([]);
+    // FaceDetector 不可用时：只上报一次 face_detected:false，避免每 3s 假数据刷新
+    const detectorUnavailableReportedRef = useRef(false);
     const isDark = variant === "dark";
 
     useImperativeHandle(ref, () => ({
@@ -81,6 +83,8 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
+        // 重置「不可用已上报」标记，允许新会话重新检测
+        detectorUnavailableReportedRef.current = false;
         setCameraOn(true);
 
         if ("FaceDetector" in window) {
@@ -174,13 +178,15 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
         } catch {
           setFaceStatus("面部分析暂时不可用");
         }
+        onFaceAnalysis?.(analysis);
       } else {
-        analysis.face_detected = true;
-        analysis.looking_away = false;
-        setFaceStatus("摄像头已开启（浏览器不支持人脸检测 API）");
+        // FaceDetector 不可用：仅上报一次 face_detected:false，后续静默，不假装检测到人脸
+        if (!detectorUnavailableReportedRef.current) {
+          detectorUnavailableReportedRef.current = true;
+          setFaceStatus("摄像头已开启（浏览器不支持人脸检测 API）");
+          onFaceAnalysis?.(analysis); // face_detected: false
+        }
       }
-
-      onFaceAnalysis?.(analysis);
     }, [cameraOn, onFaceAnalysis]);
 
     useEffect(() => {

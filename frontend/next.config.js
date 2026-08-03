@@ -27,10 +27,13 @@ const securityHeaders = [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
+      // blob:：GLTF 内嵌贴图经 ImageBitmapLoader.fetch；https:：远端贴图 URI
+      "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      "connect-src 'self' http: https: ws: wss:",
-      "media-src 'self' blob:",
+      // blob:：Three 贴图 fetch(blob:)；否则女模白模
+      "connect-src 'self' http: https: ws: wss: blob:",
+      // data:：TTS 使用 data:audio/mpeg;base64,...
+      "media-src 'self' blob: data:",
       "worker-src 'self' blob:",
       "frame-ancestors 'none'",
       "base-uri 'self'",
@@ -46,6 +49,16 @@ const nextConfig = {
       {
         source: "/:path*",
         headers: securityHeaders,
+      },
+      {
+        // 本地人像 GLB 长期缓存（文件名变更即换址）
+        source: "/avatars/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
       },
     ];
   },

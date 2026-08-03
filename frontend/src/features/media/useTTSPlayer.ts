@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * 顺序播放 base64 MP3；支持用户手势解锁、失败提示、音量电平（供口型）。
- * 队列清空后触发 onPlaybackDone（用于回传 tts_playback_done）。
- * 使用 epoch：stop()/卸载后旧 Promise 链不再创建 Audio / 播放。
+ * 顺序播放 base64 MP3；必须先经用户手势 unlock，否则只缓冲不播、不假报 tts_playback_done。
+ * 队列真实清空后才触发 onPlaybackDone。
  */
 export function useTTSPlayer() {
   const queueRef = useRef<Promise<void>>(Promise.resolve());
@@ -18,12 +17,14 @@ export function useTTSPlayer() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const levelRafRef = useRef<number | null>(null);
-  const lastFailedB64Ref = useRef<string | null>(null);
+  /** 未解锁或播放失败时整段缓冲，供重试 */
+  const heldQueueRef = useRef<string[]>([]);
   const onSpeakingChangeRef = useRef<(v: boolean) => void>(() => {});
   const onLevelRef = useRef<(level: number) => void>(() => {});
   const onBlockedRef = useRef<(blocked: boolean) => void>(() => {});
   const onPlaybackDoneRef = useRef<() => void>(() => {});
   const [queueDepth, setQueueDepth] = useState(0);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
 
   const setOnSpeakingChange = useCallback((fn: (v: boolean) => void) => {
     onSpeakingChangeRef.current = fn;
@@ -68,33 +69,6 @@ export function useTTSPlayer() {
     levelRafRef.current = requestAnimationFrame(tick);
   }, [_stopLevelLoop]);
 
-  /** 用户手势中调用：解锁自动播放 */
-  const unlockAudio = useCallback(async () => {
-    try {
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new AudioContext();
-      }
-      const ctx = audioCtxRef.current;
-      if (ctx.state === "suspended") {
-        await ctx.resume();
-      }
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      gain.gain.value = 0;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.02);
-      unlockedRef.current = true;
-      onBlockedRef.current(false);
-      return true;
-    } catch {
-      unlockedRef.current = false;
-      onBlockedRef.current(true);
-      return false;
-    }
-  }, []);
-
   const _releaseCurrent = useCallback(() => {
     try {
       sourceNodeRef.current?.disconnect();
@@ -115,14 +89,63 @@ export function useTTSPlayer() {
     currentAudioRef.current = null;
   }, []);
 
+  /**
+   * 队列空闲时通知服务端可开麦。
+   * - 未解锁且仅有 held：不回报（强制手势解锁，避免无声假 done）
+   * - 已解锁但播失败入 held：仍回报，否则会永久卡住麦/文字输入
+   */
   const _notifyIfIdle = useCallback(() => {
-    if (pendingCountRef.current <= 0 && !speakingRef.current) {
-      onPlaybackDoneRef.current();
+    if (pendingCountRef.current > 0 || speakingRef.current) return;
+    if (!unlockedRef.current && heldQueueRef.current.length > 0) return;
+    onPlaybackDoneRef.current();
+  }, []);
+
+  /** 用户手势中调用：解锁自动播放 */
+  const unlockAudio = useCallback(async () => {
+    try {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioContext();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+      if (ctx.state !== "running") {
+        unlockedRef.current = false;
+        setAudioUnlocked(false);
+        onBlockedRef.current(true);
+        return false;
+      }
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.02);
+      unlockedRef.current = true;
+      setAudioUnlocked(true);
+      onBlockedRef.current(false);
+      return true;
+    } catch {
+      unlockedRef.current = false;
+      setAudioUnlocked(false);
+      onBlockedRef.current(true);
+      return false;
     }
   }, []);
 
   const playBase64Mp3 = useCallback(
     (b64: string) => {
+      if (!b64) return;
+
+      // 未解锁：只缓冲，不 play、不假报 done
+      if (!unlockedRef.current) {
+        heldQueueRef.current.push(b64);
+        onBlockedRef.current(true);
+        return;
+      }
+
       const jobEpoch = epochRef.current;
       pendingCountRef.current += 1;
       setQueueDepth(pendingCountRef.current);
@@ -130,20 +153,35 @@ export function useTTSPlayer() {
         prev.then(
           () =>
             new Promise<void>((resolve) => {
-              const finish = () => {
-                // 过期 epoch：不碰共享计数（stop 已清零）
+              const finishOk = () => {
                 if (jobEpoch !== epochRef.current) {
                   resolve();
                   return;
                 }
                 pendingCountRef.current = Math.max(0, pendingCountRef.current - 1);
                 setQueueDepth(pendingCountRef.current);
-                if (currentAudioRef.current) {
-                  currentAudioRef.current = null;
-                }
+                currentAudioRef.current = null;
                 speakingRef.current = false;
                 onSpeakingChangeRef.current(false);
                 _stopLevelLoop();
+                _notifyIfIdle();
+                resolve();
+              };
+
+              /** 播放失败：入重试队列；已解锁时仍回报 idle，避免卡死回合 */
+              const finishBlocked = () => {
+                if (jobEpoch !== epochRef.current) {
+                  resolve();
+                  return;
+                }
+                pendingCountRef.current = Math.max(0, pendingCountRef.current - 1);
+                setQueueDepth(pendingCountRef.current);
+                currentAudioRef.current = null;
+                speakingRef.current = false;
+                onSpeakingChangeRef.current(false);
+                _stopLevelLoop();
+                heldQueueRef.current.push(b64);
+                onBlockedRef.current(true);
                 _notifyIfIdle();
                 resolve();
               };
@@ -153,65 +191,66 @@ export function useTTSPlayer() {
                 return;
               }
 
-              if (!b64) {
-                finish();
-                return;
-              }
-
               _releaseCurrent();
               const audio = new Audio(`data:audio/mpeg;base64,${b64}`);
               currentAudioRef.current = audio;
               speakingRef.current = true;
               onSpeakingChangeRef.current(true);
 
-              try {
-                const ctx = audioCtxRef.current ?? new AudioContext();
-                audioCtxRef.current = ctx;
-                if (!analyserRef.current) {
-                  const analyser = ctx.createAnalyser();
-                  analyser.fftSize = 256;
-                  analyserRef.current = analyser;
-                  analyser.connect(ctx.destination);
+              const runPlay = async () => {
+                try {
+                  const ctx = audioCtxRef.current ?? new AudioContext();
+                  audioCtxRef.current = ctx;
+                  if (ctx.state === "suspended") {
+                    await ctx.resume();
+                  }
+                  if (ctx.state !== "running") {
+                    finishBlocked();
+                    return;
+                  }
+                  if (!analyserRef.current) {
+                    const analyser = ctx.createAnalyser();
+                    analyser.fftSize = 256;
+                    analyserRef.current = analyser;
+                    analyser.connect(ctx.destination);
+                  }
+                  try {
+                    const src = ctx.createMediaElementSource(audio);
+                    sourceNodeRef.current = src;
+                    src.connect(analyserRef.current);
+                    _startLevelLoop();
+                  } catch {
+                    /* MediaElementSource 失败则 element 直出，无口型电平 */
+                  }
+                } catch {
+                  /* 仍尝试 element.play */
                 }
-                const src = ctx.createMediaElementSource(audio);
-                sourceNodeRef.current = src;
-                src.connect(analyserRef.current!);
-                void ctx.resume();
-                _startLevelLoop();
-              } catch {
-                /* MediaElementSource 失败则无电平；音频仍可经 element 播放 */
-              }
 
-              audio.onended = () => {
-                lastFailedB64Ref.current = null;
-                finish();
-              };
-              audio.onerror = () => {
-                lastFailedB64Ref.current = b64;
-                onBlockedRef.current(true);
-                finish();
-              };
-              audio.play().then(
-                () => {
+                audio.onended = () => {
+                  finishOk();
+                };
+                audio.onerror = () => {
+                  finishBlocked();
+                };
+
+                try {
+                  await audio.play();
                   if (jobEpoch !== epochRef.current) {
                     try {
                       audio.pause();
                     } catch {
                       /* noop */
                     }
-                    finish();
+                    finishOk();
                     return;
                   }
-                  unlockedRef.current = true;
                   onBlockedRef.current(false);
-                  lastFailedB64Ref.current = null;
-                },
-                () => {
-                  lastFailedB64Ref.current = b64;
-                  onBlockedRef.current(true);
-                  finish();
-                },
-              );
+                } catch {
+                  finishBlocked();
+                }
+              };
+
+              void runPlay();
             }),
         );
       queueRef.current = job(queueRef.current);
@@ -219,26 +258,39 @@ export function useTTSPlayer() {
     [_releaseCurrent, _startLevelLoop, _stopLevelLoop, _notifyIfIdle],
   );
 
-  const retryLastFailed = useCallback(() => {
-    const b64 = lastFailedB64Ref.current;
-    if (!b64) return false;
-    lastFailedB64Ref.current = null;
+  /** 重放整段缓冲（unlock 后或自动播放拦截后） */
+  const flushHeldQueue = useCallback(() => {
+    const held = heldQueueRef.current.splice(0, heldQueueRef.current.length);
+    if (held.length === 0) return false;
     onBlockedRef.current(false);
-    playBase64Mp3(b64);
+    for (const b64 of held) {
+      playBase64Mp3(b64);
+    }
     return true;
   }, [playBase64Mp3]);
 
-  const stop = useCallback(() => {
+  const retryLastFailed = useCallback(() => {
+    return flushHeldQueue();
+  }, [flushHeldQueue]);
+
+  /**
+   * 停止播放并清空队列。
+   * @param opts.silent 为 true 时不上报 playback_done（避免 barge 本地 stop 与 tts_interrupted 双重上报）
+   */
+  const stop = useCallback((opts?: { silent?: boolean }) => {
     epochRef.current += 1;
     _releaseCurrent();
     speakingRef.current = false;
     pendingCountRef.current = 0;
+    heldQueueRef.current = [];
     setQueueDepth(0);
     onSpeakingChangeRef.current(false);
     _stopLevelLoop();
     queueRef.current = Promise.resolve();
-    // 打断时也通知播完，避免服务端空等 tts_playback_done
-    onPlaybackDoneRef.current();
+    if (!opts?.silent) {
+      // 用户主动打断：允许服务端开麦
+      onPlaybackDoneRef.current();
+    }
   }, [_releaseCurrent, _stopLevelLoop]);
 
   useEffect(() => {
@@ -258,9 +310,15 @@ export function useTTSPlayer() {
     setOnPlaybackDone,
     unlockAudio,
     retryLastFailed,
+    flushHeldQueue,
     stop,
     isSpeaking: () => speakingRef.current,
+    /** 是否正在播报（不含 held 重试队列——held 不应锁死麦/输入） */
+    isActivelyPlaying: () => pendingCountRef.current > 0 || speakingRef.current,
+    /** @deprecated 语义含 held；门控请用 isActivelyPlaying */
     isQueueBusy: () => pendingCountRef.current > 0 || speakingRef.current,
     queueDepth,
+    audioUnlocked,
+    heldCount: () => heldQueueRef.current.length,
   };
 }

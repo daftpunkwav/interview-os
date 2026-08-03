@@ -37,35 +37,64 @@ export default function ReportPage() {
 
   useEffect(() => {
     let cancelled = false;
-    let attempts = 0;
-    const maxAttempts = 45;
+    const ctrl = new AbortController();
 
     // 兜底：面试页不再同步 finish；进入报告页触发一次补生成（与 WS 锁防双打）
     void api.finishInterview(sessionId).catch(() => undefined);
 
-    const tick = () => {
-      attempts += 1;
-      api.getReport(sessionId)
-        .then((data) => {
-          if (cancelled) return;
-          applyPayload(data);
-          setError("");
-          setLoading(false);
-        })
-        .catch((e) => {
-          if (cancelled) return;
-          const msg = e instanceof Error ? e.message : String(e);
-          if (attempts < maxAttempts && /尚未|不存在|404|生成/.test(msg)) {
-            setTimeout(tick, 2000);
-            return;
-          }
-          setError(msg);
-          setLoading(false);
-        });
+    // 轮询回退（流式失败时使用）
+    const startPolling = () => {
+      let attempts = 0;
+      const maxAttempts = 45;
+      const tick = () => {
+        if (cancelled) return;
+        attempts += 1;
+        api.getReport(sessionId)
+          .then((data) => {
+            if (cancelled) return;
+            applyPayload(data);
+            setError("");
+            setLoading(false);
+          })
+          .catch((e) => {
+            if (cancelled) return;
+            const msg = e instanceof Error ? e.message : String(e);
+            if (attempts < maxAttempts && /尚未|不存在|404|生成/.test(msg)) {
+              setTimeout(tick, 2000);
+              return;
+            }
+            setError(msg);
+            setLoading(false);
+          });
+      };
+      tick();
     };
-    tick();
+
+    // 优先尝试流式 SSE 生成；失败则降级为轮询
+    api.getReportStream(sessionId, () => {}, ctrl.signal)
+      .then((streamedReport) => {
+        if (cancelled) return;
+        setReport(streamedReport);
+        setError("");
+        setLoading(false);
+        // 补拉 duration / messages_count 元数据
+        api.getReport(sessionId)
+          .then((data) => {
+            if (!cancelled) {
+              setDuration(data.duration_minutes);
+              setMessagesCount(data.messages_count);
+            }
+          })
+          .catch(() => undefined);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        startPolling();
+      });
+
     return () => {
       cancelled = true;
+      ctrl.abort();
     };
   }, [sessionId]);
 
@@ -139,16 +168,18 @@ export default function ReportPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
         {[
           { label: "技术能力", score: scores.technical },
           { label: "表达能力", score: scores.communication },
           { label: "项目深度", score: scores.project_depth },
           { label: "问题解决", score: scores.problem_solving },
           { label: "临场状态", score: scores.presence },
+          { label: "话轮礼貌", score: scores.politeness },
         ].map((item) => {
           const display = formatScore(item.score);
-          const numeric = typeof item.score === "number";
+          const scoreVal = typeof item.score === "number" ? item.score : null;
+          const numeric = scoreVal != null;
           return (
             <div
               key={item.label}
@@ -156,18 +187,18 @@ export default function ReportPage() {
             >
               <div
                 className="text-2xl font-bold tabular-nums"
-                style={{ color: numeric ? scoreColor(item.score) : "var(--muted)" }}
+                style={{ color: numeric ? scoreColor(scoreVal) : "var(--muted)" }}
               >
                 {display}
               </div>
               <div className="text-xs text-[var(--muted)] mt-1">{item.label}</div>
-              {numeric && (
+              {numeric && scoreVal != null && (
                 <div className="mt-2 h-1.5 bg-[var(--border)]/60 rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all"
                     style={{
-                      width: `${Math.min(100, Math.max(0, item.score))}%`,
-                      backgroundColor: scoreColor(item.score),
+                      width: `${Math.min(100, Math.max(0, scoreVal))}%`,
+                      backgroundColor: scoreColor(scoreVal),
                     }}
                   />
                 </div>
@@ -216,6 +247,7 @@ function normalizeScores(raw: ScoreBreakdown | undefined | null): {
   project_depth: number | null;
   problem_solving: number | null;
   presence: number | null;
+  politeness: number | null;
   overall: number | null;
 } {
   const pick = (v: unknown): number | null =>
@@ -226,6 +258,7 @@ function normalizeScores(raw: ScoreBreakdown | undefined | null): {
     project_depth: pick(raw?.project_depth),
     problem_solving: pick(raw?.problem_solving),
     presence: pick(raw?.presence),
+    politeness: pick(raw?.politeness),
     overall: pick(raw?.overall),
   };
 }
@@ -246,6 +279,7 @@ function RadarChart({
     { key: "project_depth" as const, label: "项目" },
     { key: "problem_solving" as const, label: "解题" },
     { key: "presence" as const, label: "临场" },
+    { key: "politeness" as const, label: "礼貌" },
   ];
   const cx = 120;
   const cy = 120;
@@ -330,7 +364,8 @@ function RadarChart({
   );
 }
 
-function scoreColor(score: number): string {
+function scoreColor(score: number | null | undefined): string {
+  if (score == null || Number.isNaN(score)) return "var(--muted)";
   if (score >= 85) return "#22c55e";
   if (score >= 70) return "#3b82f6";
   if (score >= 60) return "#f59e0b";
