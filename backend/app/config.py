@@ -3,7 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.constants import DEFAULT_RAG_BACKEND, RAGBackendKind
@@ -12,12 +12,17 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
-    """全局配置，支持环境变量与 .env 文件。"""
+    """全局配置，支持环境变量与 .env 文件。
+
+    关键安全相关字段同时接受无前缀与 ``INTERVIEWOS_`` 前缀两种环境变量名，
+    避免文档与实现漂移导致运维误以为已收紧配置。
+    """
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     # LLM BYOK
@@ -40,11 +45,18 @@ class Settings(BaseSettings):
     # 服务
     database_url: str = f"sqlite:///{BACKEND_ROOT / 'data' / 'interviewos.db'}"
     upload_dir: str = str(BACKEND_ROOT / "uploads")
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    cors_origins: str = Field(
+        default="http://localhost:3000,http://127.0.0.1:3000",
+        validation_alias=AliasChoices("CORS_ORIGINS", "INTERVIEWOS_CORS_ORIGINS"),
+    )
     # 默认仅本机；局域网调试请显式设 HOST=0.0.0.0
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
-    env: str = Field(default="dev", description="dev / prod，决定 allow_local_llm 与 CORS 严格度")
+    env: str = Field(
+        default="dev",
+        description="dev / prod，决定 allow_local_llm 与 CORS 严格度",
+        validation_alias=AliasChoices("ENV", "INTERVIEWOS_ENV"),
+    )
 
     # 语音
     whisper_model: str = "base"
@@ -58,10 +70,18 @@ class Settings(BaseSettings):
     interview_max_tool_rounds: int = Field(default=3, ge=0, le=6)
 
     # LLM 调用：是否允许本机/私网 base_url。生产必须为 False。
-    allow_local_llm: bool = Field(default=False)
+    allow_local_llm: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("ALLOW_LOCAL_LLM", "INTERVIEWOS_ALLOW_LOCAL_LLM"),
+    )
 
     # 限流：可信任的反向代理 CIDR 列表（逗号分隔）；空表示仅 request.client.host。
-    trusted_proxy_cidrs: str = Field(default="")
+    trusted_proxy_cidrs: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "TRUSTED_PROXY_CIDRS", "INTERVIEWOS_TRUSTED_PROXY_CIDRS"
+        ),
+    )
 
     @field_validator("cors_origins")
     @classmethod

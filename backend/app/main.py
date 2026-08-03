@@ -176,7 +176,7 @@ def _check_cors_policy(s: Settings) -> None:
         if s.is_prod:
             raise RuntimeError(
                 "CORS 配置非法：生产环境 (env=prod) 不允许 allow_origins=['*']。"
-                "请在环境变量 INTERVIEWOS_CORS_ORIGINS 中显式列出可信来源。"
+                "请在环境变量 CORS_ORIGINS（或 INTERVIEWOS_CORS_ORIGINS）中显式列出可信来源。"
             )
         logger.warning("CORS 允许 * 通配，仅 dev 环境；生产环境已强制要求显式来源")
 
@@ -188,7 +188,13 @@ app.add_middleware(
     allow_credentials=True,
     # 显式列出方法，避免 `*` 在某些代理下被丢弃
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-Id", TRACE_ID_HEADER],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-Request-Id",
+        TRACE_ID_HEADER,
+        "X-Interview-Token",
+    ],
     expose_headers=[TRACE_ID_HEADER],
     max_age=600,
 )
@@ -271,11 +277,11 @@ async def _unsafe_url_handler(request: Request, exc: UnsafeURLError) -> JSONResp
 
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """兜底未捕获异常，避免前端只看到无详情的 Internal Server Error。"""
+    """兜底未捕获异常；对外仅通用文案，细节仅记日志。"""
     logger.exception("未处理异常 path=%s: %s", request.url.path, exc)
     return _envelope(
         code="internal_error",
-        message=f"服务器内部错误：{type(exc).__name__}：{exc}",
+        message="服务器内部错误，请稍后重试",
         status=500,
         request=request,
     )

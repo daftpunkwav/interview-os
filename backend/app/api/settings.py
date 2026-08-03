@@ -65,7 +65,7 @@ def update_llm_settings(body: LLMSettingsUpdate, db: Session = Depends(get_db)):
             status_code=400,
             detail=(
                 "LLM API 地址不安全，仅允许 https 公网地址。"
-                "若需本地 LLM，请设置 INTERVIEWOS_ALLOW_LOCAL_LLM=true"
+                "若需本地 LLM，请设置 ALLOW_LOCAL_LLM=true（或 INTERVIEWOS_ALLOW_LOCAL_LLM=true）"
             ),
         )
 
@@ -126,7 +126,7 @@ async def test_llm_connection(db: Session = Depends(get_db)):
             status_code=400,
             detail=(
                 "LLM API 地址不安全。"
-                "若需本地 LLM，请设置 INTERVIEWOS_ALLOW_LOCAL_LLM=true"
+                "若需本地 LLM，请设置 ALLOW_LOCAL_LLM=true（或 INTERVIEWOS_ALLOW_LOCAL_LLM=true）"
             ),
         )
     try:

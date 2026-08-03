@@ -41,6 +41,7 @@ from app.core.security import (
     UnsafeURLError,
     assert_safe_http_url,
     is_safe_http_url,
+    make_pinned_async_client,
     redact_api_key,
 )
 from app.services.company.knowledge import BUILTIN_COMPANIES
@@ -201,6 +202,12 @@ class StepFunRetrievalRAG:
             "Content-Type": "application/json",
         }
 
+    def _pinned_client(self, api_base: str) -> httpx.AsyncClient:
+        """与 LLM client 一致：出站 DNS pin，缓解重绑定 TOCTOU。"""
+        return make_pinned_async_client(
+            api_base, allow_local=False, timeout=_STEPFUN_REQUEST_TIMEOUT
+        )
+
     async def _create_vector_store(self, api_base: str, api_key: str) -> str:
         """POST /vector_stores → 返回 vector_store_id。"""
         url = f"{api_base}/vector_stores"
@@ -208,7 +215,7 @@ class StepFunRetrievalRAG:
         if not is_safe_http_url(url, allow_local=False):
             raise UnsafeURLError(f"StepFun URL 被拒: {url}")
         payload = {"name": _STEPFUN_VS_NAME}
-        async with httpx.AsyncClient(timeout=_STEPFUN_REQUEST_TIMEOUT) as client:
+        async with self._pinned_client(api_base) as client:
             resp = await client.post(url, headers=self._headers(), json=payload)
             if resp.status_code >= 400:
                 logger.warning(
@@ -232,7 +239,7 @@ class StepFunRetrievalRAG:
         files = {"file": (_STEPFUN_FILE_NAME, content, "application/jsonl")}
         data = {"purpose": "retrieval"}
         headers = {"Authorization": f"Bearer {api_key}"}
-        async with httpx.AsyncClient(timeout=_STEPFUN_REQUEST_TIMEOUT) as client:
+        async with self._pinned_client(api_base) as client:
             resp = await client.post(url, headers=headers, data=data, files=files)
             resp.raise_for_status()
             payload = resp.json()
@@ -253,7 +260,7 @@ class StepFunRetrievalRAG:
         if not is_safe_http_url(url, allow_local=False):
             raise UnsafeURLError(f"StepFun URL 被拒: {url}")
         payload = {"file_ids": file_id}
-        async with httpx.AsyncClient(timeout=_STEPFUN_REQUEST_TIMEOUT) as client:
+        async with self._pinned_client(api_base) as client:
             resp = await client.post(url, headers=self._headers(), json=payload)
             resp.raise_for_status()
 
@@ -267,7 +274,7 @@ class StepFunRetrievalRAG:
         url = f"{api_base}/vector_stores/{vector_store_id}"
         if not is_safe_http_url(url, allow_local=False):
             raise UnsafeURLError(f"StepFun URL 被拒: {url}")
-        async with httpx.AsyncClient(timeout=_STEPFUN_REQUEST_TIMEOUT) as client:
+        async with self._pinned_client(api_base) as client:
             resp = await client.get(url, headers=self._headers())
             if resp.status_code == 404:
                 raise RuntimeError(f"StepFun vector_store 不存在: id={vector_store_id}")

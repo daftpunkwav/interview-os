@@ -51,7 +51,7 @@ def test_interview_style_options_match_schema(monkeypatch) -> None:
     回归 S-05：曾出现 options 暴露 4 种但 schema 仅允许 2 种，导致前端
     选择 guided/continuous/challenging 后提交 422。
     """
-    from app.api.options import INTERVIEW_STYLES
+    from app.core.options_data import INTERVIEW_STYLES
     from app.schemas import InterviewConfig
 
     option_ids = {s["id"] for s in INTERVIEW_STYLES}

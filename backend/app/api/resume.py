@@ -504,13 +504,13 @@ async def analyze_resume(resume_id: int, db: Session = Depends(get_db)):
         logger.warning("简历评价 LLM JSON 失败: %s", e)
         raise HTTPException(
             status_code=502,
-            detail=f"模型未返回有效评价结果：{e}",
+            detail="模型未返回有效评价结果，请稍后重试",
         ) from e
     except Exception as e:
         logger.exception("简历评价调用失败")
         raise HTTPException(
             status_code=502,
-            detail=f"评价请求失败：{type(e).__name__}：{e}",
+            detail="评价请求失败，请稍后重试",
         ) from e
 
     try:
@@ -532,7 +532,7 @@ async def analyze_resume(resume_id: int, db: Session = Depends(get_db)):
         logger.warning("简历评价结构校验失败: %s", e, exc_info=True)
         raise HTTPException(
             status_code=502,
-            detail=f"模型返回结构不符合评价 schema：{e}",
+            detail="模型返回结构不符合评价格式，请稍后重试",
         ) from e
 
     try:
@@ -544,7 +544,7 @@ async def analyze_resume(resume_id: int, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(
             status_code=500,
-            detail=f"评价结果写入失败：{type(e).__name__}：{e}",
+            detail="评价结果写入失败，请稍后重试",
         ) from e
 
     return analysis.model_dump()

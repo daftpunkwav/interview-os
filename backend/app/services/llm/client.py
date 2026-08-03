@@ -540,8 +540,17 @@ class LLMClient:
             "model": model or settings.effective_embeddings_model,
             "input": texts,
         }
-        # embeddings 使用专用 key（如有），否则回退 chat key。
-        embed_key = settings.effective_embeddings_key or self.api_key
+        # embeddings 使用专用 key（如有），否则回退已解密的 chat key。
+        # Settings 中的 key 可能是明文或 enc:v2；与 from_db 路径保持一致。
+        raw_embed = settings.effective_embeddings_key
+        try:
+            embed_key = (decrypt_secret(raw_embed) if raw_embed else None) or self.api_key
+        except LegacySecretFormatError as e:
+            logger.error("Embeddings API Key 使用旧版加密格式，请重新保存: %s", e)
+            embed_key = self.api_key
+        except ValueError as e:
+            logger.error("Embeddings API Key 解密失败: %s", e)
+            embed_key = self.api_key
         headers = {
             "Authorization": f"Bearer {embed_key}",
             "Content-Type": "application/json",

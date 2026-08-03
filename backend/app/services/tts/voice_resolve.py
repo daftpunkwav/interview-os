@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.api.options import AVATARS
+from app.core.options_data import AVATARS
 from app.services.tts.edge import DEFAULT_VOICE
 
 # avatar_id → Neural 音色（与 options.AVATARS.voice 保持一致）
@@ -139,7 +139,7 @@ def with_emotion(base: VoiceProsody, emotion: str | None) -> VoiceProsody:
 
 def voice_label(voice_id: str) -> str:
     """给人机可读的音色短名（配置页展示用）。"""
-    from app.api.options import TTS_VOICES
+    from app.core.options_data import TTS_VOICES
 
     for v in TTS_VOICES:
         if v.get("id") == voice_id:

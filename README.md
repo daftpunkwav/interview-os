@@ -86,7 +86,7 @@ cp .env.example .env
 # 编辑 .env 填入你的 API Key
 
 # 启动
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 > 推荐 **生产环境** 显式设置 `INTERVIEWOS_SECRET_KEY` 给 API Key 加解密用。

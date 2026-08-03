@@ -12,8 +12,43 @@ if (process.env.NODE_ENV !== "production") {
   console.info(`[next.config] API rewrite → ${backendOrigin}`);
 }
 
+const securityHeaders = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(self), microphone=(self), geolocation=()",
+  },
+  // 宽松 CSP：允许 TalkingHead / Three / 同源 API；禁止默认外联脚本
+  {
+    key: "Content-Security-Policy",
+    value: [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      "connect-src 'self' http: https: ws: wss:",
+      "media-src 'self' blob:",
+      "worker-src 'self' blob:",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; "),
+  },
+];
+
 const nextConfig = {
   transpilePackages: ["@met4citizen/talkinghead", "three"],
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: securityHeaders,
+      },
+    ];
+  },
   async rewrites() {
     return [
       {
