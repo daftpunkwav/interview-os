@@ -69,6 +69,15 @@ async def lifespan(app: FastAPI):
     # 启动
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
     await asyncio.to_thread(_bootstrap_db_and_seed)
+    # 企业知识库索引（异步，失败不阻断启动）
+    rag_db = SessionLocal()
+    try:
+        await _ensure_rag_index(rag_db)
+    finally:
+        try:
+            rag_db.close()
+        except Exception:
+            pass
     logger.info("InterviewOS 后端已启动 env=%s", settings.env)
     try:
         yield

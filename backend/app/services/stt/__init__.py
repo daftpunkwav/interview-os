@@ -11,7 +11,7 @@ from app.services.stt.cloud import (
     resolve_cloud_stt_model,
     transcribe_pcm_cloud,
 )
-from app.services.stt.router import transcribe_with_handler
+from app.services.stt.router import SttResult, transcribe_with_handler
 from app.services.stt.whisper import (
     transcribe_pcm_base64_async as transcribe_local_async,
     warmup_whisper,
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "LOCAL_WHISPER_SIZES",
     "SttCredentials",
+    "SttResult",
     "is_local_stt_model",
     "resolve_cloud_stt_model",
     "transcribe_utterance",
@@ -39,13 +40,32 @@ async def transcribe_utterance(
     prefer_cloud: bool = True,
     creds: SttCredentials | None = None,
 ) -> str:
-    """转写一整段用户发言。
+    """转写一整段用户发言，返回纯文本（兼容旧调用）。"""
+    result = await transcribe_utterance_result(
+        pcm_b64,
+        sample_rate=sample_rate,
+        model=model,
+        api_base=api_base,
+        api_key=api_key,
+        prefer_cloud=prefer_cloud,
+        creds=creds,
+    )
+    return result.text
 
-    优先使用 ``creds``（独立识别处理器）。若仅传入旧参数且无 Key，走本地 Whisper。
-    **不会**把面试思考 LLM 的 Key 当作默认 ASR Key。
-    """
+
+async def transcribe_utterance_result(
+    pcm_b64: str,
+    *,
+    sample_rate: int = 16000,
+    model: str = "whisper-1",
+    api_base: str = "",
+    api_key: str = "",
+    prefer_cloud: bool = True,
+    creds: SttCredentials | None = None,
+) -> SttResult:
+    """转写并返回含 fallback 元数据的结果。"""
     if not pcm_b64:
-        return ""
+        return SttResult(text="", provider="local")
 
     if creds is not None:
         return await transcribe_with_handler(
@@ -71,6 +91,7 @@ async def transcribe_utterance(
         )
 
     local_model = model if is_local_stt_model(model) else "base"
-    return await transcribe_local_async(
+    text = await transcribe_local_async(
         pcm_b64, sample_rate=sample_rate, model_size=local_model
     )
+    return SttResult(text=text, provider="local")

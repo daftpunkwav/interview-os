@@ -4,13 +4,18 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import TypeAdapter
 from sqlalchemy.orm import Session
 
 from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, SessionStatus
 from app.core.ratelimit import rate_limit_dep
-from app.core.session_auth import assert_session_token, extract_token, new_access_token
+from app.core.session_auth import (
+    assert_session_token,
+    extract_token,
+    new_access_token,
+    set_session_cookie,
+)
 from app.database import get_db
 from app.models import InterviewSession
 from app.schemas import (
@@ -33,7 +38,12 @@ _CHAT_MSG_ADAPTER: TypeAdapter[list[ChatMessage]] = TypeAdapter(list[ChatMessage
 
 
 @router.post("/sessions", response_model=InterviewSessionResponse)
-def create_session(config: InterviewConfig, db: Session = Depends(get_db)):
+def create_session(
+    config: InterviewConfig,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     token = new_access_token()
     session = InterviewSession(
         role=config.role,
@@ -53,7 +63,15 @@ def create_session(config: InterviewConfig, db: Session = Depends(get_db)):
     db.add(session)
     db.commit()
     db.refresh(session)
-    return _to_response(session, include_token=True)
+    set_session_cookie(
+        response,
+        scope="iv",
+        session_id=session.id,
+        token=token,
+        secure=request.url.scheme == "https",
+    )
+    # 令牌仅经 HttpOnly Cookie 下发，响应体不再回传
+    return _to_response(session, include_token=False)
 
 
 @router.get("/sessions", response_model=list[InterviewSessionResponse])

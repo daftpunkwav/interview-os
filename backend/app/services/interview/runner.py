@@ -343,7 +343,7 @@ class InterviewRunner:
             )
         except Exception as e:
             logger.exception("开场回合失败: %s", e)
-            yield StreamEvent.make_error(str(e))
+            yield StreamEvent.make_error("面试官服务暂时不可用，请稍后重试")
 
     # ------------------------------------------------------------------
     # 常规回合
@@ -483,7 +483,7 @@ class InterviewRunner:
             )
         except Exception as e:
             logger.exception("回合执行失败: %s", e)
-            yield StreamEvent.make_error(str(e))
+            yield StreamEvent.make_error("面试官服务暂时不可用，请稍后重试")
 
 
 
@@ -572,7 +572,7 @@ class InterviewRunner:
             )
         except Exception as e:
             logger.exception("收尾发言失败: %s", e)
-            yield StreamEvent.make_error(str(e))
+            yield StreamEvent.make_error("面试官服务暂时不可用，请稍后重试")
 
 
 __all__ = ["InterviewRunner", "StreamEvent", "EventKind"]

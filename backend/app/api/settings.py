@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.constants import DEFAULT_LLM_PROTOCOL, DEFAULT_LLM_RATE_LIMIT_PER_MINUTE
+from app.core.local_only import require_local_peer
 from app.core.ratelimit import rate_limit_dep
 from app.core.security import UnsafeURLError, is_safe_http_url
 from app.core.secrets import encrypt_secret
@@ -27,7 +28,7 @@ from app.services.llm.client import LLMClient
 from app.services.voice.catalog import catalog_payload, find_provider
 from app.services.voice.stage_tests import test_recognize, test_reason, test_speak
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_local_peer)])
 
 _SECRET_KEEP = "keep"
 
@@ -51,13 +52,22 @@ def _maybe_encrypt(value: str | None, current: str) -> str:
 def _safe_base(url: str, *, label: str) -> None:
     if not (url or "").strip():
         return
-    allow_local = bool(get_settings().allow_local_llm)
-    if not is_safe_http_url(url, allow_local=allow_local):
+    settings = get_settings()
+    allow_local = bool(settings.allow_local_llm)
+    require_https = bool(settings.is_prod)
+    if not is_safe_http_url(
+        url, allow_local=allow_local, require_https=require_https
+    ):
         raise HTTPException(
             status_code=400,
             detail=(
-                f"{label} 地址不安全，仅允许 https 公网地址。"
-                "若需本地服务，请设置 ALLOW_LOCAL_LLM=true"
+                f"{label} 地址不安全，"
+                + (
+                    "生产环境仅允许 https 公网地址。"
+                    if require_https
+                    else "仅允许 http(s) 公网地址。"
+                )
+                + "若需本地服务，请设置 ALLOW_LOCAL_LLM=true（仅非 prod）"
             ),
         )
 

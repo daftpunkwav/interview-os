@@ -204,8 +204,13 @@ class StepFunRetrievalRAG:
 
     def _pinned_client(self, api_base: str) -> httpx.AsyncClient:
         """与 LLM client 一致：出站 DNS pin，缓解重绑定 TOCTOU。"""
+        from app.config import get_settings
+
         return make_pinned_async_client(
-            api_base, allow_local=False, timeout=_STEPFUN_REQUEST_TIMEOUT
+            api_base,
+            allow_local=False,
+            require_https=bool(get_settings().is_prod),
+            timeout=_STEPFUN_REQUEST_TIMEOUT,
         )
 
     async def _create_vector_store(self, api_base: str, api_key: str) -> str:

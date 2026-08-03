@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, SessionStatus
+from app.core.local_only import require_local_peer
 from app.core.ratelimit import rate_limit_dep
 from app.core.security import redact_api_key
 from app.core.session_auth import assert_session_token, extract_token
@@ -48,7 +49,7 @@ def _safe_json_list(raw: str | None, *, field: str, record_id: int) -> list:
         return []
 
 
-@router.get("/growth/history")
+@router.get("/growth/history", dependencies=[Depends(require_local_peer)])
 def get_growth_history(db: Session = Depends(get_db)):
     records = db.query(GrowthRecord).order_by(GrowthRecord.created_at.desc()).limit(20).all()
     return [
@@ -65,7 +66,7 @@ def get_growth_history(db: Session = Depends(get_db)):
     ]
 
 
-@router.get("/growth/system-insights")
+@router.get("/growth/system-insights", dependencies=[Depends(require_local_peer)])
 def get_system_growth_insights():
     """系统级自我成长洞察（跨面试聚合，非候选人个人隐私外泄）。"""
     from app.services.growth.learning import get_system_insights

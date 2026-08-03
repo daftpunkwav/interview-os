@@ -7,7 +7,7 @@ SSE 流式错误仅返回脱敏后的提示文案，原始异常走 logger.excep
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -16,7 +16,12 @@ from app.agents.prep.agent import PrepAgent
 from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, SessionStatus
 from app.core.ratelimit import rate_limit_dep
 from app.core.security import redact_api_key
-from app.core.session_auth import assert_session_token, extract_token, new_access_token
+from app.core.session_auth import (
+    assert_session_token,
+    extract_prep_token,
+    new_access_token,
+    set_session_cookie,
+)
 from app.database import get_db
 from app.models import PrepSession
 from app.services.llm.client import LLMClient
@@ -40,7 +45,12 @@ class PrepMessageRequest(BaseModel):
 
 
 @router.post("/sessions")
-async def create_prep_session(body: PrepCreateRequest, db: Session = Depends(get_db)):
+async def create_prep_session(
+    body: PrepCreateRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     token = new_access_token()
     # status 列由模型 + migrate 保证；构造时显式写入 active
     kwargs: dict = {
@@ -56,7 +66,14 @@ async def create_prep_session(body: PrepCreateRequest, db: Session = Depends(get
     db.add(session)
     db.commit()
     db.refresh(session)
-    return {"id": session.id, "access_token": token}
+    set_session_cookie(
+        response,
+        scope="prep",
+        session_id=session.id,
+        token=token,
+        secure=request.url.scheme == "https",
+    )
+    return {"id": session.id}
 
 
 @router.post(
@@ -74,7 +91,7 @@ async def prep_message(
     session_id: int,
     body: PrepMessageRequest,
     db: Session = Depends(get_db),
-    access: str | None = Depends(extract_token),
+    access: str | None = Depends(extract_prep_token),
 ):
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:
@@ -103,7 +120,7 @@ async def prep_message_stream(
     session_id: int,
     body: PrepMessageRequest,
     db: Session = Depends(get_db),
-    access: str | None = Depends(extract_token),
+    access: str | None = Depends(extract_prep_token),
 ):
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:
@@ -141,7 +158,7 @@ async def prep_message_stream(
 def get_prep_messages(
     session_id: int,
     db: Session = Depends(get_db),
-    access: str | None = Depends(extract_token),
+    access: str | None = Depends(extract_prep_token),
 ):
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:

@@ -352,6 +352,13 @@ export type ServerEvent =
   | { type: "phase_changed"; phase: string }
   | { type: "interview_complete"; session_id?: number; overall_score?: number | null; report_id?: number }
   | { type: "server_ping"; t: number }
+  | {
+      type: "info";
+      message: string;
+      fallback?: boolean;
+      provider?: string;
+      requested_provider?: string | null;
+    }
   | SSEErrorEvent;
 
 export type ClientEvent =

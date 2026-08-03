@@ -132,6 +132,11 @@ def _is_local_allowed() -> bool:
     return bool(get_settings().allow_local_llm)
 
 
+def _require_https() -> bool:
+    """生产环境出站强制 HTTPS。"""
+    return bool(get_settings().is_prod)
+
+
 class LLMClient:
     """支持 OpenAI Chat Completions 格式的 BYOK 客户端。"""
 
@@ -221,7 +226,7 @@ class LLMClient:
         max_tokens: int | None = None,
     ) -> str:
         """发送 Chat Completions 请求并返回文本内容。"""
-        if not is_safe_http_url(self.api_base, allow_local=_is_local_allowed()):
+        if not is_safe_http_url(self.api_base, allow_local=_is_local_allowed(), require_https=_require_https()):
             raise UnsafeURLError(f"LLM api_base 不安全: {self.api_base}")
         url = f"{self.api_base}/chat/completions"
         payload = self._build_payload(
@@ -236,7 +241,7 @@ class LLMClient:
         # pin DNS：校验后固定 IP 建连，避免重绑定 TOCTOU
         # 深度评价等长 JSON 任务常超过 60s（尤其开启 reasoning 时）
         async with make_pinned_async_client(
-            self.api_base, allow_local=_is_local_allowed(), timeout=180.0
+            self.api_base, allow_local=_is_local_allowed(), require_https=_require_https(), timeout=180.0
         ) as client:
             try:
                 resp = await _retry_request(
@@ -279,7 +284,7 @@ class LLMClient:
 
         用于面试 Agent 的工具调用循环；无 tool_calls 时仅含 content。
         """
-        if not is_safe_http_url(self.api_base, allow_local=_is_local_allowed()):
+        if not is_safe_http_url(self.api_base, allow_local=_is_local_allowed(), require_https=_require_https()):
             raise UnsafeURLError(f"LLM api_base 不安全: {self.api_base}")
         url = f"{self.api_base}/chat/completions"
         payload = self._build_payload(
@@ -290,7 +295,7 @@ class LLMClient:
         headers = self._headers()
 
         async with make_pinned_async_client(
-            self.api_base, allow_local=_is_local_allowed(), timeout=90.0
+            self.api_base, allow_local=_is_local_allowed(), require_https=_require_https(), timeout=90.0
         ) as client:
             try:
                 resp = await _retry_request(
@@ -330,7 +335,7 @@ class LLMClient:
 
         4xx 立即失败；429/5xx 重试。流式响应在重试前需先 aclose 防连接泄漏。
         """
-        if not is_safe_http_url(self.api_base, allow_local=_is_local_allowed()):
+        if not is_safe_http_url(self.api_base, allow_local=_is_local_allowed(), require_https=_require_https()):
             raise UnsafeURLError(f"LLM api_base 不安全: {self.api_base}")
         url = f"{self.api_base}/chat/completions"
         payload = self._build_payload(messages, temperature, stream=True, tools=tools)
@@ -343,7 +348,7 @@ class LLMClient:
         # 已输出 token 后禁止重试，避免 TTS 重复播报相同片段
         tokens_yielded = False
         async with make_pinned_async_client(
-            self.api_base, allow_local=_is_local_allowed(), timeout=120.0
+            self.api_base, allow_local=_is_local_allowed(), require_https=_require_https(), timeout=120.0
         ) as client:
             for attempt in range(max_retries + 1):
                 try:
@@ -539,7 +544,7 @@ class LLMClient:
         """
         settings = get_settings()
         base = settings.effective_embeddings_base
-        if not is_safe_http_url(base, allow_local=_is_local_allowed()):
+        if not is_safe_http_url(base, allow_local=_is_local_allowed(), require_https=_require_https()):
             raise UnsafeURLError(f"Embeddings api_base 不安全: {base}")
 
         url = f"{base}/embeddings"
@@ -567,7 +572,7 @@ class LLMClient:
             "Content-Type": "application/json",
         }
         async with make_pinned_async_client(
-            base, allow_local=_is_local_allowed(), timeout=60.0
+            base, allow_local=_is_local_allowed(), require_https=_require_https(), timeout=60.0
         ) as client:
             try:
                 resp = await _retry_request(

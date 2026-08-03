@@ -8,10 +8,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Literal
 
-
-FollowupCategory = Literal["vague", "missing_data", "tech_hole", "off_topic", "none"]
+from app.core.constants import FollowupCategory
 
 
 # 中文模糊词（高频口语化弱化词）

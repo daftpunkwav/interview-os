@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.services.stt import SttCredentials, SttResult
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -73,10 +74,7 @@ class TestBargeEpoch:
         h._playback_generation = 3
         h._stream_epoch = 1
         h._tts_queue.clear = AsyncMock()
-        db = MagicMock()
-        session = MagicMock()
-        session.agent_state = "{}"
-        await h._on_candidate_barge_in(db, session)
+        await h._on_candidate_barge_in()
         assert h._stream_epoch == 2
         assert h._playback_generation == 4
         assert h._awaiting_playback_gen == 4
@@ -153,7 +151,7 @@ class TestSttAlwaysRuns:
         h.turn_state = TurnState.USER_SPEAKING
         h.agent = None
         h.llm = MagicMock(api_base="https://api.openai.com/v1", api_key="sk-t")
-        h._stt_creds = ws_handler.SttCredentials(
+        h._stt_creds = SttCredentials(
             provider="openai_compat",
             api_base=h.llm.api_base,
             api_key="sk-stt",
@@ -161,9 +159,9 @@ class TestSttAlwaysRuns:
         )
         h._process_user_text = AsyncMock()
         with patch(
-            "app.realtime.ws_handler.transcribe_utterance",
+            "app.realtime.turn_coordinator.transcribe_utterance_result",
             new_callable=AsyncMock,
-            return_value="这是一段足够长的中文技术回答内容",
+            return_value=SttResult(text="这是一段足够长的中文技术回答内容", provider="local"),
         ) as mock_tr:
             await h._on_user_turn_end(
                 {
@@ -183,7 +181,7 @@ class TestSttAlwaysRuns:
         h.turn_state = TurnState.USER_SPEAKING
         h.agent = None
         h.llm = MagicMock(api_base="https://api.openai.com/v1", api_key="sk-t")
-        h._stt_creds = ws_handler.SttCredentials(
+        h._stt_creds = SttCredentials(
             provider="openai_compat",
             api_base=h.llm.api_base,
             api_key="sk-stt",
@@ -191,9 +189,9 @@ class TestSttAlwaysRuns:
         )
         h._process_user_text = AsyncMock()
         with patch(
-            "app.realtime.ws_handler.transcribe_utterance",
+            "app.realtime.turn_coordinator.transcribe_utterance_result",
             new_callable=AsyncMock,
-            return_value="I used React hooks",
+            return_value=SttResult(text="I used React hooks", provider="local"),
         ) as mock_tr:
             await h._on_user_turn_end(
                 {

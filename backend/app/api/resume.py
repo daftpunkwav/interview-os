@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.local_only import require_local_peer
 from app.core.prompts import (
     normalize_cn_punctuation_tree,
     with_agent_output_rules,
@@ -40,7 +41,7 @@ from app.schemas import CandidateProfile, ResumeAnalysis, ResumeResponse
 from app.services.llm.client import LLMClient
 from app.services.resume.parser import extract_text_from_file, parse_resume_with_llm
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_local_peer)])
 logger = logging.getLogger(__name__)
 settings = get_settings()
 

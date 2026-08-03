@@ -14,7 +14,9 @@ async def interview_websocket(
     session_id: int,
     token: str = Query(default="", description="会话能力令牌（兼容；优先子协议）"),
 ):
-    access, chosen_proto = extract_ws_token(websocket, query_token=token)
+    access, chosen_proto = extract_ws_token(
+        websocket, session_id=session_id, query_token=token
+    )
     # 若客户端用 interviewos.<token> 子协议传令牌，握手必须回显该子协议
     echo_proto = chosen_proto or (ws_token_subprotocol(access) if access else None)
     handler = InterviewWSHandler(

@@ -105,6 +105,7 @@ async def transcribe_pcm_cloud(
         async with make_pinned_async_client(
             url,
             allow_local=settings.allow_local_llm,
+            require_https=bool(settings.is_prod),
             timeout=45.0,
         ) as client:
             resp = await client.post(url, headers=headers, data=data, files=files)

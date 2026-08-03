@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.services.stt import SttCredentials, SttResult
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -68,9 +69,9 @@ class TestCloudSttPath:
         h.agent = None
         h._process_user_text = AsyncMock()
         with patch(
-            "app.realtime.ws_handler.transcribe_utterance",
+            "app.realtime.turn_coordinator.transcribe_utterance_result",
             new_callable=AsyncMock,
-            return_value="你好面试官都能听到的",
+            return_value=SttResult(text="你好面试官都能听到的", provider="local"),
         ) as mock_tr:
             await h._on_user_turn_end(
                 {

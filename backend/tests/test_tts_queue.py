@@ -16,7 +16,7 @@ async def _fake_synth(sentence: str, *, creds=None, rate="+0%", pitch="+0Hz") ->
 
 async def test_enqueue_processes_in_order(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.realtime.ws_handler.synthesize_speech", _fake_synth,
+        "app.realtime.voice_pipeline.synthesize_speech", _fake_synth,
     )
 
     sent: list[tuple[str, str]] = []
@@ -39,7 +39,7 @@ async def test_enqueue_processes_in_order(monkeypatch) -> None:
 
 async def test_enqueue_skips_empty(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.realtime.ws_handler.synthesize_speech", _fake_synth,
+        "app.realtime.voice_pipeline.synthesize_speech", _fake_synth,
     )
     sent: list[str] = []
 
@@ -64,7 +64,7 @@ async def test_enqueue_does_not_block_producer(monkeypatch) -> None:
         return f"audio:{sentence}"
 
     monkeypatch.setattr(
-        "app.realtime.ws_handler.synthesize_speech", slow_synth,
+        "app.realtime.voice_pipeline.synthesize_speech", slow_synth,
     )
 
     sent: list[str] = []

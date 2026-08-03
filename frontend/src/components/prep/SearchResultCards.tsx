@@ -11,6 +11,19 @@ function hostOf(url: string): string {
   }
 }
 
+/** 仅允许 http(s) 链接，防止 javascript:/data: 等危险协议。 */
+function safeHttpUrl(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.protocol === "http:" || u.protocol === "https:") {
+      return u.toString();
+    }
+  } catch {
+    /* invalid */
+  }
+  return null;
+}
+
 /** 面试准备：可点击打开原文的搜索结果卡片。 */
 export function SearchResultCards({ groups }: { groups: PrepSearchGroup[] }) {
   const visible = groups.filter((g) => g.results?.length > 0);
@@ -30,37 +43,51 @@ export function SearchResultCards({ groups }: { groups: PrepSearchGroup[] }) {
             </p>
           ) : null}
           <ul className="space-y-1.5">
-            {group.results.map((hit) => (
-              <li key={hit.url}>
-                <a
-                  href={hit.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block rounded-[var(--radius)] border border-[var(--border)] bg-[var(--background)] px-3 py-2 hover:border-[var(--brand)]/40 hover:bg-[var(--brand-softer)] transition-colors"
-                >
-                  <div className="flex items-start gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-[var(--brand-deep)] leading-snug line-clamp-2">
-                        {hit.title}
+            {group.results.map((hit) => {
+              const href = safeHttpUrl(hit.url);
+              const inner = (
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-[var(--brand-deep)] leading-snug line-clamp-2">
+                      {hit.title}
+                    </p>
+                    <p className="text-[11px] text-[var(--muted)] mt-0.5 truncate">
+                      {hostOf(hit.url)}
+                    </p>
+                    {hit.snippet ? (
+                      <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed line-clamp-2">
+                        {hit.snippet}
                       </p>
-                      <p className="text-[11px] text-[var(--muted)] mt-0.5 truncate">
-                        {hostOf(hit.url)}
-                      </p>
-                      {hit.snippet ? (
-                        <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed line-clamp-2">
-                          {hit.snippet}
-                        </p>
-                      ) : null}
-                    </div>
+                    ) : null}
+                  </div>
+                  {href ? (
                     <ExternalLink
                       size={14}
                       className="shrink-0 mt-0.5 text-[var(--muted)]"
                       aria-hidden
                     />
-                  </div>
-                </a>
-              </li>
-            ))}
+                  ) : null}
+                </div>
+              );
+              return (
+                <li key={hit.url}>
+                  {href ? (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer nofollow"
+                      className="block rounded-[var(--radius)] border border-[var(--border)] bg-[var(--background)] px-3 py-2 hover:border-[var(--brand)]/40 hover:bg-[var(--brand-softer)] transition-colors"
+                    >
+                      {inner}
+                    </a>
+                  ) : (
+                    <div className="block rounded-[var(--radius)] border border-[var(--border)] bg-[var(--background)] px-3 py-2">
+                      {inner}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       ))}

@@ -160,12 +160,13 @@ def is_safe_http_url(
     url: str,
     *,
     allow_local: bool = False,
+    require_https: bool = False,
     timeout: float = 3.0,
     allowed_ports: frozenset[int] | None = None,
 ) -> bool:
     """校验 ``url`` 是否为安全可外发的 HTTP/HTTPS URL。
 
-    - 仅允许 http(s) 协议；
+    - 仅允许 http(s) 协议；``require_https=True`` 时拒绝 http；
     - 多 A 记录：**任一** 不安全即拒绝；
     - ``allow_local=False`` 时拒绝非常规端口（默认仅 80/443）；
     - ``allow_local=True`` 放行 loopback，私网/metadata 仍拒。
@@ -183,6 +184,8 @@ def is_safe_http_url(
         return False
 
     if parsed.scheme not in ("http", "https"):
+        return False
+    if require_https and parsed.scheme != "https":
         return False
     if not parsed.hostname:
         return False
@@ -203,10 +206,16 @@ def assert_safe_http_url(
     url: str,
     *,
     allow_local: bool = False,
+    require_https: bool = False,
     allowed_ports: frozenset[int] | None = None,
 ) -> None:
     """不安全时抛出 :class:`UnsafeURLError`。"""
-    if not is_safe_http_url(url, allow_local=allow_local, allowed_ports=allowed_ports):
+    if not is_safe_http_url(
+        url,
+        allow_local=allow_local,
+        require_https=require_https,
+        allowed_ports=allowed_ports,
+    ):
         raise UnsafeURLError(f"URL 被策略拒绝: {url!r}")
 
 
@@ -229,6 +238,7 @@ def pin_safe_http_url(
     url: str,
     *,
     allow_local: bool = False,
+    require_https: bool = False,
     allowed_ports: frozenset[int] | None = None,
 ) -> PinnedHttpTarget:
     """单次 DNS 解析 → 校验全部候选 → pin 首个安全 IP。
@@ -245,6 +255,8 @@ def pin_safe_http_url(
 
     if parsed.scheme not in ("http", "https"):
         raise UnsafeURLError(f"URL 协议不安全: {url!r}")
+    if require_https and parsed.scheme != "https":
+        raise UnsafeURLError(f"生产环境要求 HTTPS: {url!r}")
     hostname = parsed.hostname
     if not hostname:
         raise UnsafeURLError(f"URL 缺少主机名: {url!r}")
@@ -327,6 +339,7 @@ def make_pinned_async_client(
     url: str,
     *,
     allow_local: bool = False,
+    require_https: bool = False,
     timeout: float = 60.0,
     allowed_ports: frozenset[int] | None = None,
 ) -> httpx.AsyncClient:
@@ -335,7 +348,10 @@ def make_pinned_async_client(
     请求仍使用原始 URL（含 hostname），由 transport 在出站时改写为 pin IP。
     """
     target = pin_safe_http_url(
-        url, allow_local=allow_local, allowed_ports=allowed_ports
+        url,
+        allow_local=allow_local,
+        require_https=require_https,
+        allowed_ports=allowed_ports,
     )
     transport = PinnedHostTransport(
         hostname=target.hostname,

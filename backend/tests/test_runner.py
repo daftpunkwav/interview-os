@@ -217,7 +217,7 @@ def test_stream_turn_emits_error_on_llm_failure(db, monkeypatch) -> None:
 
     events = asyncio.run(run())
     errors = [e for e in events if e.kind == EventKind.ERROR]
-    assert errors and "LLM 不可用" in errors[0].error
+    assert errors and "暂时不可用" in (errors[0].error or "")
 
 
 def test_stream_turn_injects_followup_probe_when_vague(db) -> None:

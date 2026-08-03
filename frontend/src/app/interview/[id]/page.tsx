@@ -13,7 +13,6 @@ import { PHASE_LABELS } from "@/config/phases";
 import { toast } from "@/components/Toast";
 import { Flag, Loader2, Send, WifiOff, Radio, Volume2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getSessionToken } from "@/lib/sessionToken";
 
 /** 去掉标点空白，用于回采相似度判断。 */
 function normalizeEchoText(s: string): string {
@@ -123,7 +122,20 @@ export default function InterviewRoomPage() {
 
 
   useEffect(() => {
-    setTokenMissing(!getSessionToken(sessionId));
+    let cancelled = false;
+    api
+      .getSession(sessionId)
+      .then(() => {
+        if (!cancelled) setTokenMissing(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        const status = e && typeof e === "object" && "status" in e ? Number(e.status) : 0;
+        setTokenMissing(status === 403 || status === 401);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId]);
 
   useEffect(() => {

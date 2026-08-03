@@ -1,9 +1,8 @@
 /** API 客户端封装
  *
  * 所有接口返回类型严格基于 ``src/types``：
- * - REST 调用走 Next rewrites（``/api/* → localhost:8000/*``）；
- * - 流式调用：本机 loopback 时走同源 ``/api/*``（避免 localhost vs 127.0.0.1 跨域），
- *   远程 ``STREAM_API_BASE`` 时直连后端以避免代理缓冲；
+ * - 鉴权相关 REST/SSE **直连后端**（``NEXT_PUBLIC_API_BASE`` /
+ *   ``STREAM_API_BASE``），``credentials: "include"`` 以携带 HttpOnly Cookie；
  * - 错误信息解析兼容 FastAPI 的 ``{detail: ...}``。
  */
 
@@ -32,14 +31,6 @@ import type {
   UserProfile,
 } from "@/types";
 import { getEnv } from "@/lib/env";
-import {
-  getSessionToken,
-  interviewAuthHeaders,
-  prepAuthHeaders,
-  savePrepToken,
-  saveSessionToken,
-  wsTokenSubprotocol,
-} from "@/lib/sessionToken";
 
 /* ====================================================================== */
 /* 流式 URL 解析                                                            */
@@ -48,13 +39,12 @@ import {
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
 /**
- * 解析流式接口最终 URL。
+ * 解析直连后端最终 URL（Cookie 与 WS 同 host）。
  *
- * 流式必须尽量**直连后端**，避免 Next rewrite 缓冲导致「一次性吐出」。
  * 本机场景把 STREAM_API_BASE 的 hostname 对齐到页面 hostname
  * （localhost ↔ 127.0.0.1），降低 CORS / PNA 失败概率。
  */
-function resolveStreamUrl(apiPath: string): string {
+function resolveBackendUrl(apiPath: string): string {
   const path = apiPath.startsWith("/") ? apiPath : `/${apiPath}`;
   const base = getEnv().STREAM_API_BASE;
   if (typeof window === "undefined") {
@@ -64,7 +54,6 @@ function resolveStreamUrl(apiPath: string): string {
     const u = new URL(base);
     const pageHost = window.location.hostname.toLowerCase();
     if (LOOPBACK_HOSTS.has(u.hostname) && LOOPBACK_HOSTS.has(pageHost)) {
-      // 与页面同源 loopback 名，便于 CORS Origin 与后端白名单一致
       u.hostname = pageHost === "[::1]" || pageHost === "::1" ? "localhost" : pageHost;
     }
     return `${u.origin}${path}`;
@@ -72,6 +61,9 @@ function resolveStreamUrl(apiPath: string): string {
     return `${base}${path}`;
   }
 }
+
+/** @deprecated 兼容旧名 */
+const resolveStreamUrl = resolveBackendUrl;
 
 /* ====================================================================== */
 /* 通用 fetch 封装                                                          */
@@ -128,14 +120,14 @@ async function request<T>(
   options: RequestInit & {
     timeoutMs?: number;
     signal?: AbortSignal;
-    /** 长耗时 LLM 任务：直连后端，绕过 Next rewrite 代理超时 */
+    /** @deprecated 已默认直连后端 */
     direct?: boolean;
   } = {},
 ): Promise<T> {
   const {
     timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
     signal: externalSignal,
-    direct = false,
+    direct: _direct = false,
     ...rest
   } = options;
   // 组合外部 signal 与超时 signal，任一触发即取消。
@@ -153,11 +145,13 @@ async function request<T>(
     }
     externalSignal.addEventListener("abort", onExternalAbort, { once: true });
   }
-  const url = direct ? resolveStreamUrl(`/api${path}`) : `/api${path}`;
+  // 一律直连后端，确保 HttpOnly Cookie 与 WS 同 host
+  const url = resolveBackendUrl(`/api${path}`);
   let res: Response;
   try {
     res = await fetch(url, {
       ...rest,
+      credentials: "include",
       headers: { "Content-Type": "application/json", ...rest.headers },
       signal: controller.signal,
     });
@@ -167,16 +161,14 @@ async function request<T>(
         throw new ApiError(
           timeoutMs > DEFAULT_REQUEST_TIMEOUT_MS
             ? `请求超时（${Math.round(timeoutMs / 1000)}s）。深度评价等 LLM 任务较慢，请稍后重试或检查模型/网络`
-            : `请求超时（${Math.round(timeoutMs / 1000)}s）。请确认 backend 已启动且前端 rewrite 端口正确（本机常见为 8001），并重启 frontend`,
+            : `请求超时（${Math.round(timeoutMs / 1000)}s）。请确认 backend 已启动（NEXT_PUBLIC_API_BASE / STREAM_API_BASE）`,
           0,
         );
       }
       throw new ApiError("请求已取消", 0);
     }
     throw new ApiError(
-      direct
-        ? `无法直连后端（${url}）。请确认 backend 已启动，且 NEXT_PUBLIC_STREAM_API_BASE 端口正确`
-        : "无法连接后端服务，请确认 backend 已启动",
+      `无法直连后端（${url}）。请确认 backend 已启动，且 NEXT_PUBLIC_STREAM_API_BASE 端口正确`,
       0,
     );
   } finally {
@@ -272,7 +264,11 @@ export const api = {
     try {
       const form = new FormData();
       form.append("file", file);
-      res = await fetch("/api/v1/resume/upload", { method: "POST", body: form });
+      res = await fetch(resolveBackendUrl("/api/v1/resume/upload"), {
+        method: "POST",
+        body: form,
+        credentials: "include",
+      });
     } catch {
       throw new ApiError("无法连接后端服务", 0);
     }
@@ -294,29 +290,21 @@ export const api = {
     request<ResumeAnalysis>(`/v1/resume/${id}/analyze`, {
       method: "POST",
       timeoutMs: LLM_HEAVY_TIMEOUT_MS,
-      // 绕过 Next rewrite：代理常在 ~30–60s 断开，而评价通常需 1–3 分钟
-      direct: true,
     }),
 
   /* 面试准备 */
-  createPrepSession: async (data: {
+  createPrepSession: (data: {
     resume_id?: number;
     target_role?: string;
     target_company?: string;
-  }) => {
-    const session = await request<PrepSessionCreateResponse>("/v1/prep/sessions", {
+  }) =>
+    request<PrepSessionCreateResponse>("/v1/prep/sessions", {
       method: "POST",
       body: JSON.stringify(data),
-    });
-    if (session.access_token) {
-      savePrepToken(session.id, session.access_token);
-    }
-    return session;
-  },
+    }),
   prepMessage: (sessionId: number, content: string) =>
     request<PrepMessageResponse>(`/v1/prep/sessions/${sessionId}/message`, {
       method: "POST",
-      headers: prepAuthHeaders(sessionId),
       body: JSON.stringify({ content }),
     }),
   prepMessageStream: async (
@@ -325,22 +313,20 @@ export const api = {
     onToken: (token: string) => void,
     onSearchResults?: (groups: PrepSearchGroup[]) => void,
   ): Promise<{ token_usage: number }> => {
-    const url = resolveStreamUrl(
+    const url = resolveBackendUrl(
       `/api/v1/prep/sessions/${sessionId}/message/stream`,
     );
     let res: Response;
     try {
       res = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...prepAuthHeaders(sessionId),
-        },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
       });
     } catch {
       throw new ApiError(
-        `无法连接后端服务（流式 ${url}）。请确认 backend 已启动，且前端代理指向正确端口`,
+        `无法连接后端服务（流式 ${url}）。请确认 backend 已启动`,
         0,
       );
     }
@@ -365,30 +351,21 @@ export const api = {
   getOptions: () => request<Options>("/v1/options"),
 
   /* 面试 */
-  createSession: async (config: InterviewConfig) => {
-    const session = await request<InterviewSession>("/v1/interview/sessions", {
+  createSession: (config: InterviewConfig) =>
+    request<InterviewSession>("/v1/interview/sessions", {
       method: "POST",
       body: JSON.stringify(config),
-    });
-    if (session.access_token) {
-      saveSessionToken(session.id, session.access_token);
-    }
-    return session;
-  },
+    }),
   listSessions: () => request<InterviewSession[]>("/v1/interview/sessions"),
   getSession: (id: number) =>
-    request<InterviewSession>(`/v1/interview/sessions/${id}`, {
-      headers: interviewAuthHeaders(id),
-    }),
+    request<InterviewSession>(`/v1/interview/sessions/${id}`),
   startInterview: (id: number) =>
     request<StartInterviewResponse>(`/v1/interview/sessions/${id}/start`, {
       method: "POST",
-      headers: interviewAuthHeaders(id),
     }),
   sendMessage: (id: number, content: string, faceAnalysis?: FaceAnalysis, imageBase64?: string) =>
     request<SendMessageResponse>(`/v1/interview/sessions/${id}/message`, {
       method: "POST",
-      headers: interviewAuthHeaders(id),
       body: JSON.stringify({
         content,
         face_analysis: faceAnalysis,
@@ -396,21 +373,15 @@ export const api = {
       }),
     }),
   getMessages: (id: number) =>
-    request<ChatMessage[]>(`/v1/interview/sessions/${id}/messages`, {
-      headers: interviewAuthHeaders(id),
-    }),
+    request<ChatMessage[]>(`/v1/interview/sessions/${id}/messages`),
   finishInterview: (id: number) =>
     request<FinishInterviewResponse>(`/v1/interview/sessions/${id}/finish`, {
       method: "POST",
-      headers: interviewAuthHeaders(id),
       timeoutMs: LLM_HEAVY_TIMEOUT_MS,
     }),
 
   /* 报告 */
-  getReport: (id: number) =>
-    request<GetReportResponse>(`/v1/reports/${id}`, {
-      headers: interviewAuthHeaders(id),
-    }),
+  getReport: (id: number) => request<GetReportResponse>(`/v1/reports/${id}`),
   /**
    * 流式生成并消费报告 SSE。
    * 触发后端按 token 分片推送，done 事件携带完整 InterviewReport。
@@ -421,11 +392,11 @@ export const api = {
     onToken: (token: string) => void,
     signal?: AbortSignal,
   ): Promise<InterviewReport> => {
-    const url = resolveStreamUrl(`/api/v1/reports/${id}/stream`);
+    const url = resolveBackendUrl(`/api/v1/reports/${id}/stream`);
     let res: Response;
     try {
       res = await fetch(url, {
-        headers: { ...interviewAuthHeaders(id) },
+        credentials: "include",
         signal,
       });
     } catch {

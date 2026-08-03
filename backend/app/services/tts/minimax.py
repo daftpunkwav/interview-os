@@ -60,6 +60,7 @@ async def synthesize_minimax_to_base64(
         async with make_pinned_async_client(
             url,
             allow_local=settings.allow_local_llm,
+            require_https=bool(settings.is_prod),
             timeout=60.0,
         ) as client:
             resp = await client.post(url, headers=headers, json=body)

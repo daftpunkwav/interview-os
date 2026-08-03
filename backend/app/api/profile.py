@@ -5,11 +5,12 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.core.local_only import require_local_peer
 from app.database import get_db
 from app.models import UserProfile
 from app.schemas import UserProfileResponse, UserProfileUpdate
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_local_peer)])
 
 
 def _get_or_create_profile(db: Session) -> UserProfile:

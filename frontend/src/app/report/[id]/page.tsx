@@ -39,10 +39,6 @@ export default function ReportPage() {
     let cancelled = false;
     const ctrl = new AbortController();
 
-    // 兜底：面试页不再同步 finish；进入报告页触发一次补生成（与 WS 锁防双打）
-    void api.finishInterview(sessionId).catch(() => undefined);
-
-    // 轮询回退（流式失败时使用）
     const startPolling = () => {
       let attempts = 0;
       const maxAttempts = 45;
@@ -70,26 +66,41 @@ export default function ReportPage() {
       tick();
     };
 
-    // 优先尝试流式 SSE 生成；失败则降级为轮询
-    api.getReportStream(sessionId, () => {}, ctrl.signal)
-      .then((streamedReport) => {
+    // 先读报告；仅缺失/生成中时才触发 finish 补生成
+    api
+      .getReport(sessionId)
+      .then((data) => {
         if (cancelled) return;
-        setReport(streamedReport);
+        applyPayload(data);
         setError("");
         setLoading(false);
-        // 补拉 duration / messages_count 元数据
-        api.getReport(sessionId)
-          .then((data) => {
-            if (!cancelled) {
-              setDuration(data.duration_minutes);
-              setMessagesCount(data.messages_count);
-            }
-          })
-          .catch(() => undefined);
       })
-      .catch(() => {
+      .catch(async (e) => {
         if (cancelled) return;
-        startPolling();
+        const msg = e instanceof Error ? e.message : String(e);
+        const missing = /尚未|不存在|404|生成/.test(msg) || (e && typeof e === "object" && "status" in e && Number(e.status) === 404);
+        if (missing) {
+          void api.finishInterview(sessionId).catch(() => undefined);
+          try {
+            const streamedReport = await api.getReportStream(
+              sessionId,
+              () => {},
+              ctrl.signal,
+            );
+            if (cancelled) return;
+            setReport(streamedReport);
+            setError("");
+            setLoading(false);
+            api.getReport(sessionId).then((data) => {
+              if (!cancelled) applyPayload(data);
+            }).catch(() => undefined);
+          } catch {
+            if (!cancelled) startPolling();
+          }
+          return;
+        }
+        setError(msg);
+        setLoading(false);
       });
 
     return () => {

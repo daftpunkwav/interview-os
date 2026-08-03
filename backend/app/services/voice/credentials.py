@@ -16,13 +16,20 @@ def _g(row: LLMSettings, name: str, default: str = "") -> str:
 
 
 def _dec(row: LLMSettings, name: str) -> str:
+    """解密字段；``enc:*`` 密文解密失败时抛错，不回退原文。"""
     raw = getattr(row, name, None) or ""
     if not raw:
         return ""
+    text = str(raw)
+    # 明文兼容旧数据：非加密前缀直接返回
+    if not text.startswith("enc:"):
+        return text
     try:
-        return decrypt_secret(raw) or ""
-    except Exception:
-        return str(raw)
+        return decrypt_secret(text) or ""
+    except Exception as e:
+        raise ValueError(
+            f"语音凭证字段 {name} 解密失败，请到设置页重新保存密钥"
+        ) from e
 
 
 def load_settings_row(db: Session) -> LLMSettings | None:

@@ -119,12 +119,13 @@ class SessionStatus(StrEnum):
 
 
 class FollowupCategory(StrEnum):
-    """追问信号分类（与 ``services/interview/followup.py`` 共同定义）。"""
+    """追问信号分类（与 ``services/interview/followup`` 单一真相源）。"""
 
     VAGUE = "vague"
-    DEPTH = "depth"
-    CONTRADICTION = "contradiction"
-    KEY_TERM = "key_term"
+    MISSING_DATA = "missing_data"
+    TECH_HOLE = "tech_hole"
+    OFF_TOPIC = "off_topic"
+    NONE = "none"
 
 
 # ── SSE / WebSocket 事件 ────────────────────────────────────────

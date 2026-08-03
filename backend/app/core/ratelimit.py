@@ -14,13 +14,13 @@
     多 worker 部署（``uvicorn --workers N``）时每个 worker 独立计数，限额
     会被放大 N 倍；如需跨 worker 一致，请接入 Redis 等集中式存储。
 
-代理信任链：X-Forwarded-For 首段仅在 :func:`is_localhost_family` 命中
-时（即认为请求来自内网代理，如 Nginx / Traefik 反代）才采纳，避免伪造
-头绕过限流。公网直连时使用 ``request.client.host``。
+代理信任链：仅当 ``request.client.host`` 落入 ``TRUSTED_PROXY_CIDRS``
+（默认仅 loopback）时才采纳 ``X-Forwarded-For`` 首段，避免伪造头绕过限流。
 """
 
 from __future__ import annotations
 
+import ipaddress
 import threading
 import time
 from collections import deque
@@ -28,12 +28,18 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException, Request
 
-from app.core.security import is_localhost_family
+from app.config import get_settings
 
 
 # 桶空闲回收时间窗。超过该时间无访问视为可回收。
 _BUCKET_TTL_SECONDS = 600
 _CLEANUP_INTERVAL_SECONDS = 120
+
+# 未配置 TRUSTED_PROXY_CIDRS 时，仅信任 loopback 反代
+_DEFAULT_TRUSTED_PROXY_NETS = (
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+)
 
 
 @dataclass
@@ -51,16 +57,39 @@ _BUCKETS: dict[tuple[str, str], _Bucket] = {}
 _cleanup_started = False
 
 
+def _trusted_proxy_nets() -> list[ipaddress._BaseNetwork]:
+    """解析可信代理 CIDR；空配置回退 loopback。"""
+    raw = get_settings().trusted_proxy_cidr_list
+    if not raw:
+        return list(_DEFAULT_TRUSTED_PROXY_NETS)
+    nets: list[ipaddress._BaseNetwork] = []
+    for cidr in raw:
+        try:
+            nets.append(ipaddress.ip_network(cidr, strict=False))
+        except ValueError:
+            continue
+    return nets or list(_DEFAULT_TRUSTED_PROXY_NETS)
+
+
+def _peer_is_trusted_proxy(peer: str) -> bool:
+    """判断直连对端是否为可信代理。"""
+    try:
+        ip = ipaddress.ip_address(peer.strip("[]"))
+    except ValueError:
+        return False
+    return any(ip in net for net in _trusted_proxy_nets())
+
+
 def _resolve_client_ip(request: Request) -> str:
     """解析客户端 IP。
 
-    - 仅当 ``request.client.host`` 属于私有/loopback 网段（即可信代理链路）
+    - 仅当 ``request.client.host`` 落入 ``TRUSTED_PROXY_CIDRS``（默认 loopback）
       时才采纳 ``X-Forwarded-For`` 首段；
-    - 公网直连总是使用 ``request.client.host``，防止伪造。
+    - 公网或未信任局域网直连总是使用 ``request.client.host``，防止伪造。
     """
     peer = request.client.host if request.client else None
     fwd = request.headers.get("x-forwarded-for")
-    if fwd and peer and is_localhost_family(peer):
+    if fwd and peer and _peer_is_trusted_proxy(peer):
         return fwd.split(",")[0].strip() or peer
     return peer or "unknown"
 
