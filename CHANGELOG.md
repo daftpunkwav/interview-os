@@ -3,9 +3,17 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的语义化约定。
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> 最近一次核对：2026-07-23（`main` 分支）。实现状态详见 [`DEVELOPMENT_PROGRESS.md`](./DEVELOPMENT_PROGRESS.md)。
+> 最近一次核对：2026-08-03（`main` 分支）。实现状态详见 [`DEVELOPMENT_PROGRESS.md`](./DEVELOPMENT_PROGRESS.md)。
 
 ## [Unreleased]
+
+### 功能（Features）
+
+- **三处理器语音管道**：设置页分别指派「语音识别 / 面试思考 / 语音输出」；能力目录含 badges 与 `coming_soon`（智谱 GLM-4-Voice、豆包端到端等）
+- **独立 ASR BYOK**：`openai_compat`（SiliconFlow SenseVoice 等）、讯飞、豆包、阿里、腾讯、百度、本地 Whisper；**禁止**思考 LLM Key 静默充当 ASR Key
+- **播报**：Edge TTS（默认）+ MiniMax Speech（`/v1/t2a_v2`）；可「仅字幕」；失败降级不中断文字流
+- **连通性测试**：`GET /api/v1/settings/catalog`；`POST /api/v1/settings/test/{recognize|reason|speak}`；内置 fixture `backend/app/data/stt_fixtures/`（期望「同比前年增长五成」）
+- **面试语音 UX**：自适应静音 VAD、打断世代、播放握手；浏览器 interim 仅预览，终稿优先 ASR
 
 ### 已修复（Agent 能力审查，2026-08）
 

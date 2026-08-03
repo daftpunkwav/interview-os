@@ -32,8 +32,9 @@
 
 ### 2. .env 中的 API Key
 
-- `backend/.env` 已 `.gitignore`，**不要**主动 `git add`；
+- `backend/.env` / `frontend/.env.local` 已 `.gitignore`，**不要**主动 `git add`；
 - `backend/.env.example` 仅放占位符 `sk-your-key-here`；
+- 思考 / ASR / TTS 密钥在设置页分列存储并 at-rest 加密；**切勿**把 MiniMax Coding Plan 思考 Key 当作 ASR Key；
 - 历史记录中如发现真 Key，请：
   1. **立刻**在 LLM 服务商控制台轮换 Key；
   2. 用 `git filter-repo` 或 `bfg` 从历史中清除；

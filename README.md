@@ -13,7 +13,7 @@ InterviewOS 是一个基于 AI Agent 的真实面试模拟系统。上传简历�
 - **面试准备 Agent** — 按选定简历 + 目标公司辅导，支持 web_search（duckduckgo）/ 公司知识 / GitHub 工具
 - **企业风格模拟** — 内置 7 家企业知识（字节、腾讯、阿里、美团、米哈游、OpenAI、Google）+ 可选 Chroma / StepFun 向量检索后端
 - **多 Workflow** — 技术面 / HR 面 / 管理岗，完整阶段流转；人格（5 种）/严格度（1–10）/风格（4 种）/人像/场景可配
-- **实时面试 Agent** — 摄像头 + 麦克风 + 流式 LLM + Edge TTS；function calling（GitHub 核验真实项目）
+- **实时面试 Agent** — 摄像头 + 麦克风 + 流式 LLM；**三处理器管道**（独立 ASR → 文本 LLM 思考 → TTS 播报）
 - **动态追问** — 结构化追问信号 + 工具核实 + 30% 阈值上下文压缩与结构化记忆
 - **拟真人像** — CSS 矢量半身面试官 + 口型/眨眼/情绪（不依赖 Live2D / 视频）
 - **面试报告** — 多维度评分、改进建议、训练计划；SSE 流式
@@ -29,7 +29,7 @@ InterviewOS 是一个基于 AI Agent 的真实面试模拟系统。上传简历�
 | 后端 | Python 3.11+ · FastAPI · SQLAlchemy 2.0 · SQLite · ChromaDB · Pydantic v2 |
 | 前端 | Next.js 15 · React 19 · TypeScript strict (`noUncheckedIndexedAccess`) · Tailwind CSS · framer-motion |
 | AI | OpenAI Chat Completions 兼容 API（含 embeddings） |
-| 语音 | Edge TTS（`edge-tts`） · faster-whisper |
+| 语音 | **三处理器**：多厂商 ASR（OpenAI 兼容 / 讯飞 / 豆包 / 阿里 / 腾讯 / 百度）+ 本地 faster-whisper 回退；思考 LLM（推荐 MiniMax-M3）；播报 Edge TTS 或 MiniMax Speech（T2A） |
 | 测试 | pytest / pytest-asyncio |
 
 > 注：GitHub 集成通过 `app/services/github/` 中的 **REST 客户端 + OpenAI function tools** 实现，与常见 GitHub MCP 工具语义对齐；**不是**官方 MCP 进程传输。可后续替换为 stdio/HTTP MCP 适配器（见 [PROJECT_REPORT.md §2.2](./PROJECT_REPORT.md)）。
@@ -110,16 +110,22 @@ npm run dev
 
 ## BYOK 配置
 
-在「设置」页面或 `backend/.env` 中配置：
+在「设置」页分别配置三个处理器（推荐），或用 `backend/.env` 提供思考 LLM 的默认回退：
+
+| 阶段 | 说明 | 凭证 |
+|------|------|------|
+| 语音识别 | 云端 ASR 或本地 Whisper；**禁止**用 MiniMax Coding Plan 思考 Key 当 ASR Key | 设置页 ASR 字段 / 独立供应商 Key |
+| 面试思考 | 必须是文本 LLM（推荐 MiniMax-M3） | `LLM_API_*` 或设置页思考区 |
+| 语音输出 | Edge（默认）/ MiniMax Speech / 仅字幕 | 设置页播报区；MiniMax Speech 可复用思考 Key |
 
 ```env
-LLM_API_BASE=https://api.stepfun.com/step_plan/v1
+LLM_API_BASE=https://api.minimaxi.com/v1
 LLM_API_KEY=sk-your-real-key-here
-LLM_MODEL=step-3.7-flash
+LLM_MODEL=MiniMax-M3
 LLM_MAX_TOKENS=4096
-LLM_CONTEXT_WINDOW=256000
+LLM_CONTEXT_WINDOW=128000
 
-# 可选
+# 仅作本地 ASR / Edge 音色回退；正式指派请在设置页配置
 WHISPER_MODEL=base
 TTS_VOICE=zh-CN-XiaoxiaoNeural
 SILENCE_NUDGE_SECONDS=10
@@ -129,6 +135,8 @@ SILENCE_NUDGE_SECONDS=10
 INTERVIEW_TOOLS_ENABLED=true
 INTERVIEW_MAX_TOOL_ROUNDS=3
 ```
+
+每阶段旁有「测试」按钮：`POST /api/v1/settings/test/{recognize|reason|speak}`（识别用仓库内标准 wav fixture）。
 
 全部环境变量见 [`backend/.env.example`](./backend/.env.example)。
 
@@ -153,11 +161,12 @@ InterviewOS/
 │   │   │   ├── context/                     # 上下文压缩与 token 估算（30% 阈值）
 │   │   │   ├── resume/                      # 简历解析（PDF/DOCX/MD/TXT 魔数嗅探）
 │   │   │   ├── search/                      # DuckDuckGo 搜索（Prep Agent 用）
-│   │   │   ├── stt/                         # faster-whisper
-│   │   │   └── tts/                         # Edge TTS
+│   │   │   ├── stt/                         # ASR 适配：openai_compat / 国内厂商 / local Whisper
+│   │   │   ├── tts/                         # Edge TTS + MiniMax Speech（T2A）
+│   │   │   └── voice/                       # 三处理器目录、凭证装配、连通性测试
 │   │   ├── realtime/                        # WebSocket handler + 事件协议
 │   │   ├── agents/                          # orchestrator / vision / prep
-│   │   ├── data/                            # 运行时数据（SQLite/Chroma/system_learning.json/companies）
+│   │   ├── data/                            # 运行时数据（忽略）+ 入库 STT fixtures（stt_fixtures/）
 │   │   └── main.py                          # FastAPI 入口
 │   ├── tests/                               # pytest 用例（详见 § 开发）
 │   └── requirements.txt
@@ -179,20 +188,20 @@ InterviewOS/
 
 ## 用户流程
 
-1. **配置 BYOK** API Key → 设置 → 测试联通
+1. **配置三处理器** → 设置：识别 ASR + 思考 LLM + 播报 TTS，分别点「测试」
 2. **填写档案** → 完善岗位、学校、目标公司等
 3. **上传简历** → AI 自动解析职业档案 → 评分 + 预测问题
 4. **开始模拟面试**：
    - 选择岗位、职级、目标公司、面试官风格
-   - 视频/语音/手动三种方式回答
-   - 10 秒静默自动追问
+   - 视频/语音/手动三种方式回答（麦克风 → ASR → 思考 → TTS）
+   - 静默自动追问；可打断播报
    - 多阶段流转（身份确认 → 自我介绍 → 项目 → 技术 → 系统设计 → 反问 → 总结）
 5. **查看报告** → 流式生成 → 雷达图多维评分 → 训练计划
 6. **追踪成长** → 弱项聚合 → 下次训练方向
 
 ## 开发
 
-- 后端测试：`cd backend && ./.venv/Scripts/python.exe -m pytest -q`（当前 16 个 `test_*.py` 与 conftest/fakes，共 18 个测试文件）
+- 后端测试：`cd backend && python -m pytest -q`（当前 26 个 `test_*.py` + conftest/fakes）
 - 前端类型检查：`cd frontend && npx tsc --noEmit`
 - 启动前端：`npm run dev`
 - 启动后端：`uvicorn app.main:app --reload`

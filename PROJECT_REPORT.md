@@ -1,6 +1,6 @@
 # InterviewOS 项目状况与进展报告
 
-> 生成日期：2026-07-23  
+> 生成日期：2026-08-03（语音三处理器更新）  
 > 分支：`main`  
 > 权威需求：`InterviewOS.md`  
 > 作者约定：`daftpunkwav` / `daftpunk.wav@outlook.com`  
@@ -33,16 +33,16 @@
 
 | 功能 | 入口 | 状态 | 说明 |
 |------|------|------|------|
-| BYOK 设置与连通测试 | `/settings` | ✅ | API Key at-rest AES-256-GCM |
+| BYOK 设置与连通测试 | `/settings` | ✅ | 三处理器（识别/思考/播报）；密钥 at-rest AES-256-GCM；分阶段「测试」 |
 | 个人档案（扩展） | `/profile` | ✅ | 基本信息 + 教育 + 求职 + **GitHub/作品集/城市/亮点/远程/到岗** |
 | 多简历上传 | `/resume` | ✅ | PDF/DOCX/MD/TXT，10MB + 魔数校验 |
 | 设为投递 / 删除 | `/resume` | ✅ | 激活互斥；DELETE 清理 |
 | 简历 Agent 深度评价 | 「AI 深度评价」 | ✅ | 综合分 + 8 维评分 + 优势/不足/风险/改写/预测题/叙事 |
 | 面试准备 Agent | `/prep` | ✅ | 绑定简历 + 公司；ReAct 工具（搜索/公司/出题/**GitHub**） |
 | 面试配置 | `/interview` | ✅ | 岗位/职级/公司/工作流/人格/严厉度/风格/人像/场景/简历 |
-| 实时面试房间 | `/interview/[id]` | ✅ | WS、摄像头、STT、TTS、文字、阶段流转；同会话单连接（新连接踢旧） |
+| 实时面试房间 | `/interview/[id]` | ✅ | WS、摄像头、ASR→思考→TTS、文字、阶段流转；同会话单连接（新连接踢旧） |
 | 面试官拟真人像 | 面试房间 | ✅ | TalkingHead 3D GLB（口型/情绪）+ WebGL 失败时回退 CSS SVG 半身像 |
-| 真实语音 | Edge TTS | ✅ | 串行队列；可配置 5 种中文音色 |
+| 真实语音 | 三处理器 | ✅ | ASR 多厂商 + 本地 Whisper 回退；播报 Edge / MiniMax Speech / 仅字幕 |
 | GitHub 项目核验 | 面试/准备工具 | ✅ | 用户/仓库/README/commit/PR/文件/语言（REST + function tools） |
 | 公司 RAG | 面试回合 | ✅ | local Chroma / StepFun retrieval / none 三后端；数据来自内置 7 家 |
 | 动态追问 | Runner | ✅ | 结构化信号 + 工具证据 |
@@ -86,7 +86,7 @@
         │
 FastAPI (Python 3.11+)
   api/ → services/ → core/
-  realtime/ws_handler → InterviewRunner → LLM / STT / TTS / RAG / GitHub
+  realtime/ws_handler → InterviewRunner → LLM / ASR / TTS / RAG / GitHub
         │
 SQLite · Chroma · uploads · system_learning.json
 ```
@@ -133,7 +133,7 @@ SQLite · Chroma · uploads · system_learning.json
 | `/report/[id]` | 报告 |
 | `/growth` | 成长 |
 | `/history` | 历史 |
-| `/settings` | BYOK |
+| `/settings` | 三处理器 BYOK |
 
 主题与整体 UI **未大改**，仅优化人像、评价展示、档案字段与成长洞察。
 
@@ -190,7 +190,7 @@ SQLite · Chroma · uploads · system_learning.json
 | 自我成长 | ✅ 双轨闭环 | 候选人 + 系统 memory（反哺开场 system prompt） |
 | 多 workflow | ✅ | technical / hr / management |
 | RAG 决策 | ✅ | 公司用 RAG，简历/GitHub 不用 |
-| 拟真人像 + 真声 | ✅ | CSS 人像 + Edge TTS |
+| 拟真人像 + 真声 | ✅ | TalkingHead/CSS 人像 + Edge / MiniMax Speech |
 
 ---
 

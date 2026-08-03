@@ -26,16 +26,17 @@
 │   app/api/*  app/realtime/*  app/services/*  app/agents/*       │
 │   ──────────────────────────────────────────────────────────    │
 │   • 单进程无外部依赖（SQLite + Chroma 本地落盘）                │
-│   • 限流、SSRF 防御、API Key at-rest 加密（HMAC+XOR）          │
+│   • 限流、SSRF 防御、API Key at-rest 加密（AES-256-GCM）      │
 │   • 面试回合编排：runner / agent / orchestrator / followup      │
 └──────┬────────────────────────┬────────────────────┬──────────┘
-       │ OpenAI Chat Completions   │ faster-whisper    │ edge-tts
+       │ OpenAI Chat Completions   │ ASR 适配层         │ TTS 适配层
        ▼                          ▼                   ▼
-   ┌─────────┐               ┌────────────┐       ┌──────────┐
-   │ LLM BYOK│               │ STT (本地) │       │ Edge TTS │
-   └─────────┘               └────────────┘       └──────────┘
+   ┌─────────────┐          ┌──────────────┐    ┌──────────────────┐
+   │ 思考 LLM    │          │ 多厂商 ASR   │    │ Edge / MiniMax   │
+   │ (MiniMax…)  │          │ + local 回退 │    │ Speech (T2A)     │
+   └─────────────┘          └──────────────┘    └──────────────────┘
                   数据层
-   SQLite (./data/interviewos.db) · Chroma (./chroma_*) · 上传目录 ./uploads
+   SQLite (./data/interviewos.db) · Chroma · 上传目录 ./uploads · STT fixtures
 ```
 
 ## 2. 目录分层
@@ -45,7 +46,10 @@
 | `app/api/` | HTTP 路由 | 必须用 `Depends(get_db)`；上传需 size/MIME/路径校验；任何 `api_base` 入参必须经 `is_safe_http_url` |
 | `app/api/v1/` | API v1（实时面试/准备） | 走 WS；不允许同步业务阻塞超过 5 秒 |
 | `app/realtime/` | WS 协议 | `events.py` 定义客户端/服务端事件；`ws_handler.py` 仅做编排，不存业务规则 |
-| `app/services/llm/` | BYOK LLM 客户端 | 入参 api_key 必须从 `decrypt_secret` 出来；超时 ≤ 60 s |
+| `app/services/llm/` | BYOK LLM 客户端（思考处理者） | 入参 api_key 必须从 `decrypt_secret` 出来；超时 ≤ 60 s |
+| `app/services/stt/` | 语音识别适配 | `router.py` 按 handler 分发；**禁止**静默回落思考 LLM Key |
+| `app/services/tts/` | 语音输出适配 | `edge.py` + `minimax.py`；统一入口 `synthesize_speech` |
+| `app/services/voice/` | 三处理器目录与测试 | `catalog.py` 能力标签；`stage_tests.py` 连通性；`credentials.py` 装配凭证 |
 | `app/services/interview/` | 业务编排 | `runner.py` 是回合执行器；`agent.py` 是会话状态机；`followup.py` 是追问信号器；`tools.py` 注册 GitHub/公司/简历 function tools |
 | `app/services/github/` | GitHub 核验 | REST 客户端 + OpenAI tools 定义；语义对齐 MCP，面试/准备 Agent 共用 |
 | `app/services/growth/` | 自我成长 | 候选人 GrowthRecord（报告路径）+ 系统 `system_learning.json` 聚合 |
@@ -82,11 +86,12 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
   │  captureFrame / mic → audio_buffer
   ▼
 [WS Handler]
-  │  STT (Whisper) ──► text
+  │  阶段1 识别：speech_recognize_handler（ASR / local）──► text
+  │         （coming_soon native_audio → 回退 transcribe + 提示）
   │  Vision (FaceDetector) ──► face_analysis JSON
   │  拼装 user_text 或 user_turn_end 帧
   ▼
-[InterviewRunner.stream_turn]
+[InterviewRunner.stream_turn]  ← 阶段2 思考：文本 LLM（推荐 MiniMax）
   │ 1) 追问信号分析 (followup.py)
   │ 2) RAG 检索 (company_rag.py / StepFun retrieval)
   │ 3) 上下文压缩 (context/manager.py)  超阈值时触发
@@ -94,9 +99,9 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
   │ 5) 组装 system prompt + 结构化记忆 + 历史 → LLM 流式
   │ 6) assistant_token / assistant_done（含情绪）
   ▼
-[TTS Queue → Edge TTS]  ──► tts_audio 帧
+[阶段3 播报：TTS Queue → Edge / MiniMax Speech / 仅字幕]  ──► tts_audio 帧
   ▼
-[静默计时]  10s 内无新 partial → silence_timeout → 触发追问
+[静默计时]  无新 partial → silence_timeout → 触发追问
   ▼
 [结束] generate_report → GrowthRecord + system_learning.json
 ```
@@ -105,7 +110,7 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
 
 | 风险点 | 当前实现 | 后续可扩展 |
 |---|---|---|
-| API Key 在 DB 明文 | `app/core/secrets.py` AES-256-GCM（依赖 `cryptography`），`enc:v2:<salt>:<nonce>:<tag>:<ct>`；AEAD 篡改拒绝；旧 `enc:v1:` 显式抛 `LegacySecretFormatError` | KMS 托管 master |
+| API Key 在 DB 明文 | `app/core/secrets.py` AES-256-GCM（依赖 `cryptography`），`enc:v2:<salt>:<nonce>:<tag>:<ct>`；AEAD 篡改拒绝；旧 `enc:v1:` 显式抛 `LegacySecretFormatError`；思考 / ASR / TTS 密钥分列加密 | KMS 托管 master |
 | SSRF `api_base` | `is_safe_http_url` 多 A 记录遍历 + IPv6 字面量 + 端口白名单（80/443）；`app/services/llm/client.py` 进一步在出站 HTTP transport 层 DNS pin 解析结果（缓解 DNS rebinding TOCTOU）；dev 模式允许 loopback；本地 LLM 需额外 `INTERVIEWOS_ALLOW_LOCAL_LLM=1` 双重放行 | IP 黑/白名单；httpx transport 强制复用 pinned IP 防后续 re-resolve |
 | 文件上传 | 10MB 流式上限 + 魔数嗅探（`%PDF-` / `PK\x03\x04` / OLE）+ `assert_within_dir` | 走对象存储（MVP 单机保留本地） |
 | 限流 | `app/core/ratelimit.py` 滑动窗口；`INTERVIEWOS_TRUSTED_PROXY_CIDRS` 控制 X-Forwarded-For 信任 | 替换 Redis；按用户/IP 区分 |
@@ -118,7 +123,7 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
 
 ## 6. 测试策略
 
-- `backend/tests/` 共 18 个测试文件（`test_*.py` 16 个 + `conftest.py` / `fakes.py`），覆盖 Runner / Followup / RAG（含多后端）/ Context 压缩 / TTS Queue / WS handler / Migrate / Secrets / Security / v1 路径 / 简历评价规范化 / GitHub 工具 / LLM 客户端重试 / 报告 SSE / 成长学习；
+- `backend/tests/` 共 26+ 个 `test_*.py`（另含 conftest/fakes），覆盖 Runner / Followup / RAG / Context / TTS Queue / WS / 三处理器管道 / Migrate / Secrets / Security / v1 路径 / 简历评价 / GitHub / LLM 重试 / 报告 SSE / 成长学习等；
 - 新代码要求至少补 1 个单测；与 LLM 交互必须通过 `FakeLLMClient`；
 - 测速脚本 `pytest -q`。
 
@@ -126,7 +131,7 @@ app/api ─► app/services ─► app/core (security/secrets/logging/ratelimit)
 
 | 需求 | 改哪里 |
 |---|---|
-| 加一种 LLM Provider（Claude / Gemini / Ollama） | `app/services/llm/` 加新 Provider；`from_db` 选用 |
+| 加一种 ASR / TTS 供应商 | `app/services/stt/` 或 `tts/` 适配器 + `voice/catalog.py` 能力标签；设置页自动出现 |
 | 加一种面试工作流（System Design Round / Coding Round） | `app/services/interview/workflows.py` 注册即可；`options.workflow_types` 自动暴露 |
 | 加一种追问信号维度 | `app/services/interview/followup.py` 新增分类 + 正则 |
 | 加一种企业知识库 / KB 源 | `app/services/company/knowledge.py` 增加元数据；如需新 RAG 后端，实现 `RAGBackend` 协议 + 在 `app/services/rag/factory.py` 注册即可；`_kb_data.py` 持有与后端无关的纯数据/工具函数 |

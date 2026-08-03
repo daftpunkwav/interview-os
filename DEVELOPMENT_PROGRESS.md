@@ -89,13 +89,19 @@
 | 面试 function calling 循环 | `InterviewRunner._run_tool_rounds` | ✅ | 最多 `INTERVIEW_MAX_TOOL_ROUNDS` 轮；无 tool_calls 时短路避免二次 LLM |
 | Prep Agent 集成 | `PrepAgent` | ✅ | 标记调用 |
 
-### 1.8 STT / TTS
+### 1.8 STT / TTS（三处理器）
 
 | 能力 | 入口 | 状态 | 说明 |
 |---|---|---|---|
-| Edge TTS | `app/services/tts/edge.py` | ✅ | `synthesize_to_base64` + 句子切分 + emotion 抽取 |
-| Whisper STT | `app/services/stt/whisper.py` | ✅ | faster-whisper，本地 CPU；base 模型默认 |
-| 串行 TTS 队列 | `app/realtime/ws_handler.py` | ✅ | `TTS_QUEUE_MAX_SIZE` 上限 |
+| 供应商能力目录 | `app/services/voice/catalog.py` | ✅ | 识别 / 思考 / 播报；`ready` / `coming_soon` |
+| ASR 路由 | `app/services/stt/router.py` | ✅ | openai_compat / xfyun / volcengine / aliyun / tencent / baidu / local |
+| 本地 Whisper | `app/services/stt/whisper.py` | ✅ | 云端失败回退；连通性 fixture 可测 |
+| Edge TTS | `app/services/tts/edge.py` | ✅ | 默认播报；句子切分 + emotion→rate/pitch |
+| MiniMax Speech | `app/services/tts/minimax.py` | ✅ | T2A `POST /v1/t2a_v2`；失败降级 Edge |
+| 统一合成入口 | `app/services/tts/synthesize_speech` | ✅ | 按 `speech_speak_handler` 分发 |
+| 串行 TTS 队列 | `app/realtime/ws_handler.py` | ✅ | 队列上限；打断作废在途合成 |
+| 阶段连通性测试 | `POST /api/v1/settings/test/{stage}` | ✅ | recognize / reason / speak |
+| 标准测试音频 | `app/data/stt_fixtures/` | ✅ | 「同比前年增长五成」 |
 
 ### 1.9 追问与上下文压缩
 
@@ -132,7 +138,7 @@
 |---|---|---|---|
 | 根级 Error Boundary / 404 / loading | `app/error.tsx` / `not-found.tsx` / `loading.tsx` | ✅ | |
 | 首页（流体感视觉） | `app/page.tsx` + `components/effects/*` | ✅ | `FluidBackground` / `ParticleField` / `StaggerContainer` / `AnimatedCounter` / `FadeInView` |
-| 配置（设置） | `app/settings/` | ✅ | BYOK 表单 |
+| 配置（设置） | `app/settings/` | ✅ | 三处理器 UI + 能力徽章 + 分阶段测试 |
 | 档案 | `app/profile/` | ✅ | 含扩展字段 |
 | 简历管理 / AI 深度评价 | `app/resume/` | ✅ | |
 | 准备辅导 | `app/prep/` | ✅ | 流式 + 思考过程折叠（`feat/prep`） |
@@ -153,11 +159,11 @@
 ```
 浏览器
   └─ WS: ws://host/api/v1/ws/interview/{sid}  → InterviewWSHandler.handle
-       ├─ STT（faster-whisper，PCM → text）
+       ├─ 识别：独立 ASR 凭证（失败 → local Whisper）；浏览器 interim 仅预览
        ├─ 视觉（face_analysis → VisionAgent.summarize）
        ├─ 组装 user_text / user_turn_end 帧
        ▼
-InterviewRunner.stream_turn
+InterviewRunner.stream_turn   ← 思考：文本 LLM（推荐 MiniMax）
        1) 追问信号分析（followup.analyze）
        2) RAG 检索（CompanyKnowledgeRAG / StepFun retrieval tool）
        3) 上下文压缩（30% 阈值）
@@ -165,7 +171,7 @@ InterviewRunner.stream_turn
        5) 组装 system prompt + 结构化 agent_state → LLM 流式
        6) assistant_token / assistant_done（含 emotion）
        ▼
-TTS Queue → Edge TTS → tts_audio 帧 → 浏览器 useTTSPlayer 播放
+TTS Queue → Edge / MiniMax Speech / 仅字幕 → tts_audio → useTTSPlayer
        ▼
 [结束] /finish → generate_and_persist_report → GrowthRecord + system_learning.json
 ```
@@ -242,7 +248,7 @@ TTS Queue → Edge TTS → tts_audio 帧 → 浏览器 useTTSPlayer 播放
 | 自我成长 | ✅ 双轨闭环 | 候选人（GrowthRecord）+ 系统（system_learning.json **反哺 system prompt**）；系统学习摘要注入开场 prompt |
 | 多 workflow | ✅ | technical / hr / management |
 | RAG 决策 | ✅ | 公司用 RAG（local Chroma / StepFun retrieval），简历 / GitHub 不用 |
-| 拟真人像 + 真声 | ✅ | CSS 矢量 SVG + Edge TTS |
+| 拟真人像 + 真声 | ✅ | CSS/TalkingHead + Edge / MiniMax Speech + 独立 ASR |
 | 等待叫号 / 排队大厅 | ❌ 未做 | 创建会话即可开始，无 pending → called 状态机 |
 | 40–60 分钟实战压测 | ❌ 未做 | 机制具备但无实证 |
 | Live2D 视频人像 | ❌ 未做 | 当前为 CSS SVG |
@@ -253,7 +259,7 @@ TTS Queue → Edge TTS → tts_audio 帧 → 浏览器 useTTSPlayer 播放
 
 ## 5. 测试与质量
 
-- 后端 `pytest -q`：`backend/tests/` 共 18 个测试文件（`test_*.py` 16 个 + `conftest.py` / `fakes.py`），覆盖 Runner / Followup / RAG（含多后端）/ Context 压缩 / TTS Queue / WS handler / Migrate / Secrets / Security / v1 路径 / 简历评价规范化 / GitHub 工具 / LLM 客户端重试 / 报告 SSE / 成长学习；
+- 后端 `pytest -q`：`backend/tests/` 约 26 个 `test_*.py`（另含 conftest/fakes），覆盖 Runner / Followup / RAG / Context / TTS / 三处理器管道 / WS / Migrate / Secrets / Security / v1 路径 / 简历评价 / GitHub / LLM 重试 / 报告 SSE / 成长学习等；
 - 前端 `npx tsc --noEmit`：`noUncheckedIndexedAccess` / `noImplicitOverride` / `noFallthroughCasesInSwitch` 全开；
 - `FakeLLMClient` 用于所有 LLM 交互测试（`tests/fakes.py`）。
 
@@ -371,6 +377,6 @@ TTS Queue → Edge TTS → tts_audio 帧 → 浏览器 useTTSPlayer 播放
 
 ## 8. 一句话总结
 
-> 仓库当前在 `main` 分支，已具备 **BYOK + 多简历 + 实时面试（WS + STT + TTS + 拟真人像）+ 追问（阶段感知 + 薄弱线索记录）+ 压缩 + 结构化记忆每回合刷新 + 工具循环（GitHub）+ RAG（local/stepfun/none）+ 多 Workflow + 反问环节公司代表 prompt + 多维评价 + 报告 + 双重成长（系统学习反哺 prompt）** 的闭环。
-> 主要缺口：**叫号大厅、Live2D、官方 MCP 传输、面经众包、多用户鉴权、40–60 分钟实战压测**。
+> 仓库当前在 `main` 分支，已具备 **三处理器 BYOK（独立 ASR → 思考 LLM → Edge/MiniMax Speech）+ 多简历 + 实时面试（WS + 拟真人像）+ 追问（阶段感知 + 薄弱线索记录）+ 压缩 + 结构化记忆每回合刷新 + 工具循环（GitHub）+ RAG（local/stepfun/none）+ 多 Workflow + 反问环节公司代表 prompt + 多维评价 + 报告 + 双重成长（系统学习反哺 prompt）** 的闭环。
+> 主要缺口：**叫号大厅、Live2D、官方 MCP 传输、面经众包、多用户鉴权、40–60 分钟实战压测、语音 LLM 原生听/说（coming_soon）**。
 > 这些不影响主路径演示，但需要在文档与代码中**明确标注为未实现**，避免后续贡献者按文档宣传反向误解项目状态。

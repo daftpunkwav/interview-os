@@ -85,8 +85,8 @@ agent需要最少40分钟的面试时长.需要有优秀的上下文管理和工
 
 ### 人像与语音
 
-- 面试官：CSS 拟真半身像 + 口型/眨眼/情绪（可替换 Live2D）。
-- 语音：Edge TTS 串行队列 + faster-whisper STT + 摄像头多模态。
+- 面试官：CSS 拟真半身像 + 口型/眨眼/情绪（可替换 Live2D）；前端亦可 TalkingHead 3D。
+- 语音管道三阶段：独立 ASR（多厂商 / 本地 Whisper）→ 文本 LLM 思考（推荐 MiniMax）→ Edge 或 MiniMax Speech 播报；摄像头多模态。
 
 
 
@@ -103,8 +103,8 @@ agent需要最少40分钟的面试时长.需要有优秀的上下文管理和工
 | RAG 边界（公司用 RAG，简历 / GitHub 不用） | ✅ | 抽象层 `RAGBackend`（`local` Chroma / `stepfun` retrieval / `none`） |
 | 上下文：30% 阈值 + 结构化 agent_state | ✅ | `app/services/context/manager.py` + `InterviewAgent` |
 | 面经数据：内置 + 检索，不爬虫 | ✅ | 当前内置 7 家（字节/腾讯/阿里/美团/米哈游/OpenAI/Google），无众包上传 |
-| 人像：CSS 矢量 + 口型/眨眼/情绪 | ✅ | `frontend/src/features/avatar/InterviewerAvatar.tsx`；**未引入 Live2D**（P1） |
-| 语音：Edge TTS + faster-whisper | ✅ | 串行队列；本地 CPU 推理 |
+| 人像：CSS 矢量 + 口型/眨眼/情绪 | ✅ | `InterviewerAvatar`；可选 TalkingHead GLB；**未引入 Live2D**（P1） |
+| 语音：三处理器（ASR + 思考 LLM + TTS） | ✅ | 独立 ASR BYOK；播报 Edge / MiniMax Speech；本地 Whisper 回退 |
 | 注册 / 登录 / 多用户隔离 | ❌ 未实现 | MVP 定位本地单机；`profile_id=1` 单行 |
 | 等待叫号 / 候考大厅 | ❌ 未实现 | 创建会话即可开始 |
 | 面经众包上传 | ❌ 未实现 | 仅有 duckduckgo 搜索 |

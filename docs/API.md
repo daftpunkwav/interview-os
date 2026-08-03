@@ -19,9 +19,11 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 |---|---|---|---|---|
 | GET | `/health` | — | `{status,service,version}` | 健康探针（未挂在 `/api/v1` 下） |
 | GET | `/api/v1/options` | — | `Options` | 启动初始化：岗位/职级/公司/工作流/人像/场景/TTS 音色 |
-| GET | `/api/v1/settings/llm` | — | `LLMSettings` | 仅 1 行，id=1 |
-| PUT | `/api/v1/settings/llm` | `LLMSettingsUpdate` | `LLMSettings` | 同时设 api_key（`"keep"` 表示不变；新值会被 at-rest AES-256-GCM 加密） |
-| POST | `/api/v1/settings/llm/test` | — | `LLMTestResponse` | SSRF 防御 + 真实连通 |
+| GET | `/api/v1/settings/catalog` | — | 三阶段供应商能力目录 | `reasoning` / `recognize` / `speak` |
+| GET | `/api/v1/settings/llm` | — | `LLMSettings` | 含三处理器指派字段；密钥仅返回 `has_*` 布尔 |
+| PUT | `/api/v1/settings/llm` | `LLMSettingsUpdate` | `LLMSettings` | 思考/ASR/TTS 密钥分列加密；`"keep"` 表示不变；校验组合合法性 |
+| POST | `/api/v1/settings/llm/test` | — | `LLMTestResponse` | 兼容旧入口＝测试「思考」阶段 |
+| POST | `/api/v1/settings/test/{stage}` | `stage=recognize\|reason\|speak` | `LLMTestResponse` | 连通性测试；识别用本地 wav fixture |
 | GET | `/api/v1/profile` | — | `UserProfile` | 自动创建 id=1 |
 | PUT | `/api/v1/profile` | `UserProfileUpdate` | `UserProfile` | 含 GitHub 用户名 / 作品集 / LinkedIn / 城市 / 语言 / 职业亮点 / 远程 / 到岗周期 |
 | POST | `/api/v1/resume/upload` | multipart `file` | `Resume` | **10MB 上限 + 魔数嗅探 + 路径越界防御**；PDF/DOCX/MD/TXT |
@@ -124,9 +126,12 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 { "type": "phase_changed",   "phase": "..." }
 { "type": "interview_complete", "report_id": 42 }
 { "type": "server_ping", "t": 1700000000 }                                       // 心跳：客户端需在 5s 内回 pong
+{ "type": "info",  "message": "..." }                                            // 非致命提示（如 coming_soon 回退）
 { "type": "error", "message": "..." }
 ```
 
+> 实时语音路径：麦克风 PCM → **独立 ASR 凭证**转写（失败回退本地 Whisper）→ 思考 LLM → TTS（Edge / MiniMax Speech / 仅字幕）。思考 Key **不会**静默充当 ASR Key。
+>
 > 同一 `session_id` 只允许一条活跃连接，新连接会踢掉旧连接（`fix/ws-single-session-mutex`）。
 
 ### 2.1 前端强类型
