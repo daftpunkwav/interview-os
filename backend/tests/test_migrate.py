@@ -137,13 +137,14 @@ def test_failed_alter_silently_continues_other_tables() -> None:
     assert "ok" in cols
 
 
-def test_base_model_migrations_are_noop_when_schema_current() -> None:
-    """当 Base.metadata 已包含 MIGRATIONS 中全部列时，迁移应为空操作。"""
+def test_run_migrations_stamps_alembic_version() -> None:
+    """run_migrations 应写入 alembic_version=head。"""
+    from app.core.migrate import ALEMBIC_HEAD_REVISION
+
     eng = _fresh_engine()
-    applied = run_migrations(eng)
-    # 二次运行仍为空
-    applied2 = run_migrations(eng)
-    assert applied2 == {}
-    # 首次也可能为空（模型已与迁移清单对齐）；若有旧库缺列才有 applied
-    for table in applied:
-        assert table in MIGRATIONS
+    run_migrations(eng)
+    with eng.connect() as conn:
+        row = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
+    assert row is not None
+    assert row[0] == ALEMBIC_HEAD_REVISION
+

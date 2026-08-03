@@ -61,7 +61,8 @@
 | `app/agents/` | Agent 编排 | `orchestrator.py` 合并多源快照（视觉/追问信号）；`vision/agent.py` 面部状态；`prep/agent.py` 面试准备 Agent |
 | `app/core/constants.py` | 全局协议常量 | 所有 `StrEnum`（`RAGBackendKind` / `SessionStatus` / `InterviewPhase` / `Personality` 等）+ 阈值（`RESUME_MAX_UPLOAD_BYTES` / `HEARTBEAT_TIMEOUT_SEC` / `TTS_QUEUE_MAX_SIZE`）；改名前后端须原子同步 |
 | `app/services/seed.py` | 启动种子 | 仅写一次；幂等 |
-| `app/core/` | 基础设施 | `security.py` / `secrets.py` / `logging.py` / `ratelimit.py` / `migrate.py` |
+| `app/core/` | 基础设施 | `security.py` / `secrets.py` / `logging.py` / `ratelimit.py` / `migrate.py`（列补全 + Alembic head 戳） |
+| `backend/alembic/` | Schema 版本链 | 基线 revision；`alembic upgrade head` 与启动时 `run_migrations` 共用列迁移逻辑 |
 | `frontend/src/types/` | 强类型契约 | REST / SSE / WS 的所有事件和响应都必须在这里定义 |
 | `frontend/src/lib/api.ts` | API 客户端 | 唯一对外出口；所有页面只能从此处调用 |
 | `frontend/src/features/media/` | WS / 录音 / TTS | 与后端协议保持强类型一致 |

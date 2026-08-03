@@ -1,22 +1,24 @@
-"""SQLite 轻量迁移：为已有库添加新列。
+"""SQLite 列补全迁移（实现）+ Alembic 版本戳。
 
-使用 ``engine.begin()`` 事务包裹同一张表的所有 ADD COLUMN，单张表迁移
-要么全部成功要么全部回滚；其他表的失败互不影响。
-
-.. note::
-
-    本迁移器只负责 *现有表的列补全*；表的创建由 SQLAlchemy
-    :func:`app.database.init_db` 走 ``Base.metadata.create_all``，
-    新模型请加到 ``app/models/``。
+列级幂等迁移仍由本模块的 ``MIGRATIONS`` / ``apply_column_migrations`` 完成；
+Alembic 负责 ``alembic_version`` 追踪，便于后续增量 revision。
+启动路径：``run_migrations(engine)`` → apply + stamp head。
+CLI：``alembic upgrade head``（见 ``alembic/versions``）。
 """
 
+from __future__ import annotations
+
 import logging
+from pathlib import Path
 
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 logger = logging.getLogger(__name__)
+
+# 与 alembic/versions 中 revision id 对齐
+ALEMBIC_HEAD_REVISION = "20260803_0001"
 
 # table -> [ALTER 语句列表]
 MIGRATIONS: dict[str, list[str]] = {
@@ -90,29 +92,21 @@ MIGRATIONS: dict[str, list[str]] = {
 
 
 def _column_name_from_stmt(stmt: str) -> str | None:
-    """从形如 ``ALTER TABLE x ADD COLUMN name TYPE DEFAULT ...`` 的语句里
-    抽取列名；无法抽取时返回 None（进入 try/except 路径判断）。"""
+    """从 ALTER ADD COLUMN 语句抽取列名。"""
     try:
         marker = "ADD COLUMN"
         idx = stmt.upper().find(marker)
         if idx < 0:
             return None
-        rest = stmt[idx + len(marker):].strip()
-        # 取第一个 token，去掉可能的引号
+        rest = stmt[idx + len(marker) :].strip()
         token = rest.split()[0] if rest else ""
         return token.strip('"').strip("`").strip("[]") or None
     except Exception:
         return None
 
 
-def run_migrations(engine: Engine) -> dict[str, list[str]]:
-    """幂等地为已有库补齐缺失列。
-
-    每张表的所有 ADD COLUMN 在同一事务中执行；任意一条失败该表回滚，
-    其它表不受影响。
-
-    :returns: ``{table_name: [applied_column_sqls]}`` 便于测试断言。
-    """
+def apply_column_migrations(engine: Engine) -> dict[str, list[str]]:
+    """幂等补齐缺失列。返回 ``{table: [applied_sql, ...]}``。"""
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
     applied: dict[str, list[str]] = {}
@@ -122,7 +116,8 @@ def run_migrations(engine: Engine) -> dict[str, list[str]]:
             continue
         existing_cols = {c["name"] for c in inspector.get_columns(table)}
         to_apply: list[str] = [
-            s for s in statements
+            s
+            for s in statements
             if (col := _column_name_from_stmt(s)) and col not in existing_cols
         ]
         if not to_apply:
@@ -134,14 +129,13 @@ def run_migrations(engine: Engine) -> dict[str, list[str]]:
                     logger.info("迁移成功: %s", stmt[:80])
             applied[table] = to_apply
         except (OperationalError, IntegrityError) as e:
-            # 整张表回滚；其它表的迁移仍可继续
-            logger.error(
-                "迁移失败 %s（事务已回滚）: %s", table, e, exc_info=True
-            )
+            logger.error("迁移失败 %s（事务已回滚）: %s", table, e, exc_info=True)
         except Exception as e:
             logger.error(
                 "迁移失败 %s（事务已回滚，未知异常类型）: %s",
-                table, e, exc_info=True,
+                table,
+                e,
+                exc_info=True,
             )
 
     if applied:
@@ -151,5 +145,43 @@ def run_migrations(engine: Engine) -> dict[str, list[str]]:
             sum(len(v) for v in applied.values()),
         )
     else:
-        logger.debug("数据库无需迁移")
+        logger.debug("数据库无需列迁移")
     return applied
+
+
+def stamp_alembic_head(engine: Engine, revision: str = ALEMBIC_HEAD_REVISION) -> None:
+    """确保 alembic_version 指向当前 head（兼容已有库首次接入 Alembic）。"""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS alembic_version ("
+                "version_num VARCHAR(32) NOT NULL PRIMARY KEY"
+                ")"
+            )
+        )
+        row = conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).fetchone()
+        if row is None:
+            conn.execute(
+                text("INSERT INTO alembic_version (version_num) VALUES (:v)"),
+                {"v": revision},
+            )
+        elif row[0] != revision:
+            conn.execute(
+                text("UPDATE alembic_version SET version_num = :v"),
+                {"v": revision},
+            )
+
+
+def run_migrations(engine: Engine) -> dict[str, list[str]]:
+    """启动入口：列补全 + Alembic 版本戳。"""
+    applied = apply_column_migrations(engine)
+    try:
+        stamp_alembic_head(engine)
+    except Exception:
+        logger.exception("写入 alembic_version 失败（列迁移已完成）")
+    return applied
+
+
+def alembic_config_path() -> Path:
+    """backend/alembic.ini。"""
+    return Path(__file__).resolve().parents[2] / "alembic.ini"
