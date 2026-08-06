@@ -563,10 +563,11 @@ class LLMClient:
                 embed_key = decrypt_secret(self.api_key) if self.api_key else ""
         except LegacySecretFormatError as e:
             logger.error("Embeddings API Key 使用旧版加密格式，请重新保存: %s", e)
-            embed_key = self.api_key
+            raise
         except ValueError as e:
-            logger.error("Embeddings API Key 解密失败: %s", e)
-            embed_key = self.api_key
+            # fail-closed：解密失败不得回退明文 key 发请求（对齐 from_db 语义）
+            logger.error("Embeddings API Key 解密失败，已中止请求（不回退明文）: %s", e)
+            raise
         headers = {
             "Authorization": f"Bearer {embed_key}",
             "Content-Type": "application/json",

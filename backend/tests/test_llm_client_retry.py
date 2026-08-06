@@ -45,6 +45,8 @@ def _make_client(monkeypatch: pytest.MonkeyPatch, *, allow_local: bool) -> Any:
 @pytest.mark.asyncio
 async def test_chat_4xx_no_retry(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _make_client(monkeypatch, allow_local=False)
+    # 本测试聚焦重试语义：URL 校验放行（域名真实 DNS 在不同环境解析结果不同）
+    monkeypatch.setattr("app.services.llm.client.is_safe_http_url", lambda *a, **kw: True)
     http_client = AsyncMock()
     fake_resp = MagicMock(spec=httpx.Response)
     fake_resp.status_code = 400
@@ -64,6 +66,8 @@ async def test_chat_4xx_no_retry(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.asyncio
 async def test_chat_429_retries_then_returns(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _make_client(monkeypatch, allow_local=False)
+    # 同 test_chat_4xx_no_retry：URL 校验放行，聚焦重试语义
+    monkeypatch.setattr("app.services.llm.client.is_safe_http_url", lambda *a, **kw: True)
 
     succ = MagicMock(spec=httpx.Response)
     succ.status_code = 200

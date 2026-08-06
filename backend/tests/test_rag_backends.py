@@ -200,6 +200,13 @@ def test_stepfun_ensure_index_uses_configured_vector_store_id(monkeypatch) -> No
             captured["calls"].append(("POST", url))
             return _StubResp()
 
+    # 聚焦 HTTP 序列：URL 校验放行（真实 DNS 在不同环境解析结果不同），
+    # 且 make_pinned_async_client 内部会真实解析 DNS，需一并替换
+    from app.services.rag import stepfun_backend as sb
+
+    monkeypatch.setattr(sb, "is_safe_http_url", lambda *a, **kw: True)
+    monkeypatch.setattr(sb, "assert_safe_http_url", lambda *a, **kw: None)
+    monkeypatch.setattr(sb, "make_pinned_async_client", lambda *a, **kw: _StubClient())
     monkeypatch.setattr(httpx, "AsyncClient", _StubClient)
 
     settings = _make_settings(
@@ -414,3 +421,39 @@ def test_interview_runner_function_tools_without_rag(db) -> None:
     tools = runner._collect_chat_tools()
     assert tools is not None
     assert any((t.get("function") or {}).get("name") == "lookup_resume_projects" for t in tools)
+
+
+def test_llm_client_embed_decrypt_failure_fails_closed(monkeypatch) -> None:
+    """Embeddings key 解密失败必须抛错中止，不得回退明文 key 发请求。"""
+    import asyncio
+
+    import pytest
+
+    import app.services.llm.client as llm_mod
+    from app.core.secrets import encrypt_secret
+
+    requested: list[str] = []
+
+    class _StubClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def post(self, url, **kw):
+            requested.append(url)
+            raise AssertionError("不应发出任何请求")
+
+    monkeypatch.setattr(llm_mod, "make_pinned_async_client", lambda *a, **kw: _StubClient())
+    monkeypatch.setattr(llm_mod, "is_safe_http_url", lambda *a, **kw: True)
+    # 篡改 enc:v2 密文：同一 master 加密后再改一个字节 → 解密必然失败
+    bad = encrypt_secret("sk-emb-valid") or ""
+    _, rest = bad.split(":", 1)
+    mangled = f"enc:v2:{rest[:-3]}xxx"
+    monkeypatch.setattr(llm_mod, "get_settings", lambda: _make_settings(llm_embeddings_key=mangled))
+
+    llm = LLMClient(api_base="https://api.openai.com/v1", api_key="sk-chat", model="gpt-4o")
+    with pytest.raises(ValueError):
+        asyncio.run(llm.embed(["hello"], model="BAAI/bge-m3"))
+    assert requested == [], "解密失败后不应回退明文 key 发出请求"
