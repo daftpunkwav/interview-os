@@ -6,7 +6,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.core.constants import (
+    DEFAULT_INTERVIEW_STYLE,
     DEFAULT_LLM_PROTOCOL,
+    DEFAULT_PERSONALITY,
     MAX_CONFIG_STR_CHARS,
     MAX_USER_TEXT_CHARS,
 )
@@ -233,9 +235,9 @@ class InterviewConfig(BaseModel):
     level: str = Field(..., max_length=MAX_CONFIG_STR_CHARS)
     company: str = Field(..., max_length=MAX_CONFIG_STR_CHARS)
     workflow_type: Literal["technical", "hr", "management"] = "technical"
-    personality: Literal["gentle", "professional", "pressure", "hr", "expert"] = "professional"
+    personality: Literal["gentle", "professional", "pressure", "hr", "expert"] = DEFAULT_PERSONALITY.value
     strictness: int = Field(default=3, ge=1, le=10)
-    interview_style: Literal["guided", "deep_dive", "continuous", "challenging"] = "deep_dive"
+    interview_style: Literal["guided", "deep_dive", "continuous", "challenging"] = DEFAULT_INTERVIEW_STYLE.value
     resume_id: int | None = None
     avatar_id: str = Field(default="professional_male", max_length=MAX_CONFIG_STR_CHARS)
     scene_id: str = Field(default="meeting_room", max_length=MAX_CONFIG_STR_CHARS)

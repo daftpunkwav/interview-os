@@ -281,14 +281,9 @@ class TestFailAndClose:
         from app.realtime.ws_handler import InterviewWSHandler
 
         class _StubSession:
-            """handle() 在状态分支前会读取 LLMSettings/agent 字段，缺省返回 None。"""
-
             id = 1
             status = "completed"
             access_token = "test-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-
-            def __getattr__(self, name: str):
-                return None
 
         self._patch_session_db(monkeypatch, _StubSession())
 
@@ -298,6 +293,9 @@ class TestFailAndClose:
         )
         await handler.handle()
 
+        # 状态检查已前置到 claim/初始化之前：completed 会话直接发"面试已结束"
         assert ws.send_json.await_count == 1
-        assert ws.send_json.await_args[0][0]["type"] == "error"
+        err = ws.send_json.await_args[0][0]
+        assert err["type"] == "error"
+        assert err["message"] == "面试已结束"
         ws.close.assert_awaited_once_with(code=4401)

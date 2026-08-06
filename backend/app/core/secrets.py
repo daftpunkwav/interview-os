@@ -115,16 +115,15 @@ def _migrate_legacy_keyfile() -> None:
 
 
 def _load_secret_bytes() -> bytes:
-    """返回原始 master 密钥（≥32 字节）。"""
+    """返回原始 master 密钥（≥32 字节）。
+
+    密钥强度（≥16 字节）由 :func:`validate_master_key_env` 校验，
+    ``main.py`` 的启动门禁在 ``env=prod`` 下强制；此处不重复拒绝，
+    以免破坏 dev 场景下既有短密钥部署。
+    """
     raw = os.environ.get("INTERVIEWOS_SECRET_KEY")
     if raw:
         # 既支持 base64 编码，也支持明文字符串（自动规范化）
-        status = validate_master_key_env()
-        if status == "too_short":
-            raise ValueError(
-                "INTERVIEWOS_SECRET_KEY 强度不足：明文需 ≥16 字符，"
-                "或 base64 解码后 ≥16 字节"
-            )
         try:
             decoded = base64.b64decode(raw, validate=True)
             if len(decoded) >= 16:

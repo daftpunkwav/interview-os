@@ -15,8 +15,8 @@ backend:
   before_script:
     - cd backend
     - pip install -q -r requirements.txt
-    # 工具链不写入 requirements.txt，保持运行时依赖清单干净
-    - pip install -q ruff mypy pytest-cov pip-audit
+    # 工具链固定版本（与本地验证一致）：ruff 0.16 默认规则集扩张会导致 252 错
+    - pip install -q ruff==0.15.20 mypy==2.1.0 pytest-cov==7.1.0 pip-audit==2.10.1
   script:
     - ruff check app/
     - python -m mypy app/ --ignore-missing-imports

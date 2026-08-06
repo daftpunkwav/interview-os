@@ -172,6 +172,9 @@ class TestIsSafeHttpUrl:
             ("http://192.0.2.1", False, False),  # TEST-NET-1
             ("http://198.51.100.1", False, False),  # TEST-NET-2
             ("http://203.0.113.1", False, False),  # TEST-NET-3
+            # IANA 特例：is_private=False 但属保留用途（PCP anycast），须显式拦截
+            ("http://192.0.0.9", False, False),
+            ("http://192.0.0.10", False, False),
             # Dev 模式允许本地
             ("http://127.0.0.1:8000", True, True),
             ("http://localhost:8000", True, True),

@@ -84,6 +84,7 @@ _DEFAULT_BLOCKED_NETS = [
     ipaddress.ip_network("169.254.0.0/16"),
     ipaddress.ip_network("0.0.0.0/8"),
     ipaddress.ip_network("100.64.0.0/10"),  # CGNAT / 运营商共享
+    ipaddress.ip_network("192.0.0.0/24"),  # IANA 特例（192.0.0.9/10 PCP anycast 非 is_private）
     ipaddress.ip_network("224.0.0.0/4"),  # multicast
     ipaddress.ip_network("240.0.0.0/4"),  # reserved
     ipaddress.ip_network("::1/128"),

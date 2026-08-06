@@ -423,37 +423,48 @@ def test_interview_runner_function_tools_without_rag(db) -> None:
     assert any((t.get("function") or {}).get("name") == "lookup_resume_projects" for t in tools)
 
 
-def test_llm_client_embed_decrypt_failure_fails_closed(monkeypatch) -> None:
+def test_llm_client_embed_decrypt_failure_fails_closed(monkeypatch, tmp_path) -> None:
     """Embeddings key 解密失败必须抛错中止，不得回退明文 key 发请求。"""
     import asyncio
 
     import pytest
 
     import app.services.llm.client as llm_mod
+    from app.core import secrets as secrets_mod
     from app.core.secrets import encrypt_secret
 
-    requested: list[str] = []
+    # 固定 master + 隔离 keyfile（对齐 test_secrets.py 先例），避免测试写入源码树
+    import base64 as _b64
 
-    class _StubClient:
-        async def __aenter__(self):
-            return self
+    monkeypatch.setenv("INTERVIEWOS_SECRET_KEY", _b64.b64encode(b"a" * 32).decode())
+    monkeypatch.setattr(secrets_mod, "_BACKEND_DATA", tmp_path)
+    monkeypatch.setattr(secrets_mod, "_DEFAULT_KEYFILE", tmp_path / ".secret.key")
+    secrets_mod._reset_cache()
+    try:
+        requested: list[str] = []
 
-        async def __aexit__(self, *exc):
-            return False
+        class _StubClient:
+            async def __aenter__(self):
+                return self
 
-        async def post(self, url, **kw):
-            requested.append(url)
-            raise AssertionError("不应发出任何请求")
+            async def __aexit__(self, *exc):
+                return False
 
-    monkeypatch.setattr(llm_mod, "make_pinned_async_client", lambda *a, **kw: _StubClient())
-    monkeypatch.setattr(llm_mod, "is_safe_http_url", lambda *a, **kw: True)
-    # 篡改 enc:v2 密文：同一 master 加密后再改一个字节 → 解密必然失败
-    bad = encrypt_secret("sk-emb-valid") or ""
-    _, rest = bad.split(":", 1)
-    mangled = f"enc:v2:{rest[:-3]}xxx"
-    monkeypatch.setattr(llm_mod, "get_settings", lambda: _make_settings(llm_embeddings_key=mangled))
+            async def post(self, url, **kw):
+                requested.append(url)
+                raise AssertionError("不应发出任何请求")
 
-    llm = LLMClient(api_base="https://api.openai.com/v1", api_key="sk-chat", model="gpt-4o")
-    with pytest.raises(ValueError):
-        asyncio.run(llm.embed(["hello"], model="BAAI/bge-m3"))
-    assert requested == [], "解密失败后不应回退明文 key 发出请求"
+        monkeypatch.setattr(llm_mod, "make_pinned_async_client", lambda *a, **kw: _StubClient())
+        monkeypatch.setattr(llm_mod, "is_safe_http_url", lambda *a, **kw: True)
+        # 篡改 enc:v2 密文：同一 master 加密后再改一个字节 → 解密必然失败
+        bad = encrypt_secret("sk-emb-valid") or ""
+        _, rest = bad.split(":", 1)
+        mangled = f"enc:v2:{rest[:-3]}xxx"
+        monkeypatch.setattr(llm_mod, "get_settings", lambda: _make_settings(llm_embeddings_key=mangled))
+
+        llm = LLMClient(api_base="https://api.openai.com/v1", api_key="sk-chat", model="gpt-4o")
+        with pytest.raises(ValueError):
+            asyncio.run(llm.embed(["hello"], model="BAAI/bge-m3"))
+        assert requested == [], "解密失败后不应回退明文 key 发出请求"
+    finally:
+        secrets_mod._reset_cache()

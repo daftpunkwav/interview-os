@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 from collections.abc import Generator
 from pathlib import Path
@@ -22,6 +23,11 @@ def pytest_configure(config: pytest.Config) -> None:
     # 标记 main.py 在 lifespan 关闭时不 dispose engine，避免破坏
     # StaticPool + :memory: 的跨测试共享语义。
     os.environ["INTERVIEWOS_TEST_MODE"] = "1"
+    # 固定 master key（≥16 字节 base64），避免测试触发 _load_secret_bytes
+    # 的 fallback 把随机密钥写入源码树 data/.secret.key
+    os.environ.setdefault(
+        "INTERVIEWOS_SECRET_KEY", base64.b64encode(b"test-master-key-32-bytes").decode()
+    )
 
 
 @pytest.fixture(autouse=True)

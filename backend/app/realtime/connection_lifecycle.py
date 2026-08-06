@@ -150,6 +150,11 @@ class ConnectionLifecycleMixin:
             ):
                 await self._fail_and_close("无权访问该面试会话")
                 return
+            # 状态检查前置：非 PENDING/ACTIVE 的会话无需任何初始化，
+            # 避免对已完成会话白跑 LLM/凭据/RAG 解析并泄漏未登记的后台任务。
+            if session.status not in (SessionStatus.PENDING.value, SessionStatus.ACTIVE.value):
+                await self._fail_and_close("面试已结束")
+                return
             await claim_session_connection(self)
 
             self.llm = LLMClient.from_db(db)
@@ -232,14 +237,14 @@ class ConnectionLifecycleMixin:
                 self._session_prosody.rate,
                 self._session_prosody.pitch,
             )
-            # 本地 Whisper 预热；云端 ASR 时仍预热 base 作回退
+            # 本地 Whisper 预热；云端 ASR 时仍预热 base 作回退。
+            # 登记到 _bg_tasks，随连接关闭统一取消，避免泄漏。
             if self._stt_creds.provider == "local" or is_local_stt_model(self._whisper_model):
                 local_m = self._whisper_model if is_local_stt_model(self._whisper_model) else "base"
-                asyncio.create_task(warmup_whisper(local_m))
+                self._spawn(warmup_whisper(local_m))
             else:
-                asyncio.create_task(warmup_whisper("base"))
+                self._spawn(warmup_whisper("base"))
 
-            # 状态判断统一走枚举值
             if session.status == SessionStatus.PENDING.value:
                 await self._tts_queue.start(self._tts_send)
                 await self.set_turn(TurnState.AI_SPEAKING)
@@ -256,9 +261,7 @@ class ConnectionLifecycleMixin:
                 self._begin_playback_wait()
                 self._tts_sent_this_turn = False
                 await self.set_turn(TurnState.USER_SPEAKING)
-            else:
-                await self._fail_and_close("面试已结束")
-                return
+            # 非 PENDING/ACTIVE 已在 claim 前拦截，此处仅剩 PENDING/ACTIVE 分支
 
             # 主循环带心跳：30s 未收到客户端消息主动 ping；累计 3 次失败断开
             miss_count = 0
