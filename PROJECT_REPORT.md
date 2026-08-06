@@ -1,6 +1,6 @@
 # InterviewOS 项目状况与进展报告
 
-> 生成日期：2026-08-03（语音三处理器更新）  
+> 生成日期：2026-08-05（最近一次核对，以 `git log` 最新 commit 为准）  
 > 分支：`main`  
 > 权威需求：`InterviewOS.md`  
 > 作者约定：`daftpunkwav` / `daftpunk.wav@outlook.com`  
@@ -42,7 +42,7 @@
 | 面试配置 | `/interview` | ✅ | 岗位/职级/公司/工作流/人格/严厉度/风格/人像/场景/简历 |
 | 实时面试房间 | `/interview/[id]` | ✅ | WS、摄像头、ASR→思考→TTS、文字、阶段流转；同会话单连接（新连接踢旧） |
 | 面试官拟真人像 | 面试房间 | ✅ | TalkingHead 3D GLB（口型/情绪）+ WebGL 失败时回退 CSS SVG 半身像 |
-| 真实语音 | 三处理器 | ✅ | ASR 多厂商 + 本地 Whisper 回退；播报 Edge / MiniMax Speech / 仅字幕 |
+| 真实语音 | 三处理器 | ✅ | ASR 多厂商 + 本地 Whisper 回退；播报 Edge TTS / 其他云端 TTS / 仅字幕 |
 | GitHub 项目核验 | 面试/准备工具 | ✅ | 用户/仓库/README/commit/PR/文件/语言（REST + function tools） |
 | 公司 RAG | 面试回合 | ✅ | local Chroma / StepFun retrieval / none 三后端；数据来自内置 7 家 |
 | 动态追问 | Runner | ✅ | 结构化信号 + 工具证据 |
@@ -153,7 +153,7 @@ SQLite · Chroma · uploads · system_learning.json
 10. **报告 SSE 单次 LLM**（`fix/report-stream-single-llm`）
 11. **出站 DNS pin**（`fix/ssrf-pin-ip-transport`，缓解 DNS rebinding TOCTOU）
 12. **前端同源代理 + Google MD3 风格 UI**（`feat/frontend`）
-13. **测试**：18 个测试文件（`test_*.py` 16 个 + `conftest` / `fakes`），含 `test_github_tools` / `test_resume_analysis_normalize` / `test_growth_learning` / `test_rag_backends` / `test_security` / `test_security_extra` / `test_report_stream` / `test_migrate` / `test_llm_client_retry` 等通过
+13. **测试**：30+ 个测试文件（`test_*.py` 30 个 + `conftest` / `fakes`），含 `test_github_tools` / `test_resume_analysis_normalize` / `test_growth_learning` / `test_rag_backends` / `test_security` / `test_security_extra` / `test_report_stream` / `test_migrate` / `test_llm_client_retry` / `test_phase_ssot` / `test_voice_pipeline` 等通过；具体数字以最近一次 `pytest --collect-only` 为准
 
 ### 主要 Git 分支
 

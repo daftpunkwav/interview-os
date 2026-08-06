@@ -24,7 +24,7 @@
 1. **`git checkout -b feat/your-thing` 从 main 拉分支**；
 2. 每个小改动一次提交，便于 review 与回滚；
 3. 大改动（新模块、新协议）请先开 issue 讨论，或者直接在 PR description 里写 RFC；
-4. 跑通 `pytest`（48 通过为基线）与 `npm run build` 再提 PR；
+4. 跑通 `pytest` 与 `npm run build` 再提 PR；测试基线见 [`DEVELOPMENT_PROGRESS.md §5`](./DEVELOPMENT_PROGRESS.md)；
 5. PR title 简要说明动机；description 关联 issue / 列影响面；
 6. Review 通过后 squash merge。
 

@@ -1,8 +1,8 @@
 # InterviewOS 代码质量 / 架构 / 安全 审查报告
 
-> 报告日期：2026-07-23
+> 报告版本：v2 静态审查版（2026-07-23 完稿）
 > 范围：`backend/app/**`、`backend/tests/**`、`frontend/src/**`、`frontend/next.config.js`、`frontend/package.json`、`frontend/tsconfig.json`、`frontend/.env*`
-> 分支：`main`
+> 分支：`main`（v2 当时的快照）；更新版本见 [`docs/review/REVIEW_2026-08-04.md`](./docs/review/REVIEW_2026-08-04.md)
 > 范围声明：**本报告仅做审查与建议，不修改任何代码**。所有结论附带文件:行号以便复核。
 > 报告方法：
 > 1. 并行 4 个独立审查 sub-agent（安全 / 架构 / 前端 / 测试）覆盖广度；其中安全 / 测试因 API 中断未返回结果，相关章节由主审亲自精读补足；

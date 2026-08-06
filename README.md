@@ -59,11 +59,13 @@ InterviewOS 是一个基于 AI Agent 的真实面试模拟系统。上传简历�
 ### 1. 克隆
 
 ```bash
-git clone https://github.com/daftpunkwav/interview-os.git
+git clone https://gitlab.com/daftpunkwav/interview-os.git
 cd interview-os
 ```
 
-> 国内可换 `https://gitee.com/daftpunkwav/interview-os.git` 或 `https://gitlab.com/daftpunkwav/interview-os.git`。
+> 默认分支追踪 `gitlab/main`，主开发在 GitLab；其余镜像同步：
+> - GitHub：`https://github.com/daftpunkwav/interview-os.git`
+> - Gitee：`https://gitee.com/daftpunkwav/interview-os.git`
 
 ### 2. 后端
 
@@ -116,7 +118,7 @@ npm run dev
 |------|------|------|
 | 语音识别 | 云端 ASR 或本地 Whisper；思考 LLM 的 Key **不得**用作 ASR Key | 设置页 ASR 字段 / 独立供应商 Key |
 | 面试思考 | 必须是文本 LLM（OpenAI 兼容） | `LLM_API_*` 或设置页思考区 |
-| 语音输出 | Edge（默认）/ MiniMax Speech / 仅字幕 | 设置页播报区；同供应商时可单独填写或复用已配置的 TTS Key |
+| 语音输出 | Edge TTS（默认）/ 其他云端 TTS / 仅字幕 | 设置页播报区；同供应商时可单独填写或复用已配置的 TTS Key |
 
 ```env
 LLM_API_BASE=https://api.openai.com/v1
@@ -201,7 +203,7 @@ InterviewOS/
 
 ## 开发
 
-- 后端测试：`cd backend && python -m pytest -q`（当前 26 个 `test_*.py` + conftest/fakes）
+- 后端测试：`cd backend && python -m pytest -q`（30+ 个 `test_*.py` + conftest/fakes；具体数字以 `pytest --collect-only` 为准）
 - 前端类型检查：`cd frontend && npx tsc --noEmit`
 - 启动前端：`npm run dev`
 - 启动后端：`uvicorn app.main:app --reload`

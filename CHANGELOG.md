@@ -3,7 +3,7 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的语义化约定。
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> 最近一次核对：2026-08-03（`main` 分支）。实现状态详见 [`DEVELOPMENT_PROGRESS.md`](./DEVELOPMENT_PROGRESS.md)。
+> 最近一次核对：2026-08-05（`main` 分支）。实现状态详见 [`DEVELOPMENT_PROGRESS.md`](./DEVELOPMENT_PROGRESS.md)。
 
 ## [Unreleased]
 
@@ -97,7 +97,7 @@
 
 ### 测试（Tests）
 
-- 共 18 个测试文件（`backend/tests/`：`test_*.py` 16 个 + `conftest.py` / `fakes.py`）
+- 共 30+ 个测试文件（`backend/tests/`：`test_*.py` 30 个 + `conftest.py` / `fakes.py`；具体数字以最近一次 `pytest --collect-only` 为准）
 - 覆盖：Runner / Followup / RAG（含多后端）/ Context 压缩 / TTS Queue / WS handler / Migrate / Secrets / Security（含 DNS rebinding）/ v1 路径 / 简历评价规范化 / GitHub 工具 / LLM 客户端重试 / 报告 SSE / 成长学习
 
 ### 文档（Docs）

@@ -1,6 +1,6 @@
 # InterviewOS 当前开发进度报告
 
-> 报告日期：2026-07-23
+> 报告日期：以 `git log` 最新 commit 为准（不维护固定日期）
 > 分支：`main`
 > 报告范围：仓库当前 `main` 分支的实际代码状态（以代码为准）
 > 权威设想：[`InterviewOS.md`](./InterviewOS.md) · [`docs/PRD/PRD.md`](./docs/PRD/PRD.md)
@@ -259,7 +259,7 @@ TTS Queue → 已配置播报处理者 / 仅字幕 → tts_audio → useTTSPlaye
 
 ## 5. 测试与质量
 
-- 后端 `pytest -q`：`backend/tests/` 约 26 个 `test_*.py`（另含 conftest/fakes），覆盖 Runner / Followup / RAG / Context / TTS / 三处理器管道 / WS / Migrate / Secrets / Security / v1 路径 / 简历评价 / GitHub / LLM 重试 / 报告 SSE / 成长学习等；
+- 后端 `pytest -q`：`backend/tests/` 30+ 个 `test_*.py`（另含 conftest/fakes），覆盖 Runner / Followup / RAG / Context / TTS / 三处理器管道 / WS / Migrate / Secrets / Security / v1 路径 / 简历评价 / GitHub / LLM 重试 / 报告 SSE / 成长学习等；具体数字以最近一次 `pytest --collect-only` 为准；
 - 前端 `npx tsc --noEmit`：`noUncheckedIndexedAccess` / `noImplicitOverride` / `noFallthroughCasesInSwitch` 全开；
 - `FakeLLMClient` 用于所有 LLM 交互测试（`tests/fakes.py`）。
 
