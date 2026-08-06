@@ -6,6 +6,8 @@ import asyncio
 import logging
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.database import SessionLocal
 from app.models import InterviewSession
 from app.services.interview.agent import strip_markers, strip_think_blocks

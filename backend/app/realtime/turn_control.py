@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -12,6 +13,7 @@ from app.core.constants import SessionStatus
 from app.database import SessionLocal
 from app.models import InterviewSession
 from app.realtime.events import TurnState
+from app.services.interview.agent import strip_markers
 from app.services.interview.events import EventKind, StreamEvent
 
 logger = logging.getLogger(__name__)

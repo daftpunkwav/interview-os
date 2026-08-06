@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from app.core.prompts import with_agent_output_rules
 from app.models import UserProfile
 from app.schemas import CandidateProfile, InterviewConfig
