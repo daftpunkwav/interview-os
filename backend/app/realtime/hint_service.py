@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,15 @@ class HintServiceMixin:
 
     _HINT_TIMEOUT_SEC: float = 20.0
     _HINT_CTX_CHARS: int = 1200
+
+    if TYPE_CHECKING:
+        # 宿主字段契约（mypy 可见，运行时跳过）：由 InterviewWSHandler.__init__ 注入
+        session_id: int
+        llm: Any
+        agent: Any
+        _hint_inflight: str | None
+
+        async def send(self, msg_type: str, **payload: Any) -> None: ...
 
     async def _on_request_hint(self, data: dict[str, Any]) -> None:
         """使用独立 DB session，避免与主回合 ORM Session 竞态。"""

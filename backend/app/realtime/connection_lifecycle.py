@@ -6,11 +6,12 @@ import asyncio
 import base64
 import logging
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import WebSocketDisconnect
 from sqlalchemy.orm import Session
 
+from app.agents.orchestrator import InterviewOrchestrator
 from app.agents.vision.agent import VisionAgent
 from app.config import get_settings
 from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, MAX_USER_TEXT_CHARS, SessionStatus
@@ -44,6 +45,54 @@ _WS_LLM_RATE_LIMIT = DEFAULT_LLM_RATE_LIMIT_PER_MINUTE
 
 class ConnectionLifecycleMixin:
     """握手 / 心跳 / 消息分发。"""
+
+    if TYPE_CHECKING:
+        # 宿主字段契约（mypy 可见，运行时跳过）：由 InterviewWSHandler.__init__ 注入。
+        # 方法不在此声明——同一 MRO 链上已可见，仅字段需补类型。
+        from app.realtime.voice_pipeline import _SentenceTTSQueue  # noqa: F401
+
+        ws: Any
+        session_id: int
+        _client_access_token: str
+        _ws_subprotocol: str | None
+        _superseded: bool
+        turn_state: TurnState
+        agent: InterviewAgent | None
+        llm: LLMClient | None
+        runner: InterviewRunner | None
+        orchestrator: InterviewOrchestrator
+        audio_buffer: list[str]
+        _audio_buffer_bytes: int
+        _closing: bool
+        _turn_busy: bool
+        _mic_opened_at: float
+        _playback_done: asyncio.Event
+        _tts_sent_this_turn: bool
+        _awaiting_playback_gen: int
+        _session_prosody: Any
+        _stt_creds: Any
+        _tts_creds: Any
+        _tts_queue: _SentenceTTSQueue
+        tts_voice: str
+        _whisper_model: str
+
+        # 跨 mixin 方法（定义在其他 mixin，本类调用）
+        def _mark_tts_sent(self) -> None: ...
+        async def _stream_events_with_tts(
+            self, events: Any, *, db: Any = None, session: Any = None, auto_hint: bool = True
+        ) -> Any: ...
+        async def _consume_runner_opening(self, db: Any) -> Any: ...
+        def _begin_playback_wait(self) -> None: ...
+        async def _open_mic_after_playback(self) -> None: ...
+        def _can_start_user_turn(self) -> bool: ...
+        async def _cancel_bg_tasks(self) -> None: ...
+        def _spawn(self, coro) -> asyncio.Task[Any]: ...
+        async def _on_silence_nudge(self) -> None: ...
+        async def _on_candidate_barge_in(self) -> None: ...
+        async def _run_user_turn_end(self, data: dict[str, Any]) -> None: ...
+        async def _run_user_text(self, text: str, data: dict[str, Any]) -> None: ...
+        async def _on_request_finish(self) -> None: ...
+        async def _on_request_hint(self, data: dict[str, Any]) -> None: ...
 
     async def send(self, msg_type: str, **payload: Any) -> None:
         await self.ws.send_json({"type": msg_type, **payload})

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.config import get_settings
 from app.services.interview.agent import strip_markers
@@ -244,6 +244,15 @@ class _SentenceTTSQueue:
 
 class VoicePipelineMixin:
     """短句 TTS；依赖宿主 tts_voice / _session_prosody / _tts_creds / send。"""
+
+    if TYPE_CHECKING:
+        # 宿主字段契约（mypy 可见，运行时跳过）：由 InterviewWSHandler.__init__ 注入
+        tts_voice: str
+        _tts_creds: Any
+
+        async def send(self, msg_type: str, **payload: Any) -> None: ...
+        async def _tts_send(self, msg_type: str, **payload: Any) -> None: ...
+        def _mark_tts_sent(self) -> None: ...
 
     async def _speak_one(self, sentence: str) -> None:
         clean = _plain_text_for_tts(strip_markers(sentence))

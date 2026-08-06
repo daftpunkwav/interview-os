@@ -244,7 +244,8 @@ async def generate_and_persist_report(
                 .values(report=_REPORT_GENERATING_SENTINEL)
             )
             db.commit()
-            claimed = (result.rowcount or 0) > 0
+            # SQLAlchemy Result.rowcount 类型标注不完整，显式取 rowcount 防并发双写
+            claimed = (getattr(result, "rowcount", 0) or 0) > 0
         except Exception:
             db.rollback()
             claimed = False

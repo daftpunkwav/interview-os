@@ -16,6 +16,7 @@ import json
 import logging
 import sys
 import uuid
+from typing import Any
 
 from app.core.security import redact_api_key as _redact
 
@@ -71,7 +72,7 @@ class RedactFilter(logging.Filter):
             if isinstance(record.msg, str):
                 record.msg = _redact(record.msg)
             if record.args:
-                new_args = []
+                new_args: list[Any] = []
                 for a in record.args:
                     if isinstance(a, str):
                         new_args.append(_redact(a))

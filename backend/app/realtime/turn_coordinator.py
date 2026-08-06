@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -29,6 +29,32 @@ __all__ = [
 
 class TurnCoordinatorMixin(TurnStreamingMixin, TurnControlMixin):
     """候选人回合入口；组合流式消费与打断/收尾副作用。"""
+
+    if TYPE_CHECKING:
+        # 宿主字段契约（mypy 可见，运行时跳过）：由 InterviewWSHandler.__init__ 注入
+        session_id: int
+        turn_state: TurnState
+        agent: Any
+        audio_buffer: list[str]
+        _audio_buffer_bytes: int
+        _closing: bool
+        _turn_busy: bool
+        _busy_epoch: int
+        _stream_epoch: int
+        _playback_generation: int
+        _awaiting_playback_gen: int
+        _playback_done: asyncio.Event
+        _playback_wait_timeout_sec: float
+        _tts_sent_this_turn: bool
+        _stt_creds: Any
+        _stt_fail_streak: int
+
+        async def send(self, msg_type: str, **payload: Any) -> None: ...
+        async def set_turn(self, state: TurnState) -> None: ...
+        def _load_session(self, db: Session) -> Any: ...
+        async def _process_user_text(
+            self, text: str, data: dict[str, Any], db: Session, session: InterviewSession
+        ) -> None: ...
 
     def _can_start_user_turn(self) -> bool:
         """是否允许启动新的候选人回合（含打断后接棒）。"""

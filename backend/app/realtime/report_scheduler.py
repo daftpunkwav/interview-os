@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Any
 
 from app.core.constants import SessionStatus
 from app.database import SessionLocal
@@ -14,6 +15,15 @@ logger = logging.getLogger(__name__)
 
 class ReportSchedulerMixin:
     """依赖宿主提供 session_id / llm / send / _report_task / _spawn。"""
+
+    if TYPE_CHECKING:
+        # 宿主字段契约（mypy 可见，运行时跳过）：由 InterviewWSHandler.__init__ 注入
+        session_id: int
+        llm: Any
+        _report_task: Any
+
+        async def send(self, msg_type: str, **payload: Any) -> None: ...
+        def _spawn(self, coro) -> Any: ...
 
     def _schedule_report_generation(self) -> None:
         """后台生成报告（独立 DB session），避免阻塞 WS / 重复任务。"""

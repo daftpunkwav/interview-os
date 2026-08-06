@@ -62,10 +62,11 @@ class LocalEmbeddingRAG:
         texts, metadatas, ids = _build_documents()
         logger.info("构建 Local RAG 索引：%d 条文档", len(texts))
         embeddings = await self._llm.embed(texts)
+        # chromadb 类型标注对 add 的参数较严格，运行时兼容列表输入
         self._collection.add(
             documents=texts,
-            embeddings=embeddings,
-            metadatas=metadatas,
+            embeddings=embeddings,  # type: ignore[arg-type]
+            metadatas=metadatas,  # type: ignore[arg-type]
             ids=ids,
         )
         return len(texts)
@@ -99,9 +100,10 @@ class LocalEmbeddingRAG:
             kwargs["where"] = {"company_id": company_id}
 
         result = self._collection.query(**kwargs)
-        documents = result.get("documents", [[]])[0]
-        metadatas = result.get("metadatas", [[]])[0]
-        distances = result.get("distances", [[]])[0]
+        # chromadb 返回值为 list[list[...]] 包裹；兼容 None（缺省分支）
+        documents = (result.get("documents") or [[]])[0] or []
+        metadatas = (result.get("metadatas") or [[]])[0] or []
+        distances = (result.get("distances") or [[]])[0] or []
         return [
             {
                 "text": doc,

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal, cast
 
 from sqlalchemy.orm import Session
 
@@ -123,14 +123,24 @@ class InterviewAgent:
     # ---- 配置/上下文查询（只读） --------------------------------------------
 
     def get_config(self) -> InterviewConfig:
+        # DB 字段是自由 str，运行时可能含旧值；cast 到 Literal 交由 Pydantic 校验
         return InterviewConfig(
             role=self.session.role,
             level=self.session.level,
             company=self.session.company,
-            workflow_type=self.session.workflow_type,
-            personality=self.session.personality,
+            workflow_type=cast(
+                Literal["technical", "hr", "management"],
+                self.session.workflow_type or "technical",
+            ),
+            personality=cast(
+                Literal["gentle", "professional", "pressure", "hr", "expert"],
+                self.session.personality or "professional",
+            ),
             strictness=self.session.strictness,
-            interview_style=self.session.interview_style,
+            interview_style=cast(
+                Literal["guided", "deep_dive", "continuous", "challenging"],
+                self.session.interview_style or "deep_dive",
+            ),
             resume_id=self.session.resume_id,
         )
 

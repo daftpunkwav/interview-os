@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,45 @@ logger = logging.getLogger(__name__)
 
 class TurnControlMixin:
     """依赖宿主提供 runner/tts/_spawn/send/_stream_events_with_tts 等。"""
+
+    if TYPE_CHECKING:
+        # 宿主字段契约（mypy 可见，运行时跳过）：由 InterviewWSHandler.__init__ 注入
+        session_id: int
+        turn_state: TurnState
+        runner: Any
+        llm: Any
+        agent: Any
+        orchestrator: Any
+        audio_buffer: list[str]
+        _audio_buffer_bytes: int
+        _closing: bool
+        _candidate_interrupts: int
+        _ai_interrupts: int
+        _stream_epoch: int
+        _playback_generation: int
+        _awaiting_playback_gen: int
+        _playback_done: asyncio.Event
+        _tts_sent_this_turn: bool
+        _tts_queue: Any
+        _mic_opened_at: float
+        _last_nudge_at: float
+        _nudge_cooldown_sec: float
+        _nudge_grace_sec: float
+        _stt_fail_streak: int
+
+        async def send(self, msg_type: str, **payload: Any) -> None: ...
+        async def set_turn(self, state: TurnState) -> None: ...
+        def _spawn(self, coro) -> asyncio.Task[Any]: ...
+        def _load_session(self, db: Session) -> Any: ...
+        def _begin_playback_wait(self) -> None: ...
+        async def _open_mic_after_playback(self) -> None: ...
+        async def _wait_client_playback(self) -> None: ...
+        def _schedule_report_generation(self) -> None: ...
+        async def _speak_one(self, sentence: str) -> None: ...
+        async def _consume_runner_turn(self, text: str, data: dict[str, Any], db: Session) -> Any: ...
+        async def _stream_events_with_tts(
+            self, events: Any, *, db: Any = None, session: Any = None, auto_hint: bool = True
+        ) -> Any: ...
 
     def _persist_interrupt_stats(self, session: InterviewSession, db: Session) -> None:
         """把打断计数写入 agent_state，供报告礼貌分使用。"""

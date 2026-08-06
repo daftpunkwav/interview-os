@@ -125,7 +125,8 @@ def _resolve_all(hostname: str) -> list[ipaddress._BaseAddress]:
     out: list[ipaddress._BaseAddress] = []
     seen: set[str] = set()
     for info in infos:
-        addr = info[4][0]
+        # getaddrinfo 返回的 addr 可能是 bytes(仅当 nodename 为 bytes 时)，统一转 str
+        addr = str(info[4][0])
         if addr in seen:
             continue
         seen.add(addr)

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from app.services.stt.aliyun import AliyunProvider
 from app.services.stt.baidu import BaiduProvider
-from app.services.stt.base import SttCredentials
+from app.services.stt.base import SttCredentials, SttProvider
 from app.services.stt.local import LocalWhisperProvider
 from app.services.stt.openai_compat import OpenAICompatProvider
 from app.services.stt.tencent import TencentProvider
@@ -17,7 +17,7 @@ from app.services.voice.catalog import find_provider
 
 logger = logging.getLogger(__name__)
 
-_PROVIDERS = {
+_PROVIDERS: dict[str, SttProvider] = {
     "openai_compat": OpenAICompatProvider(),
     "local": LocalWhisperProvider(),
     "xfyun": XfyunProvider(),

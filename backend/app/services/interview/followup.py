@@ -40,7 +40,7 @@ class FollowupSignal:
     suggested_probe: str  # 注入到 system prompt 的中文引导
 
 
-_NO_SIGNAL = FollowupSignal(False, "none", "")
+_NO_SIGNAL = FollowupSignal(False, FollowupCategory.NONE, "")
 
 
 def analyze(
@@ -63,7 +63,7 @@ def analyze(
     text = (answer or "").strip()
     if not text:
         return FollowupSignal(
-            True, "missing_data", "候选人未给出实质性内容，请引导其展开。"
+            True, FollowupCategory.MISSING_DATA, "候选人未给出实质性内容，请引导其展开。"
         )
 
     # 技术性规则仅在考察类阶段生效；反问/总结/寒暄阶段跳过
@@ -74,13 +74,13 @@ def analyze(
     if vague_hits >= 2:
         return FollowupSignal(
             True,
-            "vague",
+            FollowupCategory.VAGUE,
             "候选人使用了多个模糊表述，请要求其给出具体数据、量级或时间范围。",
         )
     if vague_hits == 1 and len(text) < 60:
         return FollowupSignal(
             True,
-            "vague",
+            FollowupCategory.VAGUE,
             "候选人回答较短且含模糊词，请要求其举一个具体例子并量化效果。",
         )
 
@@ -90,7 +90,7 @@ def analyze(
         if q_keywords and not _answer_contains_any(text, q_keywords):
             return FollowupSignal(
                 True,
-                "off_topic",
+                FollowupCategory.OFF_TOPIC,
                 "候选人回答偏离了问题方向，请礼貌地把话题拉回原问题，并追问核心要点。",
             )
 
@@ -102,7 +102,7 @@ def analyze(
     if len(text) >= 40 and not HAS_QUANT_PATTERN.search(text):
         return FollowupSignal(
             True,
-            "missing_data",
+            FollowupCategory.MISSING_DATA,
             "候选人描述较为丰富但缺少具体数据，请追问 QPS/耗时/提升比例/用户量等关键指标。",
         )
 
@@ -112,7 +112,7 @@ def analyze(
         if domains and not _matches_any_domain(text, domains):
             return FollowupSignal(
                 True,
-                "tech_hole",
+                FollowupCategory.TECH_HOLE,
                 (
                     "候选人回答中未体现其简历声明的技术领域（{domains}），"
                     "请引导其结合这些技术展开回答，或考察对相关概念的掌握。"
