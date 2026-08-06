@@ -191,6 +191,24 @@ def _check_cors_policy(s: Settings) -> None:
 
 
 _check_cors_policy(settings)
+
+
+# ── master key 生产门禁 ────────────────────────────────────────
+# prod 部署必须显式提供 INTERVIEWOS_SECRET_KEY；否则密钥会静默落盘到
+# data/.secret.key，数据库从其他机器迁移后全部 API Key 密文将无法解密。
+def _check_secret_key_policy(s: Settings) -> None:
+    if s.is_prod:
+        from app.core.secrets import validate_master_key_env
+
+        status = validate_master_key_env()
+        if status != "ok":
+            raise RuntimeError(
+                "生产环境 (env=prod) 必须设置 INTERVIEWOS_SECRET_KEY（≥16 字节）；"
+                "禁止依赖自动生成的 data/.secret.key，否则数据库迁移后密文不可解密。"
+            )
+
+
+_check_secret_key_policy(settings)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allow_origins,

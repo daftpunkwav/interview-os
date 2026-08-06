@@ -47,6 +47,27 @@ _LEGACY_KEYFILE = Path(__file__).resolve().parent.parent / "data" / ".secret.key
 
 _INTERVIEWOS_MASTER_SALT = b"interviewos-master-v2"
 
+# 最低 master key 强度：明文 ≥16 字符，或 base64 解码后 ≥16 字节
+_MIN_MASTER_KEY_BYTES = 16
+
+
+def validate_master_key_env() -> str:
+    """校验 ``INTERVIEWOS_SECRET_KEY`` 强度，返回 ``"ok"`` | ``"missing"`` | ``"too_short"``。
+
+    纯函数：不读取/生成任何 keyfile，不触发 :func:`_master_bytes` 缓存，
+    供启动门禁与运行时防线复用。
+    """
+    raw = os.environ.get("INTERVIEWOS_SECRET_KEY")
+    if not raw:
+        return "missing"
+    try:
+        decoded = base64.b64decode(raw, validate=True)
+    except Exception:
+        decoded = b""
+    if len(decoded) >= _MIN_MASTER_KEY_BYTES or len(raw) >= _MIN_MASTER_KEY_BYTES:
+        return "ok"
+    return "too_short"
+
 
 class LegacySecretFormatError(ValueError):
     """旧版加密格式无法解密，请重新保存 API Key。"""
@@ -62,7 +83,7 @@ def _derive_key(master: bytes, salt: bytes) -> bytes:
 
 
 def _migrate_legacy_keyfile() -> None:
-    """若新路径不存在而旧路径存在，复制并告警。"""
+    """若新路径不存在而旧路径存在，复制并告警，成功后删除旧文件。"""
     if _DEFAULT_KEYFILE.exists():
         return
     if not _LEGACY_KEYFILE.exists():
@@ -75,10 +96,19 @@ def _migrate_legacy_keyfile() -> None:
             os.chmod(_DEFAULT_KEYFILE, 0o600)
         except OSError:
             pass
-        logger.warning(
-            "已将 master key 从旧路径迁移到 %s（原 %s）；请确认后可删除旧文件",
+        try:
+            os.remove(_LEGACY_KEYFILE)
+        except OSError as e:
+            logger.warning(
+                "master key 已迁移到 %s，但删除旧文件 %s 失败: %s；请手动清理",
+                _DEFAULT_KEYFILE,
+                _LEGACY_KEYFILE,
+                e,
+            )
+            return
+        logger.info(
+            "已将 master key 从旧路径迁移到 %s 并删除旧文件",
             _DEFAULT_KEYFILE,
-            _LEGACY_KEYFILE,
         )
     except OSError as e:
         logger.error("迁移 master key 失败: %s", e)
@@ -89,6 +119,12 @@ def _load_secret_bytes() -> bytes:
     raw = os.environ.get("INTERVIEWOS_SECRET_KEY")
     if raw:
         # 既支持 base64 编码，也支持明文字符串（自动规范化）
+        status = validate_master_key_env()
+        if status == "too_short":
+            raise ValueError(
+                "INTERVIEWOS_SECRET_KEY 强度不足：明文需 ≥16 字符，"
+                "或 base64 解码后 ≥16 字节"
+            )
         try:
             decoded = base64.b64decode(raw, validate=True)
             if len(decoded) >= 16:
@@ -195,6 +231,7 @@ __all__ = [
     "LegacySecretFormatError",
     "encrypt_secret",
     "decrypt_secret",
+    "validate_master_key_env",
     "_reset_cache",
     "_master_bytes",
     "_VERSION_V2",
