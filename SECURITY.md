@@ -106,6 +106,13 @@ WS 端点 `ws://.../api/v1/ws/interview/{id}` **必须**携带会话 `access_tok
 - CSP 进一步去掉 `unsafe-eval`（受 TalkingHead/Three 约束）。
 - 多 worker 时限流/学习写改集中存储（当前进程内 + 本地文件锁；单机单进程为默认部署）。
 
+## 已知未修复依赖（持续追踪）
+
+| 依赖 | 版本 | 漏洞 | 状态 |
+|---|---|---|---|
+| chromadb | 1.5.9 | PYSEC-2026-311 | PyPI 最新版即 1.5.9，**暂无修复版本**。应用以 `PersistentClient` 嵌入式模式使用，未暴露 chroma server 端口，攻击面有限；上游发布修复版后请升级（`pip install -U chromadb`）并移除 `requirements.txt` 中的注释 |
+| brace-expansion（前端传递依赖） | 1.1.15 / 5.0.7 | npm DoS（指数级展开） | 嵌套在 `@typescript-eslint/typescript-estree` 内部，仅 dev 构建期使用，不进入运行时 bundle；`npm audit fix --force` 可能破坏 ESLint 兼容性，暂不强制升级 |
+
 ## License 下的责任边界
 
 MIT 许可下，作者对任何因不当部署造成的损失不承担责任。

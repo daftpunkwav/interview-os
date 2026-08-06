@@ -19,6 +19,9 @@ ddgs>=9.0.0
 numpy>=1.26.0
 
 # RAG
+# 注意：chromadb 1.5.9 存在已知漏洞 PYSEC-2026-311（暂无修复版本，
+# PyPI 最新版即 1.5.9）。应用以 PersistentClient 嵌入式模式使用，未暴露
+# chroma server 端口，攻击面有限。上游发布修复版后请升级并移除本注释。
 chromadb>=0.5.0
 
 # 加密

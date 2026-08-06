@@ -15,8 +15,16 @@ backend:
   before_script:
     - cd backend
     - pip install -q -r requirements.txt
+    # 工具链不写入 requirements.txt，保持运行时依赖清单干净
+    - pip install -q ruff mypy pytest-cov pip-audit
   script:
-    - pytest -q
+    - ruff check app/
+    # mypy 门槛与 WSHandlerContext Protocol 落地同一 MR 后启用
+    - python -m mypy app/ --ignore-missing-imports || true
+    # 覆盖率 60% 为防回退下限；升 70% 需先补 STT 厂商适配器单测
+    - pytest -q --cov=app --cov-report=term-missing --cov-fail-under=60
+    # chromadb 无修复版本（PYSEC-2026-311），仅告警不阻断
+    - pip-audit -r requirements.txt || true
   rules:
     - changes:
         - backend/**/*
@@ -33,6 +41,8 @@ frontend:
     - npm ci
   script:
     - npx tsc --noEmit
+    # brace-expansion 为 typescript-estree 传递依赖，仅构建期使用，不阻断
+    - npm audit --audit-level=high || true
   rules:
     - changes:
         - frontend/**/*
