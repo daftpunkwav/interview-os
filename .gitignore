@@ -61,3 +61,6 @@ backend/uploads/
 # Logs
 *.log
 logs/
+
+# 个人笔记（原始构想，永不提交）
+docs/history/
