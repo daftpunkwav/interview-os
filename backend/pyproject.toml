@@ -1,0 +1,39 @@
+[project]
+name = "interviewos-backend"
+version = "1.0.0"
+description = "InterviewOS 本地优先 AI 模拟面试系统后端（FastAPI）"
+requires-python = ">=3.11"
+# 运行时依赖与 backend/requirements.txt 保持同步（CI / 启动脚本使用 requirements.txt）
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-ra -q --strict-markers"
+asyncio_mode = "auto"
+
+[tool.mypy]
+# 注意：numpy 新版本类型存根需要 3.12+ 语法；实际运行 Python 为 3.14
+python_version = "3.12"
+ignore_missing_imports = true
+no_incremental = true
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+# 固定规则集（E/F 基础），避免 ruff 0.16+ 新默认规则导致 CI 漂移；
+# 不启用 W（W292 尾换行等既有代码风格问题不属于本仓库约定）
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+]
+ignore = [
+    "E501",  # 行宽由 formatter 处理，长字符串/URL 不强制换行
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试文件允许宽松的断言/辅助写法
+"tests/**" = ["E712"]
