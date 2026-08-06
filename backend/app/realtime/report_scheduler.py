@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from app.core.constants import SessionStatus
 from app.database import SessionLocal

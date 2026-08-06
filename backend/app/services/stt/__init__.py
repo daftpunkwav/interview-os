@@ -9,7 +9,6 @@ from app.services.stt.cloud import (
     LOCAL_WHISPER_SIZES,
     is_local_stt_model,
     resolve_cloud_stt_model,
-    transcribe_pcm_cloud,
 )
 from app.services.stt.router import SttResult, transcribe_with_handler
 from app.services.stt.whisper import (

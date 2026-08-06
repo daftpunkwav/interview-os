@@ -18,10 +18,9 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.core.constants import RAGBackendKind
 from app.models import InterviewSession, LLMSettings
-from app.services.context.manager import compress_messages, estimate_messages_tokens
+from app.services.context.manager import compress_messages
 from app.services.interview.agent import (
     INTERVIEW_COMPLETE_MARKER,
-    PHASE_COMPLETE_MARKER,
     InterviewAgent,
     detect_emotion,
     strip_markers,

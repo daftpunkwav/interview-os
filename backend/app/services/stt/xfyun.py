@@ -12,7 +12,6 @@ from time import mktime
 from urllib.parse import urlencode
 from wsgiref.handlers import format_date_time
 
-import httpx
 
 from app.services.stt.base import SttCredentials
 from app.services.stt.whisper import pcm_base64_to_wav_bytes

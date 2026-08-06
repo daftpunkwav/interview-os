@@ -16,7 +16,6 @@ def strip_think_blocks(content: str) -> str:
     """去掉模型思考块，避免念出/展示内部推理。"""
     if not content:
         return content
-    import re
 
     s = content
     for open_t, close_t in (

@@ -66,8 +66,6 @@ def analyze(
             True, "missing_data", "候选人未给出实质性内容，请引导其展开。"
         )
 
-    lower = text.lower()
-
     # 技术性规则仅在考察类阶段生效；反问/总结/寒暄阶段跳过
     skip_tech_rules = phase_id in _NON_TECHNICAL_PHASES
 

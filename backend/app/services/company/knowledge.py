@@ -1,7 +1,6 @@
 """企业面试风格知识库。"""
 
 from pathlib import Path
-import json
 
 from app.schemas import CompanyInfo
 

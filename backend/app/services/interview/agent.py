@@ -33,7 +33,6 @@ from app.services.interview.report import (
 )
 from app.services.interview.workflows import (
     InterviewPhase,
-    Workflow,
     get_workflow,
 )
 from app.services.llm.client import LLMClient

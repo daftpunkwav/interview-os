@@ -22,7 +22,6 @@ from sqlalchemy.orm import Session
 
 from app.agents.orchestrator import InterviewOrchestrator
 from app.config import get_settings
-from app.database import SessionLocal
 from app.models import InterviewSession
 from app.realtime.connection_lifecycle import ConnectionLifecycleMixin
 from app.realtime.events import TurnState

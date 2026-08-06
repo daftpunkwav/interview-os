@@ -300,7 +300,7 @@ def activate_resume(resume_id: int, db: Session = Depends(get_db)):
     if not r:
         raise HTTPException(status_code=404, detail="简历不存在")
     # 先取消其他活跃简历
-    db.query(Resume).filter(Resume.id != resume_id, Resume.is_active == True).update(
+    db.query(Resume).filter(Resume.id != resume_id, Resume.is_active.is_(True)).update(
         {Resume.is_active: False}, synchronize_session=False
     )
     r.is_active = True

@@ -35,7 +35,7 @@ from app.core.logging import (
     reset_trace_id,
     set_trace_id,
 )
-from app.database import engine, init_db, reset_engine, SessionLocal
+from app.database import engine, init_db, SessionLocal
 from app.core.migrate import run_migrations
 from app.core.security import UnsafeURLError
 from app.core.constants import TRACE_ID_HEADER

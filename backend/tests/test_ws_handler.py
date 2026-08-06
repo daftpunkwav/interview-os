@@ -209,7 +209,10 @@ class TestTraceId:
             access_token = "test-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         mock_db = MagicMock()
         mock_db.query.return_value.filter.return_value.first.return_value = _StubSession()
-        monkeypatch.setattr(ws_mod, "SessionLocal", lambda: mock_db)
+        # handle() 定义在 connection_lifecycle 模块，须 patch 该模块的 SessionLocal
+        monkeypatch.setattr(
+            "app.realtime.connection_lifecycle.SessionLocal", lambda: mock_db
+        )
 
         ws = _make_mock_ws()
         handler = ws_mod.InterviewWSHandler(

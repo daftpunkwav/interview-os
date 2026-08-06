@@ -19,12 +19,11 @@ from app.config import get_settings
 from app.core.constants import DEFAULT_LLM_PROTOCOL, DEFAULT_LLM_RATE_LIMIT_PER_MINUTE
 from app.core.local_only import require_local_peer
 from app.core.ratelimit import rate_limit_dep
-from app.core.security import UnsafeURLError, is_safe_http_url
+from app.core.security import is_safe_http_url
 from app.core.secrets import encrypt_secret
 from app.database import get_db
 from app.models import LLMSettings
 from app.schemas import LLMSettingsResponse, LLMSettingsUpdate, LLMTestResponse
-from app.services.llm.client import LLMClient
 from app.services.voice.catalog import catalog_payload, find_provider
 from app.services.voice.stage_tests import test_recognize, test_reason, test_speak
 
