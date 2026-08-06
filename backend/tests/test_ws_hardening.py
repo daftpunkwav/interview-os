@@ -45,6 +45,7 @@ def _make_handler() -> ws_handler.InterviewWSHandler:
     ws.accept = AsyncMock()
     ws.send_json = AsyncMock()
     ws.receive_json = AsyncMock()
+    ws.close = AsyncMock()
     return ws_handler.InterviewWSHandler(ws, session_id=1)
 
 

@@ -25,6 +25,7 @@ def _make_mock_ws() -> MagicMock:
     ws.accept = AsyncMock()
     ws.send_json = AsyncMock()
     ws.receive_json = AsyncMock()
+    ws.close = AsyncMock()
     return ws
 
 
@@ -221,3 +222,79 @@ class TestTraceId:
         tid = get_trace_id()
         assert tid.startswith("ws-1-")
         captured_tid.append(tid)
+
+
+class TestFailAndClose:
+    """鉴权/状态失败路径应统一发 error + ws.close(4401)。"""
+
+    @staticmethod
+    def _patch_session_db(
+        monkeypatch: pytest.MonkeyPatch, session: object | None
+    ) -> MagicMock:
+        """patch connection_lifecycle 模块的 SessionLocal（handle 定义处）。"""
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = session
+        monkeypatch.setattr(
+            "app.realtime.connection_lifecycle.SessionLocal", lambda: mock_db
+        )
+        return mock_db
+
+    @pytest.mark.asyncio
+    async def test_wrong_token_closes_4401(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.realtime.ws_handler import InterviewWSHandler
+
+        class _StubSession:
+            id = 1
+            status = "pending"
+            access_token = "correct-token-aaaaaaaaaaaaaaaaaaaa"
+
+        self._patch_session_db(monkeypatch, _StubSession())
+
+        ws = _make_mock_ws()
+        handler = InterviewWSHandler(ws, session_id=1, access_token="wrong-token")
+        await handler.handle()
+
+        # 先发 error，再以 4401 关闭
+        assert ws.send_json.await_count == 1
+        assert ws.send_json.await_args[0][0]["type"] == "error"
+        ws.close.assert_awaited_once_with(code=4401)
+
+    @pytest.mark.asyncio
+    async def test_missing_session_closes_4401(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.realtime.ws_handler import InterviewWSHandler
+
+        self._patch_session_db(monkeypatch, None)
+
+        ws = _make_mock_ws()
+        handler = InterviewWSHandler(ws, session_id=999)
+        await handler.handle()
+
+        assert ws.send_json.await_count == 1
+        assert ws.send_json.await_args[0][0]["type"] == "error"
+        ws.close.assert_awaited_once_with(code=4401)
+
+    @pytest.mark.asyncio
+    async def test_finished_session_closes_4401(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.realtime.ws_handler import InterviewWSHandler
+
+        class _StubSession:
+            """handle() 在状态分支前会读取 LLMSettings/agent 字段，缺省返回 None。"""
+
+            id = 1
+            status = "completed"
+            access_token = "test-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+            def __getattr__(self, name: str):
+                return None
+
+        self._patch_session_db(monkeypatch, _StubSession())
+
+        ws = _make_mock_ws()
+        handler = InterviewWSHandler(
+            ws, session_id=1, access_token="test-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+        await handler.handle()
+
+        assert ws.send_json.await_count == 1
+        assert ws.send_json.await_args[0][0]["type"] == "error"
+        ws.close.assert_awaited_once_with(code=4401)

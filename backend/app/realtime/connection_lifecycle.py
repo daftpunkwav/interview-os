@@ -60,6 +60,20 @@ class ConnectionLifecycleMixin:
             self._mic_opened_at = asyncio.get_event_loop().time()
         await self.send("turn_state", state=state.value)
 
+    async def _fail_and_close(self, message: str, code: int = 4401) -> None:
+        """失败路径统一收口：发 error 后关闭连接（默认 4401 = 未授权/会话不可用）。
+
+        避免鉴权/状态失败后连接悬挂：客户端继续发送消息也不会进入主循环。
+        """
+        try:
+            await self.send("error", message=message)
+        except Exception:
+            pass
+        try:
+            await self.ws.close(code=code)
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------
     # 主循环
     # ------------------------------------------------------------------
@@ -79,19 +93,19 @@ class ConnectionLifecycleMixin:
                 InterviewSession.id == self.session_id
             ).first()
             if not session:
-                await self.send("error", message="面试会话不存在")
+                await self._fail_and_close("面试会话不存在")
                 return
             # 先鉴权再占租约：防止仅凭 session_id 踢掉合法连接
             if not tokens_match(
                 getattr(session, "access_token", None), self._client_access_token
             ):
-                await self.send("error", message="无权访问该面试会话")
+                await self._fail_and_close("无权访问该面试会话")
                 return
             await claim_session_connection(self)
 
             self.llm = LLMClient.from_db(db)
             if not self.llm.api_key:
-                await self.send("error", message="请先配置面试思考处理器的 API Key")
+                await self._fail_and_close("请先配置面试思考处理器的 API Key")
                 return
             self.agent = InterviewAgent(session, self.llm)
 
@@ -194,7 +208,7 @@ class ConnectionLifecycleMixin:
                 self._tts_sent_this_turn = False
                 await self.set_turn(TurnState.USER_SPEAKING)
             else:
-                await self.send("error", message="面试已结束")
+                await self._fail_and_close("面试已结束")
                 return
 
             # 主循环带心跳：30s 未收到客户端消息主动 ping；累计 3 次失败断开
