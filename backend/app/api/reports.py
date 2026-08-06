@@ -77,6 +77,7 @@ def get_system_growth_insights():
 @router.get(
     "/{session_id}/stream",
     dependencies=[
+        Depends(require_local_peer),
         Depends(
             rate_limit_dep(
                 key="llm",
@@ -138,7 +139,11 @@ async def get_report_stream(
     )
 
 
-@router.get("/{session_id}", response_model=InterviewReportResponse)
+@router.get(
+    "/{session_id}",
+    response_model=InterviewReportResponse,
+    dependencies=[Depends(require_local_peer)],
+)
 def get_report(
     session_id: int,
     db: Session = Depends(get_db),
