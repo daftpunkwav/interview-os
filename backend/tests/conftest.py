@@ -71,3 +71,27 @@ def temp_upload_dir(tmp_path: Path) -> Path:
     p = tmp_path / "uploads"
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+@pytest.fixture
+def public_dns(monkeypatch: pytest.MonkeyPatch):
+    """固定 ``app.core.security._resolve_all``：IP 字面量走原逻辑，域名一律返回公网 IP。
+
+    使依赖外部 DNS 的 SSRF 用例在本地 / CI 结果一致（避免本地 DNS 代理
+    把测试域名解析到私有段导致"假通过"或"假失败"）。
+    """
+    import ipaddress
+
+    from app.core import security
+
+    def fake_resolve(hostname: str):
+        try:
+            return [ipaddress.ip_address(hostname.strip("[]"))]
+        except ValueError:
+            pass
+        if hostname.lower() == "localhost":
+            # 保留 loopback 语义：dev 模式放行 localhost 的用例依赖它
+            return [ipaddress.ip_address("127.0.0.1")]
+        return [ipaddress.ip_address("93.184.216.34")]
+
+    monkeypatch.setattr(security, "_resolve_all", fake_resolve)

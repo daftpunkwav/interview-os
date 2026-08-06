@@ -166,24 +166,30 @@ class TestIsSafeHttpUrl:
             ("http://172.16.0.1", False, False),
             ("http://169.254.169.254/latest/meta-data", False, False),
             ("http://[::1]", False, False),
+            # 文档 / 基准网段（is_private=True，未列入显式黑名单，靠通用 is_private 拦截）
+            ("http://198.18.0.10", False, False),  # RFC 2544 基准测试段
+            ("http://198.18.0.10", True, False),  # allow_local=True 也不放行
+            ("http://192.0.2.1", False, False),  # TEST-NET-1
+            ("http://198.51.100.1", False, False),  # TEST-NET-2
+            ("http://203.0.113.1", False, False),  # TEST-NET-3
             # Dev 模式允许本地
             ("http://127.0.0.1:8000", True, True),
             ("http://localhost:8000", True, True),
         ],
     )
-    def test_classification(self, url: str, allow_local: bool, expected: bool) -> None:
+    def test_classification(self, url: str, allow_local: bool, expected: bool, public_dns) -> None:
         assert is_safe_http_url(url, allow_local=allow_local) is expected
 
     def test_assert_raises_unsafe(self) -> None:
         with pytest.raises(UnsafeURLError):
             assert_safe_http_url("http://127.0.0.1:8000")
 
-    def test_non_standard_port_default_rejected(self) -> None:
+    def test_non_standard_port_default_rejected(self, public_dns) -> None:
         """严格模式下非 80/443 端口拒绝。"""
         assert is_safe_http_url("https://api.example.com:8443", allow_local=False) is False
         assert is_safe_http_url("https://api.example.com:443", allow_local=False) is True
 
-    def test_port_whitelist_override(self) -> None:
+    def test_port_whitelist_override(self, public_dns) -> None:
         allowed = frozenset({80, 443, 8443})
         assert is_safe_http_url(
             "https://api.example.com:8443", allow_local=False, allowed_ports=allowed

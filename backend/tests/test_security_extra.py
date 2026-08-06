@@ -21,7 +21,7 @@ from app.core.security import (
 
 
 class TestPortAndUrl:
-    def test_query_string_with_safe_path(self) -> None:
+    def test_query_string_with_safe_path(self, public_dns) -> None:
         """URL 带 query string 不应使校验失败。"""
         assert is_safe_http_url(
             "https://api.example.com/v1/models?api_key=xxx",

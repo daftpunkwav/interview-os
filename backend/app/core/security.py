@@ -151,8 +151,12 @@ def _ip_is_safe(ip: ipaddress._BaseAddress, *, allow_local: bool) -> bool:
     for net in _DEFAULT_BLOCKED_NETS:
         if ip in net:
             return False
-    # 额外属性：reserved / multicast（覆盖未列入显式网段的边界情况）
+    # 额外属性：private / reserved / multicast（覆盖未列入显式网段的边界情况）
+    # 注意：127.0.0.1 等 loopback 的 is_private 亦为 True，但已在上方
+    # allow_local 早退中处理，此处私有判定不会误伤 dev 模式放行。
     try:
+        if getattr(ip, "is_private", False):
+            return False
         if getattr(ip, "is_multicast", False) or getattr(ip, "is_reserved", False):
             return False
         if getattr(ip, "is_unspecified", False):
