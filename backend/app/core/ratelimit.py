@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from fastapi import HTTPException, Request
 
 from app.config import get_settings
+from app.core.errors import ApiBusinessError, get_spec
 
 
 # 桶空闲回收时间窗。超过该时间无访问视为可回收。
@@ -136,9 +137,9 @@ def check_rate_limit(
             bucket.timestamps.popleft()
         if len(bucket.timestamps) >= limit:
             retry_after = max(1, int(window_seconds - (now - bucket.timestamps[0])))
-            raise HTTPException(
-                status_code=429,
-                detail=f"请求过于频繁，请在 {retry_after}s 后重试",
+            raise ApiBusinessError(
+                get_spec("A0002"),
+                message=f"请求过于频繁，请在 {retry_after}s 后重试",
                 headers={"Retry-After": str(retry_after)},
             )
         bucket.timestamps.append(now)
@@ -168,9 +169,9 @@ def check_rate_limit_by_id(
             bucket.timestamps.popleft()
         if len(bucket.timestamps) >= limit:
             retry_after = max(1, int(window_seconds - (now - bucket.timestamps[0])))
-            raise HTTPException(
-                status_code=429,
-                detail=f"请求过于频繁，请在 {retry_after}s 后重试",
+            raise ApiBusinessError(
+                get_spec("A0002"),
+                message=f"请求过于频繁，请在 {retry_after}s 后重试",
                 headers={"Retry-After": str(retry_after)},
             )
         bucket.timestamps.append(now)

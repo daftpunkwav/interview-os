@@ -15,7 +15,7 @@ from app.models import PrepSession, Resume
 from app.services.company.knowledge import get_company_context
 from app.services.context.manager import compress_messages, estimate_tokens
 from app.services.github.tools import GITHUB_TOOL_DEFINITIONS, execute_github_tool
-from app.services.interview.tools import parse_tool_arguments
+from app.services.llm.tool_args import parse_tool_arguments
 from app.services.llm.client import LLMClient
 from app.services.search.web import SearchHit, web_search_with_hits
 

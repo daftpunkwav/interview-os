@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -57,9 +57,9 @@ def _safe_base(url: str, *, label: str) -> None:
     if not is_safe_http_url(
         url, allow_local=allow_local, require_https=require_https
     ):
-        raise HTTPException(
-            status_code=400,
-            detail=(
+        raise ApiBusinessError(
+            get_spec("A0007"),
+            message=(
                 f"{label} 地址不安全，"
                 + (
                     "生产环境仅允许 https 公网地址。"
@@ -110,38 +110,38 @@ def _validate_assignments(body: LLMSettingsUpdate) -> None:
     )
     # custom / 未知文本 LLM 允许；仅 ASR/TTS 纯供应商禁止作思考者
     if body.provider in ("openai_compat", "xfyun", "volcengine", "aliyun", "tencent", "baidu", "local", "edge", "minimax_speech", "none"):
-        raise HTTPException(
-            status_code=400,
-            detail="面试思考处理者必须是文本 LLM，不能选择仅 ASR/仅 TTS 供应商",
+        raise ApiBusinessError(
+            get_spec("A4001"),
+            message="面试思考处理者必须是文本 LLM，不能选择仅 ASR/仅 TTS 供应商",
         )
     if reason and not reason.get("can_interview_reason") and reason.get("status") != "coming_soon":
-        raise HTTPException(status_code=400, detail="所选供应商不支持面试思考")
+        raise_error("A4001")
 
     rec = find_provider("recognize", body.speech_recognize_handler)
     if rec:
         if body.speech_recognize_mode == "native_audio" and rec.get("recognize_via") != "native_audio":
-            raise HTTPException(
-                status_code=400,
-                detail="识别方式为原生听音频时，处理者必须支持 native_audio",
+            raise ApiBusinessError(
+                get_spec("A4003"),
+                message="识别方式为原生听音频时，处理者必须支持 native_audio",
             )
         if body.speech_recognize_mode == "transcribe" and rec.get("recognize_via") == "none":
-            raise HTTPException(status_code=400, detail="该识别处理者不支持转写")
+            raise_error("A4002")
 
     speak = find_provider("speak", body.speech_speak_handler)
     if speak:
         if body.speech_speak_mode == "native_audio" and speak.get("speak_via") != "native_audio":
-            raise HTTPException(
-                status_code=400,
-                detail="播报方式为原生出声时，处理者必须支持 native_audio",
+            raise ApiBusinessError(
+                get_spec("A4003"),
+                message="播报方式为原生出声时，处理者必须支持 native_audio",
             )
         if body.speech_speak_mode == "tts_from_text" and speak.get("speak_via") not in (
             "tts_from_text",
             "none",
         ):
             if body.speech_speak_handler not in ("edge", "minimax_speech", "none"):
-                raise HTTPException(
-                    status_code=400,
-                    detail="播报方式为 TTS 时请选择 Edge / MiniMax Speech / 仅字幕",
+                raise ApiBusinessError(
+                    get_spec("A4003"),
+                    message="播报方式为 TTS 时请选择 Edge / MiniMax Speech / 仅字幕",
                 )
 
 
@@ -252,7 +252,7 @@ async def test_pipeline_stage(stage: str, db: Session = Depends(get_db)):
     elif stage in ("speak", "tts"):
         result = await test_speak(db)
     else:
-        raise HTTPException(status_code=400, detail="stage 须为 recognize / reason / speak")
+        raise_error("A4004")
 
     return LLMTestResponse(
         success=bool(result.get("success")),

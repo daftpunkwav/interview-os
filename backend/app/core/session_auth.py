@@ -16,9 +16,10 @@ import secrets
 from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 
-from fastapi import Header, HTTPException, Query, Request, Response, WebSocket
+from fastapi import Header, Query, Request, Response, WebSocket
 
 from app.config import get_settings
+from app.core.errors import ApiBusinessError, get_spec, raise_error
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ def assert_session_token(
 ) -> None:
     """校验失败抛 403。"""
     if not tokens_match(getattr(session, "access_token", None), provided):
-        raise HTTPException(status_code=403, detail=detail)
+        raise ApiBusinessError(get_spec("A0401"), message=detail)
 
 
 def _peer_is_trusted_proxy(peer: str) -> bool:
@@ -156,7 +157,7 @@ def _assert_csrf_if_cookie_only(
     if request.method.upper() in ("GET", "HEAD", "OPTIONS"):
         return
     if not _origin_allowed(request):
-        raise HTTPException(status_code=403, detail="跨站请求被拒绝")
+        raise_error("A0403")
 
 
 def _extract_from_request(

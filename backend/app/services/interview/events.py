@@ -29,6 +29,8 @@ class StreamEvent:
     phase_changed: bool = False   # 本回合是否切换了阶段
     emotion: str = "neutral"      # 情感标签
     error: str = ""               # 错误信息
+    error_code: str = ""          # 业务错误码（如 C0001）；空时前端按 B0001 兜底
+    error_retryable: bool = False # 是否可重试
 
     @classmethod
     def make_token(cls, token: str) -> "StreamEvent":
@@ -54,8 +56,20 @@ class StreamEvent:
         )
 
     @classmethod
-    def make_error(cls, message: str) -> "StreamEvent":
-        return cls(kind=EventKind.ERROR, error=message)
+    def make_error(
+        cls,
+        message: str,
+        *,
+        code: str = "",
+        retryable: bool = False,
+    ) -> "StreamEvent":
+        """构造错误事件。code 为业务错误码；为空时前端按 B0001 兜底显示。"""
+        return cls(
+            kind=EventKind.ERROR,
+            error=message,
+            error_code=code,
+            error_retryable=retryable,
+        )
 
 
 __all__ = ["EventKind", "StreamEvent"]

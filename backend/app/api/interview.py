@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import TypeAdapter
 from sqlalchemy.orm import Session
 
@@ -111,16 +111,22 @@ def get_session(
 ):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
-        raise HTTPException(status_code=404, detail="面试会话不存在")
+        raise_error("A2001")
     assert_session_token(session, access)
     return _to_response(session)
 
 
 async def _collect_turn_result(stream) -> tuple[str, bool]:
-    """消费 Runner 事件流，返回 (最终文案, is_complete)。"""
+    """消费 Runner 事件流，返回 (最终文案, is_complete)。
+
+    错误处理：runner 通过 StreamEvent.error_code 携带业务码（A2002 / C0001 等），
+    REST 路径选择与 WS 路径一致的错误码；具体原因仅记日志（避免上游异常细节
+    泄漏到 envelope）。若 error_code 缺失，按 C0001 兜底（runner 实现侧的契约）。
+    """
     content = ""
     is_complete = False
-    error: str | None = None
+    error_code: str = ""
+    error_message: str = ""
     async for event in stream:
         if event.kind == EventKind.TOKEN:
             content += event.token
@@ -128,9 +134,18 @@ async def _collect_turn_result(stream) -> tuple[str, bool]:
             content = event.content
             is_complete = bool(event.is_complete)
         elif event.kind == EventKind.ERROR:
-            error = event.error or "面试执行失败"
-    if error:
-        raise HTTPException(status_code=502, detail=error)
+            error_code = event.error_code or "C0001"
+            error_message = event.error or "面试执行失败"
+    if error_code:
+        # 仅日志保留原始 message；envelope 用目录标准文案 + hint
+        logger.warning("Runner 返回错误: code=%s msg=%s", error_code, error_message)
+        from app.core.errors import get_spec
+
+        spec = get_spec(error_code)
+        raise ApiBusinessError(
+            spec,
+            message=spec.message,
+        ) from None
     return content, is_complete
 
 
@@ -152,14 +167,14 @@ async def start_interview(
 ):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
-        raise HTTPException(status_code=404, detail="面试会话不存在")
+        raise_error("A2001")
     assert_session_token(session, access)
     if session.status not in (SessionStatus.PENDING.value, SessionStatus.ACTIVE.value):
-        raise HTTPException(status_code=400, detail="面试已结束")
+        raise_error("A2002")
 
     llm = LLMClient.from_db(db)
     if not llm.api_key:
-        raise HTTPException(status_code=400, detail="请先配置 LLM API Key")
+        raise_error("A0006")
 
     agent = InterviewAgent(session, llm)
     runner = InterviewRunner(session, llm, agent)
@@ -192,14 +207,14 @@ async def send_message(
 ):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
-        raise HTTPException(status_code=404, detail="面试会话不存在")
+        raise_error("A2001")
     assert_session_token(session, access)
     if session.status == SessionStatus.COMPLETED.value:
-        raise HTTPException(status_code=400, detail="面试已结束")
+        raise_error("A2002")
 
     llm = LLMClient.from_db(db)
     if not llm.api_key:
-        raise HTTPException(status_code=400, detail="请先配置 LLM API Key")
+        raise_error("A0006")
 
     agent = InterviewAgent(session, llm)
     runner = InterviewRunner(session, llm, agent)
@@ -218,9 +233,7 @@ async def send_message(
         except Exception as e:
             # 对外通用文案，细节仅日志（防上游异常泄漏）
             logger.exception("报告生成失败 sid=%s", session_id)
-            raise HTTPException(
-                status_code=502, detail="报告生成失败，请稍后重试"
-            ) from e
+            raise_error("C1001", cause=e)
 
     return InterviewMessageResponse(
         session_id=session_id,
@@ -254,7 +267,7 @@ async def finish_interview(
     """
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
-        raise HTTPException(status_code=404, detail="面试会话不存在")
+        raise_error("A2001")
     assert_session_token(session, access)
     if (
         session.status == SessionStatus.COMPLETED.value
@@ -269,9 +282,7 @@ async def finish_interview(
         await generate_and_persist_report(session, llm, db)
     except Exception as e:
         logger.exception("报告生成失败 sid=%s", session_id)
-        raise HTTPException(
-            status_code=502, detail="报告生成失败，请稍后重试"
-        ) from e
+        raise_error("C1001", cause=e)
     return {
         "session_id": session_id,
         "status": SessionStatus.COMPLETED.value,
@@ -287,7 +298,7 @@ def get_messages(
 ):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
-        raise HTTPException(status_code=404, detail="面试会话不存在")
+        raise_error("A2001")
     assert_session_token(session, access)
     raw = json.loads(session.messages or "[]")
     # 强校验：仅保留符合 ChatMessage 结构的合法项；坏数据降级为空列表

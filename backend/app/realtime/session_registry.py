@@ -46,7 +46,8 @@ async def claim_session_connection(handler: SessionConnection) -> None:
         try:
             await old.send(
                 "error",
-                message="该面试已在其他连接中打开，本连接将关闭",
+                message="该面试已在其他窗口打开，当前连接已被顶替",
+                code="B2003",
             )
         except Exception:
             pass

@@ -206,6 +206,7 @@ class TurnCoordinatorMixin(TurnStreamingMixin, TurnControlMixin):
             await self.send(
                 "error",
                 message="音频过大，请分段说话或改用文字输入",
+                code="A0004",
             )
             await self.set_turn(TurnState.USER_SPEAKING)
             return
@@ -248,6 +249,7 @@ class TurnCoordinatorMixin(TurnStreamingMixin, TurnControlMixin):
                 await self.send(
                     "error",
                     message="音频过大，请分段说话或改用文字输入",
+                    code="A0004",
                 )
                 await self.set_turn(TurnState.USER_SPEAKING)
                 return
@@ -290,6 +292,8 @@ class TurnCoordinatorMixin(TurnStreamingMixin, TurnControlMixin):
                 await self.send(
                     "error",
                     message="检测到可能误采了面试官声音，请再说一遍或打字作答",
+                    code="C2001",
+                    retryable=True,
                 )
                 await self.set_turn(TurnState.USER_SPEAKING)
                 return
@@ -299,6 +303,8 @@ class TurnCoordinatorMixin(TurnStreamingMixin, TurnControlMixin):
             await self.send(
                 "error",
                 message="未能识别语音内容，请重新说话或手动输入",
+                code="C2001",
+                retryable=True,
             )
             await self.set_turn(TurnState.USER_SPEAKING)
             return

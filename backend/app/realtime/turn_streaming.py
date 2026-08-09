@@ -149,7 +149,12 @@ class TurnStreamingMixin:
                     return None
                 last = event
             elif event.kind == EventKind.ERROR:
-                await self.send("error", message=event.error)
+                await self.send(
+                    "error",
+                    message=event.error,
+                    code=event.error_code or "C0001",
+                    retryable=event.error_retryable,
+                )
                 last = event
         if epoch != self._stream_epoch:
             return None

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.models import Resume, UserProfile
 from app.services.company.knowledge import get_company_context
 from app.services.github.tools import GITHUB_TOOL_DEFINITIONS, execute_github_tool
+from app.services.llm.tool_args import parse_tool_arguments  # noqa: F401 — 兼容旧引用
 from app.services.search.web import web_search
 
 logger = logging.getLogger(__name__)
@@ -165,18 +166,3 @@ async def execute_interview_tool(
         return _truncate(text)
 
     return json.dumps({"error": "unknown_tool", "name": name}, ensure_ascii=False)
-
-
-def parse_tool_arguments(raw: str | dict[str, Any] | None) -> dict[str, Any]:
-    """解析 LLM 返回的 tool arguments（可能是 JSON 字符串）。"""
-    if raw is None:
-        return {}
-    if isinstance(raw, dict):
-        return raw
-    if not isinstance(raw, str) or not raw.strip():
-        return {}
-    try:
-        data = json.loads(raw)
-        return data if isinstance(data, dict) else {}
-    except json.JSONDecodeError:
-        return {}

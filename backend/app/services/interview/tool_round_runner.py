@@ -19,8 +19,8 @@ from app.services.interview.tools import (
     MAX_TOOL_ROUNDS,
     execute_interview_tool,
     get_interview_tool_definitions,
-    parse_tool_arguments,
 )
+from app.services.llm.tool_args import parse_tool_arguments
 from app.services.llm.client import LLMClient
 from app.services.rag.company_rag import CompanyKnowledgeRAG, format_context as format_rag_context
 

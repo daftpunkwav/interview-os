@@ -74,6 +74,8 @@ class ReportSchedulerMixin:
                 await self.send(
                     "error",
                     message="口头收尾已完成，但报告生成失败，请稍后在报告页重试",
+                    code="C1001",
+                    retryable=True,
                 )
             except Exception:
                 pass

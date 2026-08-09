@@ -11,11 +11,12 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.constants import DEFAULT_LLM_RATE_LIMIT_PER_MINUTE, SessionStatus
+from app.core.errors import raise_error
 from app.core.local_only import require_local_peer
 from app.core.ratelimit import rate_limit_dep
 from app.core.security import redact_api_key
@@ -99,10 +100,10 @@ async def get_report_stream(
     """
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
-        raise HTTPException(status_code=404, detail="面试会话不存在")
+        raise_error("A2001")
     assert_session_token(session, access)
     if session.status != SessionStatus.COMPLETED.value:
-        raise HTTPException(status_code=400, detail="面试尚未结束")
+        raise_error("A2003")
 
     llm = LLMClient.from_db(db)
 
@@ -130,7 +131,7 @@ async def get_report_stream(
             # 防止上游错误信息中可能含 API Key 等敏感字段
             safe_detail = redact_api_key(str(e)) or _SSE_ERR_GENERIC
             logger.exception("流式报告失败 sid=%s: %s", session_id, safe_detail)
-            yield f"data: {json.dumps({'type': 'error', 'message': _SSE_ERR_GENERIC}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': _SSE_ERR_GENERIC, 'code': 'C1001', 'retryable': True}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(),
@@ -151,11 +152,11 @@ def get_report(
 ):
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
-        raise HTTPException(status_code=404, detail="面试会话不存在")
+        raise_error("A2001")
     assert_session_token(session, access)
 
     if not session.report or session.report == "{}":
-        raise HTTPException(status_code=404, detail="报告尚未生成")
+        raise_error("A2004")
 
     report = InterviewReport(**json.loads(session.report))
     messages = json.loads(session.messages or "[]")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 
-from app.realtime.events import SessionSnapshot
+from app.agents.snapshot import SessionSnapshot
 
 
 class InterviewOrchestrator:

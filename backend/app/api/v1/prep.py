@@ -7,12 +7,13 @@ SSE 流式错误仅返回脱敏后的提示文案，原始异常走 logger.excep
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.agents.prep.agent import PrepAgent
+from app.core.errors import raise_error
 from app.core.constants import (
     DEFAULT_LLM_RATE_LIMIT_PER_MINUTE,
     DEFAULT_SESSION_CREATE_RATE_LIMIT_PER_MINUTE,
@@ -113,10 +114,10 @@ async def prep_message(
 ):
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+        raise_error("A3001")
     assert_session_token(session, access, detail=_PREP_FORBIDDEN)
     if getattr(session, "status", None) == SessionStatus.COMPLETED.value:
-        raise HTTPException(status_code=400, detail="会话已结束")
+        raise_error("A3002")
     llm = LLMClient.from_db(db)
     agent = PrepAgent(session, llm)
     reply = await agent.chat(body.content, db)
@@ -142,10 +143,10 @@ async def prep_message_stream(
 ):
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+        raise_error("A3001")
     assert_session_token(session, access, detail=_PREP_FORBIDDEN)
     if getattr(session, "status", None) == SessionStatus.COMPLETED.value:
-        raise HTTPException(status_code=400, detail="会话已结束")
+        raise_error("A3002")
     llm = LLMClient.from_db(db)
     agent = PrepAgent(session, llm)
 
@@ -163,7 +164,7 @@ async def prep_message_stream(
             # 脱敏：仅写日志原文，对外只返通用文案
             safe_detail = redact_api_key(str(e)) or _SSE_ERR_GENERIC
             logger.exception("Prep 流式生成失败 sid=%s: %s", session_id, safe_detail)
-            yield f"data: {json.dumps({'type': 'error', 'message': _SSE_ERR_GENERIC}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': _SSE_ERR_GENERIC, 'code': 'C0001', 'retryable': True}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(),
@@ -180,6 +181,6 @@ def get_prep_messages(
 ):
     session = db.query(PrepSession).filter(PrepSession.id == session_id).first()
     if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+        raise_error("A3001")
     assert_session_token(session, access, detail=_PREP_FORBIDDEN)
     return json.loads(session.messages or "[]")

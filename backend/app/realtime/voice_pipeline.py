@@ -215,6 +215,8 @@ class _SentenceTTSQueue:
                                 await self._send(
                                     "error",
                                     message="语音合成失败，请检查网络或稍后重试（文字面试仍可用）",
+                                    code="C2002",
+                                    retryable=True,
                                 )
                             except Exception:
                                 pass
@@ -283,6 +285,8 @@ class VoicePipelineMixin:
             await self.send(
                 "error",
                 message="语音合成失败，请检查网络（文字内容仍可用）",
+                code="C2002",
+                retryable=True,
             )
             return
         if audio_b64:

@@ -9,9 +9,10 @@ from __future__ import annotations
 import ipaddress
 import os
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 
 from app.config import get_settings
+from app.core.errors import raise_error
 
 
 def require_local_peer(request: Request) -> None:
@@ -23,7 +24,7 @@ def require_local_peer(request: Request) -> None:
     """
     peer = request.client.host if request.client else None
     if not peer:
-        raise HTTPException(status_code=403, detail="仅允许本机访问管理接口")
+        raise_error("A0405")
     if peer == "testclient":
         return
     if (
@@ -34,6 +35,6 @@ def require_local_peer(request: Request) -> None:
     try:
         ip = ipaddress.ip_address(peer.strip("[]"))
     except ValueError as e:
-        raise HTTPException(status_code=403, detail="仅允许本机访问管理接口") from e
+        raise_error("A0405", cause=e)
     if not ip.is_loopback:
-        raise HTTPException(status_code=403, detail="仅允许本机访问管理接口")
+        raise_error("A0405")

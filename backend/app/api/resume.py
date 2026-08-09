@@ -15,10 +15,11 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.errors import raise_error
 from app.core.local_only import require_local_peer
 from app.core.prompts import (
     normalize_cn_punctuation_tree,
@@ -178,14 +179,11 @@ async def upload_resume(
     db: Session = Depends(get_db),
 ):
     if not file.filename:
-        raise HTTPException(status_code=400, detail="文件名不能为空")
+        raise_error("A1001")
 
     ext = file.filename.rsplit(".", 1)[-1].lower()
     if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"不支持的文件格式，允许：{', '.join(ALLOWED_EXTENSIONS)}",
-        )
+        raise_error("A1002", exts=", ".join(ALLOWED_EXTENSIONS))
 
     upload_dir = Path(settings.upload_dir).resolve()
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -196,19 +194,16 @@ async def upload_resume(
     while chunk := await file.read(64 * 1024):
         total += len(chunk)
         if total > RESUME_MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"文件超过 {RESUME_MAX_UPLOAD_BYTES // (1024 * 1024)}MB 上限",
-            )
+            raise_error("A0413", max=RESUME_MAX_UPLOAD_BYTES // (1024 * 1024))
         chunks.append(chunk)
     content = b"".join(chunks)
 
     if total == 0:
-        raise HTTPException(status_code=400, detail="文件为空")
+        raise_error("A0005")
 
     # 校验扩展名真实（防止扩展名伪造）
     if not _sniff_extension(content[:8], ext):
-        raise HTTPException(status_code=400, detail="文件内容与扩展名不匹配")
+        raise_error("A1003")
 
     # 安全文件名 + 路径穿越防护
     safe_name = f"{uuid.uuid4().hex[:8]}_{sanitize_filename(file.filename)}"
@@ -219,7 +214,7 @@ async def upload_resume(
         raw_text = extract_text_from_file(file_path, ext)
     except Exception as e:
         logger.warning("简历解析失败: %s", e)
-        raise HTTPException(status_code=400, detail="文件解析失败，请检查格式") from e
+        raise_error("A1004", cause=e)
 
     llm = LLMClient.from_db(db)
     if llm.api_key:
@@ -279,7 +274,7 @@ def list_resumes(db: Session = Depends(get_db)):
 def get_resume(resume_id: int, db: Session = Depends(get_db)):
     r = db.query(Resume).filter(Resume.id == resume_id).first()
     if not r:
-        raise HTTPException(status_code=404, detail="简历不存在")
+        raise_error("A1005")
     profile = CandidateProfile(**json.loads(r.parsed_profile))
     return ResumeResponse(
         id=r.id,
@@ -298,7 +293,7 @@ def activate_resume(resume_id: int, db: Session = Depends(get_db)):
     # 使用行锁防止并发竞态
     r = db.query(Resume).filter(Resume.id == resume_id).with_for_update().first()
     if not r:
-        raise HTTPException(status_code=404, detail="简历不存在")
+        raise_error("A1005")
     # 先取消其他活跃简历
     db.query(Resume).filter(Resume.id != resume_id, Resume.is_active.is_(True)).update(
         {Resume.is_active: False}, synchronize_session=False
@@ -444,7 +439,7 @@ def delete_resume(resume_id: int, db: Session = Depends(get_db)):
     """删除简历及本地文件（若存在）。"""
     r = db.query(Resume).filter(Resume.id == resume_id).first()
     if not r:
-        raise HTTPException(status_code=404, detail="简历不存在")
+        raise_error("A1005")
     # 尝试删除上传文件（文件名含 uuid 前缀，与落盘规则一致时）
     try:
         upload_dir = Path(settings.upload_dir).resolve()
@@ -475,10 +470,10 @@ def delete_resume(resume_id: int, db: Session = Depends(get_db)):
 async def analyze_resume(resume_id: int, db: Session = Depends(get_db)):
     r = db.query(Resume).filter(Resume.id == resume_id).first()
     if not r:
-        raise HTTPException(status_code=404, detail="简历不存在")
+        raise_error("A1005")
     llm = LLMClient.from_db(db)
     if not llm.api_key:
-        raise HTTPException(status_code=400, detail="请先配置 API Key")
+        raise_error("A0006")
 
     user_blob = (r.raw_text or "")[:14000]
     if r.parsed_profile:
@@ -503,16 +498,10 @@ async def analyze_resume(resume_id: int, db: Session = Depends(get_db)):
         data = await llm.chat_json(messages)
     except ValueError as e:
         logger.warning("简历评价 LLM JSON 失败: %s", e)
-        raise HTTPException(
-            status_code=502,
-            detail="模型未返回有效评价结果，请稍后重试",
-        ) from e
+        raise_error("C0002", cause=e)
     except Exception as e:
         logger.exception("简历评价调用失败")
-        raise HTTPException(
-            status_code=502,
-            detail="评价请求失败，请稍后重试",
-        ) from e
+        raise_error("C0001", cause=e)
 
     try:
         payload = _normalize_resume_analysis_payload(data if isinstance(data, dict) else {})
@@ -531,10 +520,7 @@ async def analyze_resume(resume_id: int, db: Session = Depends(get_db)):
             analysis = ResumeAnalysis.model_validate(payload)
     except Exception as e:
         logger.warning("简历评价结构校验失败: %s", e, exc_info=True)
-        raise HTTPException(
-            status_code=502,
-            detail="模型返回结构不符合评价格式，请稍后重试",
-        ) from e
+        raise_error("C0002", cause=e)
 
     try:
         r.score = analysis.score
@@ -543,9 +529,6 @@ async def analyze_resume(resume_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         logger.exception("简历评价写入数据库失败")
         db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="评价结果写入失败，请稍后重试",
-        ) from e
+        raise_error("B1001", cause=e)
 
     return analysis.model_dump()

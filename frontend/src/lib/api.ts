@@ -66,46 +66,84 @@ function resolveBackendUrl(apiPath: string): string {
 /* 通用 fetch 封装                                                          */
 /* ====================================================================== */
 
+export interface ApiErrorOptions {
+  code?: string;
+  hint?: string;
+  traceId?: string;
+  retryable?: boolean;
+}
+
 class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  code: string;
+  hint: string;
+  traceId: string;
+  retryable: boolean;
+
+  constructor(message: string, status: number, options: ApiErrorOptions = {}) {
     super(message);
     this.status = status;
+    this.code = options.code ?? (status === 0 ? "NET0000" : `http_${status}`);
+    this.hint = options.hint ?? "";
+    this.traceId = options.traceId ?? "";
+    this.retryable = options.retryable ?? false;
     this.name = "ApiError";
   }
 }
 
-async function parseErrorResponse(res: Response): Promise<string> {
-  const text = await res.text();
-  if (!text) return `请求失败: ${res.status}`;
+export function formatApiError(error: unknown): string {
+  if (!(error instanceof ApiError)) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  return `[${error.code}] ${error.message}${error.hint ? `\n${error.hint}` : ""}`;
+}
 
+interface ParsedApiError extends ApiErrorOptions {
+  message: string;
+}
+
+async function parseStructuredErrorResponse(res: Response): Promise<ParsedApiError> {
+  const text = await res.text();
+  if (!text) return { message: `请求失败: ${res.status}` };
   try {
     const data = JSON.parse(text) as {
       detail?: unknown;
       message?: string;
-      error?: { code?: string; message?: string; trace_id?: string };
+      error?: {
+        code?: string;
+        message?: string;
+        hint?: string;
+        trace_id?: string;
+        retryable?: boolean;
+      };
     };
-    // 优先读取统一 envelope (main.py 的 _envelope)
-    if (data.error?.message) return data.error.message;
-    if (typeof data.detail === "string") return data.detail;
-    if (Array.isArray(data.detail)) {
-      return data.detail
-        .map((item) =>
-          typeof item === "object" && item && "msg" in item
-            ? String((item as { msg: string }).msg)
-            : String(item),
-        )
-        .join("; ");
+    if (data.error?.message) {
+      return {
+        message: data.error.message,
+        code: data.error.code,
+        hint: data.error.hint,
+        traceId: data.error.trace_id,
+        retryable: data.error.retryable,
+      };
     }
-    if (data.detail) return JSON.stringify(data.detail);
-    if (data.message) return data.message;
+    if (typeof data.detail === "string") return { message: data.detail };
+    if (Array.isArray(data.detail)) {
+      return {
+        message: data.detail
+          .map((item) =>
+            typeof item === "object" && item && "msg" in item
+              ? String((item as { msg: string }).msg)
+              : String(item),
+          )
+          .join("; "),
+      };
+    }
+    if (data.detail) return { message: JSON.stringify(data.detail) };
+    if (data.message) return { message: data.message };
   } catch {
-    // 非 JSON
+    // 非 JSON 响应继续走文本兜底。
   }
-  if (/internal server error/i.test(text)) {
-    return "请求失败（代理或后端超时/崩溃）。深度评价请直连后端；若刚改过端口，请重启 frontend。也可查看 backend 终端日志。";
-  }
-  return text.length > 300 ? `${text.slice(0, 300)}…` : text;
+  return { message: text.length > 300 ? `${text.slice(0, 300)}…` : text };
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
@@ -173,7 +211,8 @@ async function request<T>(
     externalSignal?.removeEventListener("abort", onExternalAbort);
   }
   if (!res.ok) {
-    throw new ApiError(await parseErrorResponse(res), res.status);
+    const error = await parseStructuredErrorResponse(res);
+    throw new ApiError(error.message, res.status, error);
   }
   const text = await res.text();
   if (!text) return undefined as T;
@@ -269,7 +308,10 @@ export const api = {
     } catch {
       throw new ApiError("无法连接后端服务", 0);
     }
-    if (!res.ok) throw new ApiError(await parseErrorResponse(res), res.status);
+    if (!res.ok) {
+      const error = await parseStructuredErrorResponse(res);
+      throw new ApiError(error.message, res.status, error);
+    }
     const text = await res.text();
     if (!text) throw new ApiError("服务器返回了空响应", res.status);
     try {
@@ -327,7 +369,10 @@ export const api = {
         0,
       );
     }
-    if (!res.ok) throw new ApiError(await parseErrorResponse(res), res.status);
+    if (!res.ok) {
+      const error = await parseStructuredErrorResponse(res);
+      throw new ApiError(error.message, res.status, error);
+    }
 
     let tokenUsage = 0;
     await consumeSSE<PrepSSEEvent>(res, (event) => {
@@ -399,7 +444,10 @@ export const api = {
     } catch {
       throw new ApiError(`无法直连后端流式接口 ${url}`, 0);
     }
-    if (!res.ok) throw new ApiError(await parseErrorResponse(res), res.status);
+    if (!res.ok) {
+      const error = await parseStructuredErrorResponse(res);
+      throw new ApiError(error.message, res.status, error);
+    }
 
     let finalReport: InterviewReport | null = null;
     await consumeSSE<ReportSSEEvent>(res, (event) => {

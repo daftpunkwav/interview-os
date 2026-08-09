@@ -294,6 +294,10 @@ export interface FaceAnalysis {
 export interface SSEErrorEvent {
   type: "error";
   message: string;
+  /** 业务错误码（A/B/C 三分 + 域 + 序号，如 C0001）；旧帧缺失时由前端按 B0001 兜底 */
+  code?: string;
+  /** 是否可重试；用于前端展示"重试"按钮 */
+  retryable?: boolean;
 }
 
 /** 通用 SSE envelope，使用 discriminated union 保留强类型。 */
@@ -445,8 +449,15 @@ export interface LLMTestResponse {
 /* ====================================================================== */
 
 export interface ApiErrorBody {
+  /** 业务错误码（如 A1005 / C0001）；旧 envelope 缺失时由前端兜底 */
   code: string;
+  /** 中文默认文案，前端直接展示 */
   message: string;
+  /** 中文处置建议（hint）；可作为第二行小字展示 */
+  hint?: string;
+  /** 是否可重试；用于展示"重试"按钮 */
+  retryable?: boolean;
+  /** 服务端 trace_id；用户反馈时可携带，便于日志检索 */
   trace_id?: string;
 }
 

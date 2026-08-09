@@ -52,7 +52,32 @@ def get_engine() -> Engine:
             if url.endswith(":memory:") or url == "sqlite://":
                 pool_kwargs["poolclass"] = StaticPool
         _engine = create_engine(url, connect_args=connect_args, **pool_kwargs)
+        # SQLite 企业级并发加固（E1）：WAL + busy_timeout + synchronous=NORMAL + 外键。
+        # 仅对真实文件型 SQLite 生效；:memory: 测试库跳过节，避免 StaticPool 单连接下
+        # WAL 无意义，且并发无需此保护。
+        if url.startswith("sqlite") and ":memory:" not in url and url != "sqlite://":
+            from sqlalchemy import event
+
+            event.listen(_engine, "connect", _sqlite_pragmas)
     return _engine
+
+
+def _sqlite_pragmas(dbapi_conn, _conn_record) -> None:
+    """SQLite 连接级 PRAGMA：企业级标配三件套 + 外键。
+
+    - journal_mode=WAL:读写不互斥,解决 WS 回合写状态与后台报告/REST 并发写的锁冲突;
+    - busy_timeout=5000:写冲突时等待 5s 而非立刻 database is locked;
+    - synchronous=NORMAL:WAL 下仍保证崩溃安全的性能档;
+    - foreign_keys=ON:当前模型无外键,开启防未来漏配。
+    """
+    cur = dbapi_conn.cursor()
+    try:
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=5000")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cur.close()
 
 
 def get_session_factory() -> sessionmaker[Session]:

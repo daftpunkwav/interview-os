@@ -102,9 +102,13 @@ class TurnControlMixin:
         )
         db = SessionLocal()
         try:
-            session = self._load_session(db)
-            if session:
-                self._persist_interrupt_stats(session, db)
+            try:
+                session = self._load_session(db)
+                if session:
+                    self._persist_interrupt_stats(session, db)
+            except Exception:
+                # 统计持久化是旁路副作用，不应阻断已完成的打断状态切换。
+                logger.exception("打断统计读取失败 sid=%s", self.session_id)
         finally:
             try:
                 db.close()
@@ -157,7 +161,11 @@ class TurnControlMixin:
         try:
             session = self._load_session(db)
             if not session:
-                await self.send("error", message="面试会话不存在")
+                await self.send(
+                    "error",
+                    message="面试会话不存在",
+                    code="A2001",
+                )
                 return
             if session.status == SessionStatus.COMPLETED.value:
                 await self.send(
@@ -170,7 +178,11 @@ class TurnControlMixin:
                 self._schedule_report_generation()
                 return
             if self.runner is None or self.llm is None:
-                await self.send("error", message="面试引擎未就绪，无法收尾")
+                await self.send(
+                    "error",
+                    message="面试引擎未就绪，无法收尾",
+                    code="A0006",
+                )
                 return
 
             self._closing = True
@@ -188,6 +200,8 @@ class TurnControlMixin:
                 await self.send(
                     "error",
                     message="收尾发言失败，请重试「结束面试」或检查 LLM 配置",
+                    code="C0001",
+                    retryable=True,
                 )
                 return
 
@@ -215,7 +229,12 @@ class TurnControlMixin:
                 emotion=event.emotion,
             )
         elif event.kind == EventKind.ERROR:
-            await self.send("error", message=event.error)
+            await self.send(
+                "error",
+                message=event.error,
+                code=event.error_code or "C0001",
+                retryable=event.error_retryable,
+            )
 
     # ------------------------------------------------------------------
     # 静默追问

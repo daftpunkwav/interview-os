@@ -110,7 +110,7 @@ class StreamingConsumer:
             )
         except Exception as e:
             logger.exception("开场回合失败: %s", e)
-            yield StreamEvent.make_error("面试官服务暂时不可用，请稍后重试")
+            yield StreamEvent.make_error("面试官服务暂时不可用，请稍后重试", code="C0001", retryable=True)
 
     # ------------------------------------------------------------------
     # 常规回合
@@ -135,7 +135,7 @@ class StreamingConsumer:
             followup_probe: 来自结构化追问分析器的引导（注入 system prompt）
         """
         if self.session.status == "completed":
-            yield StreamEvent.make_error("面试已结束")
+            yield StreamEvent.make_error("面试已结束", code="A2002")
             return
 
         try:
@@ -250,7 +250,7 @@ class StreamingConsumer:
             )
         except Exception as e:
             logger.exception("回合执行失败: %s", e)
-            yield StreamEvent.make_error("面试官服务暂时不可用，请稍后重试")
+            yield StreamEvent.make_error("面试官服务暂时不可用，请稍后重试", code="C0001", retryable=True)
 
     # ------------------------------------------------------------------
     # 手动结束：个性化口头收尾
@@ -259,7 +259,7 @@ class StreamingConsumer:
     async def stream_closing(self, db: Session) -> AsyncIterator[StreamEvent]:
         """候选人主动结束：面试官口头致谢 + 个性化小结，并标记完成。"""
         if self.session.status == "completed":
-            yield StreamEvent.make_error("面试已结束")
+            yield StreamEvent.make_error("面试已结束", code="A2002")
             return
 
         try:
@@ -331,7 +331,7 @@ class StreamingConsumer:
             )
         except Exception as e:
             logger.exception("收尾发言失败: %s", e)
-            yield StreamEvent.make_error("面试官服务暂时不可用，请稍后重试")
+            yield StreamEvent.make_error("面试官服务暂时不可用，请稍后重试", code="C0001", retryable=True)
 
 
 __all__ = ["StreamingConsumer"]

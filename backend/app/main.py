@@ -35,10 +35,17 @@ from app.core.logging import (
     reset_trace_id,
     set_trace_id,
 )
-from app.database import engine, init_db, SessionLocal
+from app.core.error_handlers import (
+    on_http_exception,
+    on_request_validation,
+    on_starlette_http_exception,
+    on_unsafe_url,
+    on_unhandled_exception,
+)
+from app.core.constants import TRACE_ID_HEADER
 from app.core.migrate import run_migrations
 from app.core.security import UnsafeURLError
-from app.core.constants import TRACE_ID_HEADER
+from app.database import engine, init_db, SessionLocal
 from app.services.seed import seed_llm_settings
 
 configure_logging()
@@ -234,84 +241,12 @@ app.include_router(api_router)
 # 详情依然在顶层 ``detail`` 字段保留向前兼容（前端 ``ApiError.parse`` 兼容）。
 
 
-def _envelope(*, code: str, message: str, status: int, request: Request) -> JSONResponse:
-    payload = {
-        "detail": message,  # legacy 兼容
-        "error": {
-            "code": code,
-            "message": message,
-            "trace_id": get_trace_id() or "",
-        },
-    }
-    return JSONResponse(
-        status_code=status,
-        content=payload,
-        headers={TRACE_ID_HEADER: get_trace_id() or ""},
-    )
-
-
-@app.exception_handler(RequestValidationError)
-async def _validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    """422 校验错误统一包装。"""
-    logger.info("请求校验失败: %s path=%s", exc.errors(), request.url.path)
-    return _envelope(
-        code="validation_error",
-        message="请求参数校验失败",
-        status=422,
-        request=request,
-    )
-
-
-@app.exception_handler(HTTPException)
-async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    """所有 ``raise HTTPException(...)`` 走这里统一封装，保持 envelope 一致。"""
-    code = f"http_{exc.status_code}"
-    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
-    return _envelope(
-        code=code,
-        message=detail,
-        status=exc.status_code,
-        request=request,
-    )
-
-
-@app.exception_handler(StarletteHTTPException)
-async def _starlette_http_handler(
-    request: Request, exc: StarletteHTTPException
-) -> JSONResponse:
-    """Starlette 抛的 HTTPException（如 404/405）也走统一 envelope。"""
-    code = f"http_{exc.status_code}"
-    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
-    return _envelope(
-        code=code,
-        message=detail or "Not Found",
-        status=exc.status_code,
-        request=request,
-    )
-
-
-@app.exception_handler(UnsafeURLError)
-async def _unsafe_url_handler(request: Request, exc: UnsafeURLError) -> JSONResponse:
-    """统一处理 SSRF / URL 校验失败；对外不回显完整 URL。"""
-    logger.warning("URL 校验失败: %s path=%s", exc, request.url.path)
-    return _envelope(
-        code="unsafe_url",
-        message="URL 不安全",
-        status=400,
-        request=request,
-    )
-
-
-@app.exception_handler(Exception)
-async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """兜底未捕获异常；对外仅通用文案，细节仅记日志。"""
-    logger.exception("未处理异常 path=%s: %s", request.url.path, exc)
-    return _envelope(
-        code="internal_error",
-        message="服务器内部错误，请稍后重试",
-        status=500,
-        request=request,
-    )
+# 异常 handler 统一收口在 app.core.error_handlers（含 envelope 构造 + trace_id/headers 透传）
+app.add_exception_handler(RequestValidationError, on_request_validation)
+app.add_exception_handler(HTTPException, on_http_exception)
+app.add_exception_handler(StarletteHTTPException, on_starlette_http_exception)
+app.add_exception_handler(UnsafeURLError, on_unsafe_url)
+app.add_exception_handler(Exception, on_unhandled_exception)
 
 
 @app.get("/health")

@@ -109,13 +109,26 @@ class ConnectionLifecycleMixin:
             self._mic_opened_at = asyncio.get_event_loop().time()
         await self.send("turn_state", state=state.value)
 
-    async def _fail_and_close(self, message: str, code: int = 4401) -> None:
+    async def _fail_and_close(
+        self,
+        message: str,
+        code: int = 4401,
+        *,
+        error_code: str = "B2001",
+        retryable: bool = False,
+    ) -> None:
         """失败路径统一收口：发 error 后关闭连接（默认 4401 = 未授权/会话不可用）。
 
         避免鉴权/状态失败后连接悬挂：客户端继续发送消息也不会进入主循环。
+        error_code 为业务错误码（默认 B2001 系统侧会话级错误），retryable 由调用方按场景传。
         """
         try:
-            await self.send("error", message=message)
+            await self.send(
+                "error",
+                message=message,
+                code=error_code,
+                retryable=retryable,
+            )
         except Exception:
             pass
         try:
@@ -281,7 +294,10 @@ class ConnectionLifecycleMixin:
                             self.session_id, miss_count,
                         )
                         await self.send(
-                            "error", message="心跳超时，连接已断开"
+                            "error",
+                            message="心跳超时，连接已断开",
+                            code="B2002",
+                            retryable=True,
                         )
                         break
                     try:
@@ -300,7 +316,12 @@ class ConnectionLifecycleMixin:
             # deadlock fallback：异常路径强制回到 USER_SPEAKING 防卡死
             try:
                 await self.set_turn(TurnState.USER_SPEAKING)
-                await self.send("error", message="服务端异常，已恢复 USER_SPEAKING")
+                await self.send(
+                    "error",
+                    message="服务端异常，已恢复 USER_SPEAKING",
+                    code="B2001",
+                    retryable=True,
+                )
             except Exception:
                 pass
             try:
@@ -344,6 +365,7 @@ class ConnectionLifecycleMixin:
                     await self.send(
                         "error",
                         message="音频缓存超限，请先结束当前回合",
+                        code="A0004",
                     )
                     self.audio_buffer = []
                     self._audio_buffer_bytes = 0
@@ -370,7 +392,12 @@ class ConnectionLifecycleMixin:
                 client_id=f"ws-{self.session_id}",
                 limit=_WS_LLM_RATE_LIMIT,
             ):
-                await self.send("error", message="请求过于频繁，请稍后再试")
+                await self.send(
+                    "error",
+                    message="请求过于频繁，请稍后再试",
+                    code="A0002",
+                    retryable=True,
+                )
                 return
             self._spawn(self._run_user_turn_end(data))
         elif msg_type == "silence_timeout":
@@ -388,6 +415,7 @@ class ConnectionLifecycleMixin:
                 await self.send(
                     "error",
                     message=f"文本过长（上限 {MAX_USER_TEXT_CHARS} 字符）",
+                    code="A0003",
                 )
                 return
             if (
@@ -400,7 +428,12 @@ class ConnectionLifecycleMixin:
                     client_id=f"ws-{self.session_id}",
                     limit=_WS_LLM_RATE_LIMIT,
                 ):
-                    await self.send("error", message="请求过于频繁，请稍后再试")
+                    await self.send(
+                        "error",
+                        message="请求过于频繁，请稍后再试",
+                        code="A0002",
+                        retryable=True,
+                    )
                     return
                 self._spawn(self._run_user_text(text, data))
         elif msg_type == "request_hint":
@@ -410,7 +443,12 @@ class ConnectionLifecycleMixin:
                 client_id=f"ws-{self.session_id}",
                 limit=max(5, _WS_LLM_RATE_LIMIT // 2),
             ):
-                await self.send("error", message="请求过于频繁，请稍后再试")
+                await self.send(
+                    "error",
+                    message="请求过于频繁，请稍后再试",
+                    code="A0002",
+                    retryable=True,
+                )
                 return
             self._spawn(self._on_request_hint(data))
         elif msg_type == "request_finish":
