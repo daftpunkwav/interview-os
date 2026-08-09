@@ -50,11 +50,12 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 
 ### 1.1 错误约定
 
-- 统一 envelope：`{error: {code, message, trace_id}}`，兼容保留旧 `{detail: ...}` 字段；
+- 统一 envelope：`{error: {code, message, hint?, retryable?, trace_id}}`，兼容保留旧 `{detail: ...}` 字段；
+- **业务错误码规范（权威）见 [`docs/ERROR_CODES.md`](ERROR_CODES.md)**：`来源字母(A 用户端/B 系统/C 第三方) + 域数字 + 两位序号`（如 `A1005` 简历不存在、`C0001` LLM 不可用），含全量目录表与中文处置建议；WS/SSE 错误事件同样携带 `code` 字段。未迁移的旧错误使用通用兜底码 `http_{status}`；
 - 全局结构化日志 `X-Trace-Id` 透出；入参 `X-Request-Id` 会被校验正则 `^[A-Za-z0-9_\-]{8,64}$`，不通过则服务端重生成；
 - 429 限流 `Retry-After` 头；
-- 413 上传超限 `{error.message:"文件超过 10MB 上限"}`；
-- 任何 `api_base` 命中策略 → 400 `{error.message:"LLM API 地址不安全，仅允许 https 公网地址"}`；
+- 413 上传超限 `{error.code:"A0413", error.message:"文件超过 10MB 上限"}`；
+- 任何 `api_base` 命中策略 → 400 `{error.code:"A0007", error.message:"URL 不安全"}`；
 - Starlette 抛出的 404（如 `/health POST`）也走同一 envelope，由 `StarletteHTTPException` handler 接管。
 
 ### 1.2 迁移指南 v1.0 → v2.0
@@ -127,7 +128,7 @@ OpenAPI 自动文档由 FastAPI 在运行时提供：`/docs` (Swagger UI) / `/op
 { "type": "interview_complete", "report_id": 42 }
 { "type": "server_ping", "t": 1700000000 }                                       // 心跳：客户端需在 5s 内回 pong
 { "type": "info",  "message": "..." }                                            // 非致命提示（如 coming_soon 回退）
-{ "type": "error", "message": "..." }
+{ "type": "error", "message": "...", "code": "C0001", "retryable": true }        // 错误帧；code 规范见 docs/ERROR_CODES.md，旧帧无 code 时前端按 B0001 兜底
 ```
 
 > 实时语音路径：麦克风 PCM → **独立 ASR 凭证**转写（失败回退本地 Whisper）→ 思考 LLM → TTS（按设置页播报处理者；可仅字幕）。思考 LLM 的 Key **不会**静默充当 ASR Key。
