@@ -64,3 +64,9 @@ logs/
 
 # 个人笔记（原始构想，永不提交）
 docs/history/
+
+# CodeGraph 本地索引
+.codegraph/
+
+# 审计临时产物（文件清单）
+_audit_*.txt
