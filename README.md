@@ -47,7 +47,7 @@ InterviewOS 是一个基于 AI Agent 的真实面试模拟系统。上传简历�
 - ✅ CORS 严格策略：prod 通配 origin + credentials 启动即拒绝
 - ✅ 错误响应统一 envelope（`{error:{code,message,trace_id}}`），HTTPException 与 StarletteException 共用同一 handler
 
-详见 [SECURITY.md](./SECURITY.md) 与 [docs/ARCHITECTURE.md §5](./docs/ARCHITECTURE.md)。
+详见 [SECURITY.md](./SECURITY.md) 与 [docs/spec/ARCHITECTURE.md §5](./docs/spec/ARCHITECTURE.md)。
 
 ## 快速开始
 
@@ -87,10 +87,12 @@ pip install -r requirements.txt
 cp .env.example .env
 # 编辑 .env 填入你的 API Key
 
-# 启动
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+# 启动（无参入口自动读取 .env 的 HOST / PORT）
+python -m app.main
 ```
 
+> ⚠️ `HOST` 默认 `127.0.0.1`（仅本机可访问）。若在 `.env` 设为 `HOST=0.0.0.0`，后端会暴露到局域网；本项目本地优先、无登录鉴权，局域网暴露时请配合防火墙或反向代理。
+>
 > 推荐 **生产环境** 显式设置 `INTERVIEWOS_SECRET_KEY` 给 API Key 加解密用。
 
 ### 3. 前端
@@ -102,13 +104,27 @@ npm install
 npm run dev
 ```
 
-打开 [http://localhost:3000](http://localhost:3000)。
+打开 [http://localhost:8080](http://localhost:8080)。
+API 文档: [http://localhost:8081/docs](http://localhost:8081/docs)。
 
-### 一键启动（Windows）
+### 端口约定与占用策略
 
-```powershell
-.\scripts\start.ps1
+| 服务 | 默认端口 | 说明 |
+|---|---|---|
+| 前端（Next.js） | 8080 | 端口被占时需自行确认占用者（见下） |
+| 后端（FastAPI） | 8081 | 同上；API 文档（Swagger）随后端提供：`/docs` |
+
+**显式指定端口**（覆盖默认值）：
+
+```bash
+# 后端：PORT 环境变量覆盖 .env 的默认值（实测有效）
+PORT=8091 python -m app.main
+
+# 前端：--port 后出现者覆盖（实测有效）
+npm run dev -- --port 8090
 ```
+
+> 端口被占时不会自动换端口，请先确认占用者再释放或换端口（Windows：`netstat -ano | findstr :8080` → `taskkill /PID <PID> /F`；macOS/Linux：`lsof -i:8080` → `kill -9 <PID>`）。前端 `NEXT_PUBLIC_API_BASE`、`NEXT_PUBLIC_WS_URL` 等若未显式注入，将使用 `.env.local` 中的配置指向后端端口；使用非默认后端端口时需同步修改前端 env。API 文档随后端端口：`http://localhost:<后端端口>/docs`。
 
 ## BYOK 配置
 
@@ -130,7 +146,7 @@ LLM_CONTEXT_WINDOW=128000
 # 仅作本地 ASR / Edge 音色回退；正式指派请在设置页配置
 WHISPER_MODEL=base
 TTS_VOICE=zh-CN-XiaoxiaoNeural
-SILENCE_NUDGE_SECONDS=10
+SILENCE_NUDGE_SECONDS=25
 
 # GitHub 核验（可选 PAT）
 # GITHUB_TOKEN=ghp_xxxx
@@ -174,14 +190,12 @@ InterviewOS/
 │   └── requirements.txt
 ├── frontend/                                # Next.js 前端
 │   └── src/
-│       ├── app/                             # 页面（error.tsx / not-found.tsx / loading.tsx 在根）
-│       │   └── api/                         # 本地 Next 路由代理（流式请求同源）
+│       ├── app/                             # 页面（error.tsx / not-found.tsx / loading.tsx 在根；无 api/ 路由，REST/SSE 全直连后端）
 │       ├── components/                      # 共享组件（Toast/LoadError/MarkdownContent/effects/...）
 │       ├── features/                        # avatar / media（WS Hook、TTS、录音）
 │       ├── lib/                             # api.ts / env.ts / utils.ts / thinkStream.ts
 │       └── types/                           # 全局强类型契约（与后端协议一一对应）
-├── docs/                                    # 架构 + API 文档 + PRD
-├── scripts/                                 # 启动脚本（start.ps1 / start.sh）
+├── docs/                                    # 文档（spec 技术规约 / product 产品 / review 审查 / history 归档）
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 ├── SECURITY.md
@@ -210,8 +224,8 @@ InterviewOS/
 
 ### 主要文档
 
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — 架构图、模块边界、扩展点
-- [docs/API.md](./docs/API.md) — REST / WebSocket / SSE 完整规约
+- [docs/spec/ARCHITECTURE.md](./docs/spec/ARCHITECTURE.md) — 架构图、模块边界、扩展点
+- [docs/spec/API.md](./docs/spec/API.md) — REST / WebSocket / SSE 完整规约
 - [PROJECT_REPORT.md](./PROJECT_REPORT.md) — 项目状态报告（已实现/部分实现/明确未做）
 - [InterviewOS.md](./InterviewOS.md) — 权威设想 + 产品决策 + 实现状态注脚
 - [SECURITY.md](./SECURITY.md) — 威胁模型、缓解清单、报告渠道
