@@ -1,4 +1,4 @@
-"""全站错误码注册表（权威实现，目录定义见 docs/ERROR_CODES.md）。
+"""全站错误码注册表（权威实现，目录定义见 docs/spec/ERROR_CODES.md）。
 
 用法：
     from app.core.errors import raise_error
@@ -34,7 +34,7 @@ class ErrorSpec:
 
 
 # ---------------------------------------------------------------------------
-# 目录（与 docs/ERROR_CODES.md §3 一一对应；新增错误码先改文档再改这里）
+# 目录（与 docs/spec/ERROR_CODES.md §3 一一对应；新增错误码先改文档再改这里）
 # ---------------------------------------------------------------------------
 
 CATALOG: dict[str, ErrorSpec] = {

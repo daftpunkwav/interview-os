@@ -14,7 +14,8 @@ addopts = "-ra -q --strict-markers"
 asyncio_mode = "auto"
 
 [tool.mypy]
-# 注意：numpy 新版本类型存根需要 3.12+ 语法；实际运行 Python 为 3.14
+# 注意：python_version 固定 3.12（numpy 新版本类型存根需要 3.12+ 语法），
+# 与 CI 的 python:3.12 镜像对齐；requires-python 仍为 >=3.11，最低支持版本不变
 python_version = "3.12"
 ignore_missing_imports = true
 no_incremental = true

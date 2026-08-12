@@ -53,7 +53,7 @@
 - LLM Prompt 拼接；
 - 日志 / 错误回显。
 
-完整威胁模型见 `docs/ARCHITECTURE.md §5`。
+完整威胁模型见 `docs/spec/ARCHITECTURE.md §5`。
 
 ## 7. 编码风格
 

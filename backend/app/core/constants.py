@@ -19,9 +19,18 @@ from enum import StrEnum
 
 class LLMProtocol(StrEnum):
     OPENAI_CHAT = "openai_chat"
+    ANTHROPIC_MESSAGES = "anthropic_messages"
+    OPENAI_RESPONSES = "openai_responses"
 
 
 DEFAULT_LLM_PROTOCOL = LLMProtocol.OPENAI_CHAT
+
+
+# 三处理器阶段标识
+class PipelineStage(StrEnum):
+    RECOGNIZE = "recognize"
+    REASON = "reason"
+    SPEAK = "speak"
 
 
 # ── RAG 后端 ────────────────────────────────────────

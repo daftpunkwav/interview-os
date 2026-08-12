@@ -62,6 +62,43 @@ export type LLMSettingsWrite = Omit<
   tts_api_key?: string;
 };
 
+export type LLMProtocol = "openai_chat" | "anthropic_messages" | "openai_responses";
+
+export interface StageModelCapabilities {
+  supports_vision: boolean;
+  supports_audio_input: boolean;
+  supports_audio_output: boolean;
+  supports_video_input: boolean;
+}
+
+export interface StageFallbackConfig {
+  handler: string;
+  mode: string;
+}
+
+export interface StageConfig {
+  stage: string;
+  provider: string;
+  api_base: string;
+  protocol: LLMProtocol;
+  model: string;
+  max_tokens: number;
+  context_window: number;
+  capabilities: StageModelCapabilities;
+  fallback: StageFallbackConfig;
+  extras: Record<string, unknown>;
+  has_api_key: boolean;
+  updated_at?: string;
+  api_key?: string;
+}
+
+export interface StageConfigs {
+  recognize: StageConfig;
+  reason: StageConfig;
+  speak: StageConfig;
+  updated_at?: string;
+}
+
 export interface VoiceProviderOption {
   id: string;
   label: string;

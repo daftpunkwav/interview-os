@@ -276,7 +276,14 @@ async function consumeSSE<TEvent extends { type: string }>(
 /* ====================================================================== */
 
 export const api = {
-  /* LLM 设置 */
+  /* LLM 设置（新版按阶段） */
+  getStageConfigs: () => request<import("@/types").StageConfigs>("/v1/settings/stages"),
+  updateStageConfig: (stage: "recognize" | "reason" | "speak", data: Partial<import("@/types").StageConfig>) =>
+    request<import("@/types").StageConfig>(`/v1/settings/stages/${stage}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  /* 兼容旧版 */
   getLLMSettings: () => request<LLMSettings>("/v1/settings/llm"),
   updateLLMSettings: (data: Partial<import("@/types").LLMSettingsWrite>) =>
     request<LLMSettings>("/v1/settings/llm", {

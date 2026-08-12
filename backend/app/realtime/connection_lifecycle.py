@@ -28,10 +28,9 @@ from app.realtime.session_registry import (
 from app.services.interview.agent import InterviewAgent
 from app.services.interview.runner import InterviewRunner
 from app.services.llm.client import LLMClient
-from app.services.stt import SttCredentials, warmup_whisper
+from app.services.stt import warmup_whisper
 from app.services.stt.cloud import is_local_stt_model
-from app.services.tts import TtsCredentials
-from app.services.tts.voice_resolve import resolve_prosody
+from app.services.tts.voice_resolve import VoiceProsody, resolve_prosody
 from app.services.voice.catalog import find_provider
 from app.services.voice.credentials import build_stt_credentials, build_tts_credentials
 
@@ -188,15 +187,13 @@ class ConnectionLifecycleMixin:
             self.runner = InterviewRunner(session, self.llm, self.agent, rag=rag)
 
             row = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
-            settings_voice = None
+            settings_voice = self._tts_creds.voice or settings.tts_voice
             # 三处理器：识别 / 思考(已是 llm) / 播报 —— 禁止把思考 Key 当 ASR
-            self._stt_creds = build_stt_credentials(row)
-            self._tts_creds = build_tts_credentials(row)
+            self._stt_creds = build_stt_credentials(row, db=db)
+            self._tts_creds = build_tts_credentials(row, db=db)
             if row:
-                if row.tts_voice:
-                    settings_voice = row.tts_voice
-                    self.tts_voice = row.tts_voice
-                asr_model = getattr(row, "asr_model", None) or row.stt_model
+                self.tts_voice = settings_voice
+                asr_model = self._stt_creds.model or getattr(row, "asr_model", None) or row.stt_model
                 self._whisper_model = asr_model or settings.whisper_model
                 # native_audio coming_soon → 提示并按转写路径运行
                 rec_meta = find_provider("recognize", self._stt_creds.provider)
@@ -208,7 +205,6 @@ class ConnectionLifecycleMixin:
                             "已回退本地 Whisper 转写"
                         ),
                     )
-                    self._stt_creds = SttCredentials(provider="local", model="base")
                 speak_meta = find_provider("speak", self._tts_creds.handler)
                 if speak_meta and speak_meta.get("status") == "coming_soon":
                     await self.send(
@@ -217,11 +213,6 @@ class ConnectionLifecycleMixin:
                             f"播报处理者「{speak_meta.get('label')}」尚未接通运行时，"
                             "已回退 Edge TTS"
                         ),
-                    )
-                    self._tts_creds = TtsCredentials(
-                        handler="edge",
-                        mode="tts_from_text",
-                        voice=self._tts_creds.voice or settings.tts_voice,
                     )
                 if self._tts_creds.mode == "text_only" or self._tts_creds.handler == "none":
                     await self.send("info", message="已启用仅字幕模式，不播报语音")
@@ -236,6 +227,13 @@ class ConnectionLifecycleMixin:
                 emotion=None,
                 llm_settings_voice=settings_voice or self.tts_voice,
             )
+            if self._tts_creds.handler not in ("edge", "minimax_speech", "none"):
+                # 自定义供应商的 voice_id 不是 Edge Neural voice，不能被 avatar 映射覆盖。
+                self._session_prosody = VoiceProsody(
+                    voice=self._tts_creds.voice or settings_voice or "mimo_default",
+                    rate=self._session_prosody.rate,
+                    pitch=self._session_prosody.pitch,
+                )
             self.tts_voice = self._session_prosody.voice
             self._tts_creds.voice = self.tts_voice
             self._tts_queue.set_prosody(self._session_prosody)

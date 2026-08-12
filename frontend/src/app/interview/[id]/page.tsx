@@ -614,7 +614,7 @@ export default function InterviewRoomPage() {
         <div>
           <p className="text-base font-medium">无法连接到面试服务</p>
           <p className="text-sm text-gray-500 mt-1.5 max-w-sm">
-            已尝试 5 次仍失败，请确认后端已启动（默认 :8000）或检查网络
+            已尝试 5 次仍失败，请确认后端已启动（默认 :8081）或检查网络
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-3 mt-1">

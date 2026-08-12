@@ -21,10 +21,10 @@ import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.router import api_router
@@ -242,13 +242,22 @@ app.include_router(api_router)
 
 
 # 异常 handler 统一收口在 app.core.error_handlers（含 envelope 构造 + trace_id/headers 透传）
-app.add_exception_handler(RequestValidationError, on_request_validation)
-app.add_exception_handler(HTTPException, on_http_exception)
-app.add_exception_handler(StarletteHTTPException, on_starlette_http_exception)
-app.add_exception_handler(UnsafeURLError, on_unsafe_url)
+# fastapi 0.139+ 对 add_exception_handler 回调类型收紧为 (Request, Exception)，
+# handler 实参类型使用具体异常子类属合法的窄化实现，需忽略类型逆变告警
+app.add_exception_handler(RequestValidationError, on_request_validation)  # type: ignore[arg-type]
+app.add_exception_handler(HTTPException, on_http_exception)  # type: ignore[arg-type]
+app.add_exception_handler(StarletteHTTPException, on_starlette_http_exception)  # type: ignore[arg-type]
+app.add_exception_handler(UnsafeURLError, on_unsafe_url)  # type: ignore[arg-type]
 app.add_exception_handler(Exception, on_unhandled_exception)
 
 
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "interviewos-backend", "version": "1.0.0"}
+
+
+if __name__ == "__main__":
+    # 无参启动入口：`python -m app.main` 自动读取 .env 的 HOST / PORT（默认 127.0.0.1:8081）。
+    # 直接传 app 对象而非 "app.main:app" 字符串，避免 importlib 对 app.main 的二次导入；
+    # 开发热重载请改用 `uvicorn app.main:app --reload --port 8081`。
+    uvicorn.run(app, host=settings.host, port=settings.port)

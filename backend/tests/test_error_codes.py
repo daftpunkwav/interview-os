@@ -1,7 +1,7 @@
 """app.core.errors 单元测试：注册表 + ApiBusinessError + raise_error。
 
 覆盖 E6：错误码体系（A/B/C 三分 + 域 + 序号）的契约：。
-- 注册表 CATALOG 包含权威 38+ 条码，且与 docs/ERROR_CODES.md 一致；
+- 注册表 CATALOG 包含权威 38+ 条码，且与 docs/spec/ERROR_CODES.md 一致；
 - ApiBusinessError 继承 HTTPException 同时携带 error_code/error_hint；
 - raise_error 用码 + 占位符格式化 message；
 - 未注册码降级到 B0001 而非抛 KeyError。

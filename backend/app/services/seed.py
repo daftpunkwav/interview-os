@@ -1,37 +1,34 @@
 """启动时从环境变量初始化 LLM 配置。"""
 
+import json
 import logging
 
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.constants import PipelineStage
 from app.core.secrets import encrypt_secret
-from app.models import LLMSettings
+from app.services.voice.stage_config import get_or_create_stage_config
 
 logger = logging.getLogger(__name__)
 
 
 def seed_llm_settings(db: Session) -> None:
-    """若数据库无 LLM 配置且环境变量有 Key，则自动写入。"""
+    """若数据库无阶段配置且环境变量有 Key，则自动写入 reason 阶段。"""
     settings = get_settings()
-    row = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
-
-    if row and row.api_key:
-        return
-
     if not settings.llm_api_key:
         return
 
-    if not row:
-        row = LLMSettings(id=1)
-        db.add(row)
+    reason = get_or_create_stage_config(db, PipelineStage.REASON)
+    if reason.api_key:
+        return
 
-    row.api_base = settings.llm_api_base
-    # 环境变量注入的 Key 同样需要加密入库
-    row.api_key = encrypt_secret(settings.llm_api_key) or ""
-    row.model = settings.llm_model
-    row.max_tokens = settings.llm_max_tokens
-    row.context_window = settings.llm_context_window
-    row.provider = "stepfun" if "stepfun" in settings.llm_api_base else "openai"
+    reason.api_base = settings.llm_api_base
+    reason.api_key = encrypt_secret(settings.llm_api_key) or ""
+    reason.model = settings.llm_model
+    reason.max_tokens = settings.llm_max_tokens
+    reason.context_window = settings.llm_context_window
+    reason.provider = ""
+    reason.extras = json.dumps({"source": "environment"}, ensure_ascii=False)
     db.commit()
-    logger.info("已从环境变量初始化 LLM 配置（api_key 已加密入库）")
+    logger.info("已从环境变量初始化面试思考处理器配置（api_key 已加密入库）")

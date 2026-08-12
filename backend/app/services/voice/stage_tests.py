@@ -10,15 +10,12 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from app.services.llm.client import LLMClient
-from app.services.stt import transcribe_utterance
-from app.services.tts import synthesize_speech
+from app.services.llm.unified_client import UnifiedLLMClient
+from app.services.stt import transcribe_utterance_result
+from app.services.stt.base import SttCredentials
+from app.services.tts import TtsCredentials, synthesize_custom_speech, synthesize_speech
 from app.services.voice.catalog import find_provider
-from app.services.voice.credentials import (
-    build_stt_credentials,
-    build_tts_credentials,
-    load_settings_row,
-)
+from app.services.voice.stage_config import get_stage_config_for_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -47,17 +44,17 @@ def load_fixture() -> tuple[bytes, str]:
 
 
 async def test_recognize(db: Session) -> dict:
-    row = load_settings_row(db)
-    creds = build_stt_credentials(row)
-    meta = find_provider("recognize", creds.provider)
+    cfg = get_stage_config_for_runtime(db, "recognize")
+    provider = cfg.get("provider") or (
+        "custom" if cfg.get("api_base") and cfg.get("api_key") else "local"
+    )
+    meta = find_provider("recognize", provider)
     if meta and meta.get("status") == "coming_soon":
+        fallback = cfg.get("fallback_handler") or "local"
         return {
             "success": False,
-            "message": (
-                f"识别处理者 {creds.provider} 运行时尚未接通，"
-                "请改用转写类 ASR 或本地 Whisper"
-            ),
-            "fallback": "local",
+            "message": f"识别处理者 {provider} 运行时尚未接通，请改用转写类 ASR 或本地 Whisper",
+            "fallback": fallback,
         }
 
     try:
@@ -65,16 +62,37 @@ async def test_recognize(db: Session) -> dict:
     except FileNotFoundError as e:
         return {"success": False, "message": str(e)}
 
-    pcm_b64 = base64.b64encode(wav_bytes).decode("ascii")
-    # fixture 是完整 wav；whisper 路径期望 pcm。对 cloud adapters 多数接受 wav via pcm_base64_to_wav_bytes
-    # 更稳妥：把 wav 当文件交给适配器——当前适配器用 pcm→wav。对 wav 输入再包一层会坏。
-    # 因此：提取 pcm 或直接让 openai 路径吃 wav bytes as "pcm" wrongly.
-    # Fix: 若是 RIFF wav，转 pcm16。
-    pcm_b64 = _wav_to_pcm_b64(wav_bytes)
+    # Mimo 音频路径期望完整 wav base64；其他旧 openai_compat 适配器内部会转 wav
+    audio_b64 = base64.b64encode(wav_bytes).decode("ascii")
 
-    text = await transcribe_utterance(
-        pcm_b64, sample_rate=16000, creds=creds, prefer_cloud=True
+    extras = cfg.get("extras") or {}
+    creds = SttCredentials(
+        provider=provider,
+        protocol=cfg.get("protocol") or "openai_chat",
+        api_base=cfg.get("api_base") or "",
+        api_key=cfg.get("api_key") or "",
+        model=cfg.get("model") or "",
+        app_id=extras.get("asr_app_id") or "",
+        api_secret=extras.get("asr_api_secret") or "",
+        access_key=extras.get("asr_access_key") or "",
+        resource_id=extras.get("asr_resource_id") or "",
+        app_key=extras.get("asr_app_key") or "",
+        fallback_handler=cfg.get("fallback_handler") or "local",
+        fallback_mode=cfg.get("fallback_mode") or "transcribe",
     )
+
+    transcription = await transcribe_utterance_result(
+        audio_b64, sample_rate=16000, creds=creds, prefer_cloud=True
+    )
+    text = transcription.text
+    if transcription.fallback:
+        return {
+            "success": False,
+            "message": f"主识别处理器未返回结果，已回退 {transcription.provider}；请检查配置",
+            "transcript": text or None,
+            "model": cfg.get("model") or provider,
+            "fallback": transcription.provider,
+        }
     norm_got = _normalize_zh(text)
     norm_exp = _normalize_zh(expected)
     ok = bool(text) and (norm_exp in norm_got or norm_got in norm_exp)
@@ -86,46 +104,38 @@ async def test_recognize(db: Session) -> dict:
             else f"转写未匹配期望「{expected}」，实际：「{text or '(空)'}」"
         ),
         "transcript": text or None,
-        "model": creds.model or creds.provider,
+        "model": cfg.get("model") or provider,
     }
 
 
-def _wav_to_pcm_b64(wav_bytes: bytes) -> str:
-    if len(wav_bytes) > 44 and wav_bytes[:4] == b"RIFF":
-        # 简易：跳过 44 字节标准头（fixture 为 PCM wav）
-        return base64.b64encode(wav_bytes[44:]).decode("ascii")
-    return base64.b64encode(wav_bytes).decode("ascii")
-
-
 async def test_reason(db: Session) -> dict:
-    row = load_settings_row(db)
-    provider = (getattr(row, "provider", None) or "minimax") if row else "minimax"
+    cfg = get_stage_config_for_runtime(db, "reason")
+    provider = cfg.get("provider") or ""
+
     meta = find_provider("reasoning", provider)
     if meta and meta.get("status") == "coming_soon":
+        fallback = cfg.get("fallback_handler") or ""
         return {
             "success": False,
-            "message": (
-                f"思考处理者 {provider} 标记为尚未接通，请改用 MiniMax 等文本 LLM"
-            ),
-            "fallback": "minimax",
+            "message": f"思考处理者 {provider} 标记为尚未接通，请选择其他文本 LLM",
+            "fallback": fallback,
         }
 
-    llm = LLMClient.from_db(db)
-    if not llm.api_key:
+    api_key = cfg.get("api_key") or ""
+    if not api_key or not cfg.get("api_base") or not cfg.get("model"):
         return {"success": False, "message": "请先配置面试思考处理器的 API Key"}
+
+    llm = UnifiedLLMClient.from_stage_config(cfg)
     try:
         success, message = await llm.test_connection()
         if success:
-            # 额外发一句面试官自报
             reply = await llm.chat(
-                [
-                    {"role": "system", "content": "你是面试官。"},
-                    {"role": "user", "content": "用一句话自我介绍你是面试官"},
-                ]
+                [{"role": "user", "content": "用一句话自我介绍你是面试官"}],
+                system="你是面试官。",
+                temperature=0.7,
             )
-            text = (reply or "").strip() if isinstance(reply, str) else str(reply or "").strip()
+            text = (reply or "").strip()
             if not text:
-                # test_connection 已成功即可
                 return {"success": True, "message": message or "连接成功", "model": llm.model}
             return {
                 "success": True,
@@ -139,29 +149,48 @@ async def test_reason(db: Session) -> dict:
 
 
 async def test_speak(db: Session) -> dict:
-    row = load_settings_row(db)
-    creds = build_tts_credentials(row)
-    meta = find_provider("speak", creds.handler)
+    cfg = get_stage_config_for_runtime(db, "speak")
+    provider = cfg.get("provider") or (
+        "custom" if cfg.get("api_base") and cfg.get("api_key") else "edge"
+    )
+    extras = cfg.get("extras") or {}
+    mode = extras.get("speech_speak_mode") or "tts_from_text"
+    meta = find_provider("speak", provider)
     if meta and meta.get("status") == "coming_soon":
+        fallback = cfg.get("fallback_handler") or "edge"
         return {
             "success": False,
-            "message": (
-                f"播报处理者 {creds.handler} 运行时尚未接通，将回退 Edge TTS"
-            ),
-            "fallback": "edge",
+            "message": f"播报处理者 {provider} 运行时尚未接通，将回退 Edge TTS",
+            "fallback": fallback,
         }
-    if creds.mode == "text_only" or creds.handler == "none":
+    if mode == "text_only" or provider == "none":
         return {"success": True, "message": "已配置为仅字幕，无需合成音频"}
 
-    audio = await synthesize_speech("你好，我是面试官", creds=creds)
+    creds = TtsCredentials(
+        handler=provider,
+        mode=mode,
+        protocol=cfg.get("protocol") or "openai_chat",
+        api_base=cfg.get("api_base") or "",
+        api_key=cfg.get("api_key") or "",
+        model=cfg.get("model") or "",
+        voice=extras.get("tts_voice")
+        or ("zh-CN-XiaoxiaoNeural" if provider == "edge" else "mimo_default"),
+        fallback_handler=cfg.get("fallback_handler") or "edge",
+        fallback_mode=cfg.get("fallback_mode") or "tts_from_text",
+    )
+    if provider not in ("edge", "minimax_speech", "none"):
+        audio = await synthesize_custom_speech("你好，我是面试官", creds=creds)
+    else:
+        audio = await synthesize_speech("你好，我是面试官", creds=creds)
     if audio:
         return {
             "success": True,
-            "message": f"播报合成成功（handler={creds.handler}）",
+            "message": f"播报合成成功（handler={provider}）",
             "audio_base64": audio,
-            "model": creds.model or creds.handler,
+            "model": cfg.get("model") or provider,
         }
     return {
         "success": False,
-        "message": f"播报合成失败（handler={creds.handler}），请检查网络或凭证",
+        "message": f"播报处理器失败（handler={provider}），未执行降级试听；请检查网络或凭证",
+        "fallback": cfg.get("fallback_handler") or "edge",
     }

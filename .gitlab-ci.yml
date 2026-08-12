@@ -5,13 +5,15 @@ stages:
 
 backend:
   stage: test
-  image: python:3.11-slim
+  # python 3.12 与 pyproject.toml 的 mypy python_version 对齐（numpy 类型存根需要 3.12+ 语法）；
+  # requires-python >=3.11 不变，最低支持版本仍为 3.11
+  image: python:3.12-slim
   variables:
     INTERVIEWOS_TEST_MODE: "1"
     ENV: "dev"
     LLM_API_KEY: "test-key"
     LLM_API_BASE: "http://127.0.0.1:9999/v1"
-    CORS_ORIGINS: "http://localhost:3000"
+    CORS_ORIGINS: "http://localhost:8080"
   before_script:
     - cd backend
     - pip install -q -r requirements.txt
@@ -22,8 +24,8 @@ backend:
     - python -m mypy app/ --ignore-missing-imports
     # 覆盖率 60% 为防回退下限；升 70% 需先补 STT 厂商适配器单测
     - pytest -q --cov=app --cov-report=term-missing --cov-fail-under=60
-    # chromadb 无修复版本（PYSEC-2026-311），仅告警不阻断
-    - pip-audit -r requirements.txt || true
+    # chromadb PYSEC-2026-311 精确忽略（无修复版本），其余漏洞使 CI 失败（不再 || true 静默放行）
+    - pip-audit -r requirements.txt --ignore-vuln PYSEC-2026-311
   rules:
     - changes:
         - backend/**/*
@@ -40,8 +42,12 @@ frontend:
     - npm ci
   script:
     - npx tsc --noEmit
-    # brace-expansion 为 typescript-estree 传递依赖，仅构建期使用，不阻断
-    - npm audit --audit-level=high || true
+    - npm run lint
+    - npm run test
+    - npm run build
+    # 依赖审计：lockfile 已锁定 brace-expansion 1.1.18（修复版），
+    # 实测 npm audit 0 漏洞（含 moderate），high 以上直接使 CI 失败，不再 || true 放行
+    - npm audit --audit-level=high
   rules:
     - changes:
         - frontend/**/*

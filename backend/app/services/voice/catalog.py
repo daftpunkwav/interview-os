@@ -41,6 +41,14 @@ def _p(
 # 思考处理者（阶段 2）
 REASONING_PROVIDERS: list[dict[str, Any]] = [
     _p(
+        id="custom",
+        label="自定义供应商",
+        can_interview_reason=True,
+        default_model="",
+        default_api_base="",
+        hint="填写 Base URL、API 格式、API Key 与模型名称",
+    ),
+    _p(
         id="minimax",
         label="MiniMax（文本思考）",
         can_interview_reason=True,
@@ -75,9 +83,16 @@ REASONING_PROVIDERS: list[dict[str, Any]] = [
         default_api_base="https://openrouter.ai/api/v1",
     ),
     _p(
-        id="custom",
-        label="自定义 OpenAI 兼容",
+        id="mimo",
+        label="小米 MiMo",
         can_interview_reason=True,
+        can_speech_recognize=True,
+        can_speech_speak=True,
+        recognize_via="transcribe_only",
+        speak_via="tts_from_text",
+        default_model="mimo-v2.5",
+        default_api_base="https://token-plan-cn.xiaomimimo.com/v1",
+        hint="文本模型 mimo-v2.5；语音识别/合成请在三阶段分别配置 mimo-v2.5-asr/tts",
     ),
     _p(
         id="zhipu_glm4_voice",
@@ -94,6 +109,24 @@ REASONING_PROVIDERS: list[dict[str, Any]] = [
 
 # 识别处理者（阶段 1）
 RECOGNIZE_PROVIDERS: list[dict[str, Any]] = [
+    _p(
+        id="custom",
+        label="自定义供应商",
+        can_speech_recognize=True,
+        recognize_via="transcribe_only",
+        default_model="",
+        default_api_base="",
+        hint="填写 Base URL、API 格式、API Key 与模型名称",
+    ),
+    _p(
+        id="mimo_audio",
+        label="小米 MiMo（mimo-v2.5-asr）",
+        can_speech_recognize=True,
+        recognize_via="transcribe_only",
+        default_model="mimo-v2.5-asr",
+        default_api_base="https://token-plan-cn.xiaomimimo.com/v1",
+        hint="OpenAI 兼容 chat.completions；音频作为 input_audio 传入",
+    ),
     _p(
         id="openai_compat",
         label="OpenAI 兼容转写（SiliconFlow / Groq / OpenAI）",
@@ -170,6 +203,24 @@ RECOGNIZE_PROVIDERS: list[dict[str, Any]] = [
 
 # 播报处理者（阶段 3）
 SPEAK_PROVIDERS: list[dict[str, Any]] = [
+    _p(
+        id="custom",
+        label="自定义供应商",
+        can_speech_speak=True,
+        speak_via="tts_from_text",
+        default_model="",
+        default_api_base="",
+        hint="填写 Base URL、API 格式、API Key 与模型名称",
+    ),
+    _p(
+        id="mimo_audio",
+        label="小米 MiMo（mimo-v2.5-tts）",
+        can_speech_speak=True,
+        speak_via="tts_from_text",
+        default_model="mimo-v2.5-tts",
+        default_api_base="https://token-plan-cn.xiaomimimo.com/v1",
+        hint="OpenAI 兼容 chat.completions；通过 audio.voice 指定音色",
+    ),
     _p(
         id="edge",
         label="Edge TTS（免费）",

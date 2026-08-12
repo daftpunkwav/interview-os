@@ -73,6 +73,9 @@ MIGRATIONS: dict[str, list[str]] = {
         "ALTER TABLE llm_settings ADD COLUMN tts_api_key VARCHAR(500) DEFAULT ''",
         "ALTER TABLE llm_settings ADD COLUMN tts_model VARCHAR(100) DEFAULT ''",
     ],
+    "stage_configs": [
+        "CREATE TABLE IF NOT EXISTS stage_configs (id INTEGER PRIMARY KEY AUTOINCREMENT, stage VARCHAR(30) NOT NULL UNIQUE, provider VARCHAR(100) DEFAULT '', api_base VARCHAR(500) DEFAULT '', api_key VARCHAR(500) DEFAULT '', protocol VARCHAR(50) DEFAULT 'openai_chat', model VARCHAR(100) DEFAULT '', max_tokens INTEGER DEFAULT 4096, context_window INTEGER DEFAULT 128000, supports_vision BOOLEAN DEFAULT 0, supports_audio_input BOOLEAN DEFAULT 0, supports_audio_output BOOLEAN DEFAULT 0, supports_video_input BOOLEAN DEFAULT 0, fallback_handler VARCHAR(100) DEFAULT '', fallback_mode VARCHAR(30) DEFAULT '', extras TEXT DEFAULT '{}', updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    ],
     "resumes": [
         "ALTER TABLE resumes ADD COLUMN is_active BOOLEAN DEFAULT 0",
         "ALTER TABLE resumes ADD COLUMN score INTEGER",
@@ -113,6 +116,21 @@ def apply_column_migrations(engine: Engine) -> dict[str, list[str]]:
 
     for table, statements in MIGRATIONS.items():
         if table not in existing_tables:
+            create_statements = [
+                statement
+                for statement in statements
+                if statement.lstrip().upper().startswith("CREATE TABLE")
+            ]
+            if not create_statements:
+                continue
+            try:
+                with engine.begin() as conn:
+                    for statement in create_statements:
+                        conn.execute(text(statement))
+                applied[table] = create_statements
+                existing_tables.add(table)
+            except Exception as e:
+                logger.error("迁移失败 %s（建表事务已回滚）: %s", table, e, exc_info=True)
             continue
         existing_cols = {c["name"] for c in inspector.get_columns(table)}
         to_apply: list[str] = [

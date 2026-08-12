@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { LLMSettings, LLMTestResponse, VoiceCatalog, VoiceProviderOption } from "@/types";
+import type {
+  LLMTestResponse,
+  StageConfig,
+  StageConfigs,
+  StageFallbackConfig,
+  StageModelCapabilities,
+} from "@/types";
 import {
   Save,
   Zap,
@@ -13,6 +19,8 @@ import {
   Brain,
   Mic,
   Volume2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { LoadError } from "@/components/LoadError";
 
@@ -20,34 +28,82 @@ type StageKey = "recognize" | "reason" | "speak";
 
 const KEEP = "keep";
 
+const EMPTY_STAGE = (stage: StageKey): StageConfig => ({
+  stage,
+  provider: "",
+  api_base: "",
+  protocol: "openai_chat",
+  model: "",
+  max_tokens: 4096,
+  context_window: 128000,
+  capabilities: {
+    supports_vision: false,
+    supports_audio_input: false,
+    supports_audio_output: false,
+    supports_video_input: false,
+  },
+  fallback: { handler: "", mode: "" },
+  extras: {},
+  has_api_key: false,
+});
+
+function hydrateStage(stage: StageKey, incoming: StageConfig): StageConfig {
+  const base = EMPTY_STAGE(stage);
+  const config = {
+    ...base,
+    ...incoming,
+    capabilities: { ...base.capabilities, ...incoming.capabilities },
+    fallback: { ...base.fallback, ...incoming.fallback },
+    extras: incoming.extras || {},
+    api_key: "",
+  };
+  const isUnconfigured = !config.provider && !config.api_base && !config.model;
+  if (isUnconfigured && stage === "recognize") {
+    config.capabilities.supports_audio_input = true;
+  }
+  if (isUnconfigured && stage === "reason") {
+    config.capabilities.supports_audio_output = true;
+  }
+  return config;
+}
+
+const STAGE_META: Record<
+  StageKey,
+  { icon: typeof Mic; title: string; hint: string }
+> = {
+  recognize: { icon: Mic, title: "语音识别处理器", hint: "听麦 → 文字" },
+  reason: { icon: Brain, title: "面试思考处理器", hint: "必须是文本 LLM" },
+  speak: { icon: Volume2, title: "语音输出处理器", hint: "可降级为仅字幕" },
+};
+
+const PROTOCOL_OPTIONS: { value: StageConfig["protocol"]; label: string }[] = [
+  { value: "openai_chat", label: "Chat Completions (/chat/completions)" },
+  { value: "anthropic_messages", label: "Anthropic Messages (/v1/messages)" },
+  { value: "openai_responses", label: "OpenAI Responses (/responses)" },
+];
+
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<LLMSettings | null>(null);
-  const [catalog, setCatalog] = useState<VoiceCatalog | null>(null);
+  const [configs, setConfigs] = useState<StageConfigs | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<StageKey | null>(null);
   const [testing, setTesting] = useState<StageKey | null>(null);
   const [testResults, setTestResults] = useState<Partial<Record<StageKey, LLMTestResponse>>>({});
-  const [msg, setMsg] = useState("");
+  const [messages, setMessages] = useState<Partial<Record<StageKey, string>>>({});
+  const [showKey, setShowKey] = useState<Partial<Record<StageKey, boolean>>>({});
 
   const loadSettings = () => {
     setLoading(true);
     setLoadError("");
-    Promise.all([api.getLLMSettings(), api.getVoiceCatalog()])
-      .then(([s, c]) => {
-        setSettings({
-          ...s,
-          api_key: "",
-          asr_api_key: "",
-          asr_api_secret: "",
-          asr_access_key: "",
-          tts_api_key: "",
-          speech_recognize_handler: s.speech_recognize_handler || "local",
-          speech_recognize_mode: s.speech_recognize_mode || "transcribe",
-          speech_speak_handler: s.speech_speak_handler || "edge",
-          speech_speak_mode: s.speech_speak_mode || "tts_from_text",
+    api
+      .getStageConfigs()
+      .then((s) => {
+        setConfigs({
+          recognize: hydrateStage("recognize", s.recognize),
+          reason: hydrateStage("reason", s.reason),
+          speak: hydrateStage("speak", s.speak),
+          updated_at: s.updated_at,
         });
-        setCatalog(c);
       })
       .catch((e) => setLoadError(e instanceof Error ? e.message : "加载失败"))
       .finally(() => setLoading(false));
@@ -57,70 +113,86 @@ export default function SettingsPage() {
     loadSettings();
   }, []);
 
-  const comboWarning = useMemo(() => {
-    if (!settings) return "";
-    const same =
-      settings.speech_recognize_handler &&
-      settings.speech_recognize_handler === settings.provider &&
-      settings.provider === settings.speech_speak_handler;
-    if (same) {
-      return "当前三阶段选择了同一语音 LLM：允许，但思考阶段仍须为具备文本推理能力的模型。";
-    }
-    return "";
-  }, [settings]);
+  const updateStage = (stage: StageKey, patch: Partial<StageConfig>) => {
+    setConfigs((prev) => {
+      if (!prev) return prev;
+      return { ...prev, [stage]: { ...prev[stage], ...patch } };
+    });
+  };
 
-  const handleSave = async () => {
-    if (!settings) return;
-    setSaving(true);
+  const updateCapabilities = (
+    stage: StageKey,
+    patch: Partial<StageModelCapabilities>
+  ) => {
+    setConfigs((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [stage]: {
+          ...prev[stage],
+          capabilities: { ...prev[stage].capabilities, ...patch },
+        },
+      };
+    });
+  };
+
+  const updateFallback = (
+    stage: StageKey,
+    patch: Partial<StageFallbackConfig>
+  ) => {
+    setConfigs((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [stage]: {
+          ...prev[stage],
+          fallback: { ...prev[stage].fallback, ...patch },
+        },
+      };
+    });
+  };
+
+  const handleSave = async (stage: StageKey) => {
+    if (!configs) return;
+    setSaving(stage);
+    setMessages((m) => ({ ...m, [stage]: "" }));
     try {
-      const updated = await api.updateLLMSettings({
-        api_base: settings.api_base,
-        api_key: settings.api_key || KEEP,
-        model: settings.model,
-        max_tokens: settings.max_tokens,
-        context_window: settings.context_window,
-        provider: settings.provider,
-        protocol: settings.protocol || "openai_chat",
-        reasoning_effort: settings.reasoning_effort || "medium",
-        supports_vision: settings.supports_vision ?? true,
-        supports_audio: settings.supports_audio ?? false,
-        stt_model: settings.asr_model || settings.stt_model || "base",
-        tts_voice: settings.tts_voice || "zh-CN-XiaoxiaoNeural",
-        speech_recognize_handler: settings.speech_recognize_handler || "local",
-        speech_recognize_mode: settings.speech_recognize_mode || "transcribe",
-        asr_api_base: settings.asr_api_base || "",
-        asr_api_key: settings.asr_api_key || KEEP,
-        asr_model: settings.asr_model || "",
-        asr_app_id: settings.asr_app_id || "",
-        asr_api_secret: settings.asr_api_secret || KEEP,
-        asr_access_key: settings.asr_access_key || KEEP,
-        asr_resource_id: settings.asr_resource_id || "",
-        asr_app_key: settings.asr_app_key || "",
-        speech_speak_handler: settings.speech_speak_handler || "edge",
-        speech_speak_mode: settings.speech_speak_mode || "tts_from_text",
-        tts_api_base: settings.tts_api_base || "",
-        tts_api_key: settings.tts_api_key || KEEP,
-        tts_model: settings.tts_model || "",
+      const payload = configs[stage];
+      const updated = await api.updateStageConfig(stage, {
+        provider: payload.provider,
+        api_base: payload.api_base,
+        api_key: payload.api_key || KEEP,
+        protocol: payload.protocol,
+        model: payload.model,
+        max_tokens: payload.max_tokens,
+        context_window: payload.context_window,
+        capabilities: payload.capabilities,
+        fallback: payload.fallback,
+        extras: payload.extras,
       });
-      setSettings({
-        ...updated,
-        api_key: "",
-        asr_api_key: "",
-        asr_api_secret: "",
-        asr_access_key: "",
-        tts_api_key: "",
-      });
-      setMsg("已保存");
-      setTimeout(() => setMsg(""), 2000);
+      setConfigs((prev) =>
+        prev
+          ? {
+              ...prev,
+              [stage]: { ...updated, api_key: "" },
+            }
+          : prev
+      );
+      setMessages((m) => ({ ...m, [stage]: "已保存" }));
+      setTimeout(() => setMessages((m) => ({ ...m, [stage]: "" })), 2000);
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "保存失败");
+      setMessages((m) => ({
+        ...m,
+        [stage]: e instanceof Error ? e.message : "保存失败",
+      }));
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   };
 
   const handleTest = async (stage: StageKey) => {
     setTesting(stage);
+    setMessages((m) => ({ ...m, [stage]: "" }));
     try {
       const result = await api.testPipelineStage(stage);
       setTestResults((prev) => ({ ...prev, [stage]: result }));
@@ -129,7 +201,8 @@ export default function SettingsPage() {
           const bin = atob(result.audio_base64);
           const bytes = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          const blob = new Blob([bytes], { type: "audio/mpeg" });
+          const isWav = bytes.length >= 4 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
+          const blob = new Blob([bytes], { type: isWav ? "audio/wav" : "audio/mpeg" });
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
           void audio.play().finally(() => URL.revokeObjectURL(url));
@@ -150,50 +223,8 @@ export default function SettingsPage() {
     }
   };
 
-  const pickRecognize = (p: VoiceProviderOption) => {
-    if (!settings) return;
-    setSettings({
-      ...settings,
-      speech_recognize_handler: p.id,
-      speech_recognize_mode:
-        p.recognize_via === "native_audio" ? "native_audio" : "transcribe",
-      asr_api_base: p.default_api_base || settings.asr_api_base || "",
-      asr_model: p.default_model || settings.asr_model || "",
-    });
-  };
-
-  const pickReason = (p: VoiceProviderOption) => {
-    if (!settings) return;
-    setSettings({
-      ...settings,
-      provider: p.id === "zhipu_glm4_voice" ? "zhipu_glm4_voice" : p.id,
-      api_base: p.default_api_base || settings.api_base,
-      model: p.default_model || settings.model,
-    });
-  };
-
-  const pickSpeak = (p: VoiceProviderOption) => {
-    if (!settings) return;
-    let mode = "tts_from_text";
-    if (p.id === "none") mode = "text_only";
-    else if (p.speak_via === "native_audio") mode = "native_audio";
-    setSettings({
-      ...settings,
-      speech_speak_handler: p.id,
-      speech_speak_mode: mode,
-      tts_api_base: p.default_api_base || settings.tts_api_base || "",
-      tts_model: p.default_model || settings.tts_model || "",
-      tts_voice:
-        p.id === "edge"
-          ? settings.tts_voice || "zh-CN-XiaoxiaoNeural"
-          : p.id === "minimax_speech"
-            ? settings.tts_voice || "male-qn-qingse"
-            : settings.tts_voice,
-    });
-  };
-
   return (
-    <div className="page-shell !max-w-3xl">
+    <div className="page-shell !max-w-4xl">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
         <div className="page-header !mb-0">
           <div className="icon-badge">
@@ -206,23 +237,6 @@ export default function SettingsPage() {
             </p>
           </div>
         </div>
-        {settings && (
-          <div className="flex items-center gap-2 shrink-0">
-            {msg && (
-              <span
-                className={`text-sm font-medium ${
-                  msg.includes("失败") ? "text-[var(--danger-ink)]" : "text-[var(--success-ink)]"
-                }`}
-              >
-                {msg}
-              </span>
-            )}
-            <button type="button" onClick={handleSave} disabled={saving} className="btn-primary">
-              {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-              保存
-            </button>
-          </div>
-        )}
       </div>
 
       {loading ? (
@@ -231,198 +245,32 @@ export default function SettingsPage() {
         </div>
       ) : loadError ? (
         <LoadError message={loadError} onRetry={loadSettings} />
-      ) : settings && catalog ? (
-        <div className="space-y-4">
+      ) : configs ? (
+        <div className="space-y-6">
           <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--brand-softer)]/40 px-4 py-3 text-sm text-[var(--text-secondary)]">
-            管道顺序：语音识别 → 面试思考（文本 LLM）→ 语音输出；各阶段凭证相互独立。
+            管道顺序：语音识别 → 面试思考（文本 LLM）→ 语音输出；各阶段凭证相互独立保存与测试。
           </div>
-          {comboWarning && (
-            <div className="alert alert-error text-sm">{comboWarning}</div>
-          )}
 
-          {/* 阶段 1 */}
-          <StageSection
-            icon={Mic}
-            title="语音识别处理器"
-            hint="听麦 → 文字；使用独立 ASR 凭证，勿复用思考 LLM Key"
-            testing={testing === "recognize"}
-            onTest={() => handleTest("recognize")}
-            testResult={testResults.recognize}
-          >
-            <ProviderPicker
-              options={catalog.recognize}
-              value={settings.speech_recognize_handler || "local"}
-              onPick={pickRecognize}
+          {(Object.keys(STAGE_META) as StageKey[]).map((stage) => (
+            <StageSection
+              key={stage}
+              stage={stage}
+              config={configs[stage]}
+              testing={testing === stage}
+              saving={saving === stage}
+              message={messages[stage] || ""}
+              showKey={showKey[stage] || false}
+              testResult={testResults[stage]}
+              onUpdate={(patch) => updateStage(stage, patch)}
+              onUpdateCapabilities={(patch) => updateCapabilities(stage, patch)}
+              onUpdateFallback={(patch) => updateFallback(stage, patch)}
+              onToggleKey={() =>
+                setShowKey((prev) => ({ ...prev, [stage]: !prev[stage] }))
+              }
+              onSave={() => handleSave(stage)}
+              onTest={() => handleTest(stage)}
             />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-              <div>
-                <label className="field-label">识别方式</label>
-                <select
-                  className="field-input"
-                  value={settings.speech_recognize_mode || "transcribe"}
-                  onChange={(e) =>
-                    setSettings({ ...settings, speech_recognize_mode: e.target.value })
-                  }
-                >
-                  <option value="transcribe">先转文字（transcribe）</option>
-                  <option value="native_audio">原生听音频（native）</option>
-                </select>
-              </div>
-              <Field
-                label="ASR 模型"
-                value={settings.asr_model || ""}
-                onChange={(v) => setSettings({ ...settings, asr_model: v })}
-              />
-              <Field
-                label="ASR API Base"
-                value={settings.asr_api_base || ""}
-                onChange={(v) => setSettings({ ...settings, asr_api_base: v })}
-                className="sm:col-span-2"
-              />
-              <Field
-                label="ASR API Key"
-                value={settings.asr_api_key || ""}
-                onChange={(v) => setSettings({ ...settings, asr_api_key: v })}
-                type="password"
-                placeholder={settings.has_asr_api_key ? "已配置（留空保持）" : "独立转写 Key"}
-              />
-              <Field
-                label="ASR API Secret"
-                value={settings.asr_api_secret || ""}
-                onChange={(v) => setSettings({ ...settings, asr_api_secret: v })}
-                type="password"
-                placeholder={settings.has_asr_api_secret ? "已配置（留空保持）" : "讯飞/腾讯/百度等"}
-              />
-              <Field
-                label="AppId"
-                value={settings.asr_app_id || ""}
-                onChange={(v) => setSettings({ ...settings, asr_app_id: v })}
-              />
-              <Field
-                label="AppKey"
-                value={settings.asr_app_key || ""}
-                onChange={(v) => setSettings({ ...settings, asr_app_key: v })}
-              />
-              <Field
-                label="Access Key"
-                value={settings.asr_access_key || ""}
-                onChange={(v) => setSettings({ ...settings, asr_access_key: v })}
-                type="password"
-                placeholder={settings.has_asr_access_key ? "已配置（留空保持）" : "豆包等"}
-              />
-              <Field
-                label="Resource Id"
-                value={settings.asr_resource_id || ""}
-                onChange={(v) => setSettings({ ...settings, asr_resource_id: v })}
-                placeholder="volc.bigasr.auc_turbo"
-              />
-            </div>
-          </StageSection>
-
-          {/* 阶段 2 */}
-          <StageSection
-            icon={Brain}
-            title="面试思考处理器"
-            hint="必须是文本 LLM（OpenAI 兼容）"
-            testing={testing === "reason"}
-            onTest={() => handleTest("reason")}
-            testResult={testResults.reason}
-          >
-            <ProviderPicker
-              options={catalog.reasoning}
-              value={settings.provider}
-              onPick={pickReason}
-            />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-              <Field
-                label="API Base URL"
-                value={settings.api_base}
-                onChange={(v) => setSettings({ ...settings, api_base: v })}
-                className="sm:col-span-2"
-              />
-              <Field
-                label="API Key"
-                value={settings.api_key || ""}
-                onChange={(v) => setSettings({ ...settings, api_key: v })}
-                type="password"
-                placeholder={settings.has_api_key ? "已配置（留空保持不变）" : "输入 API Key"}
-                className="sm:col-span-2"
-              />
-              <Field
-                label="模型名称"
-                value={settings.model}
-                onChange={(v) => setSettings({ ...settings, model: v })}
-                className="sm:col-span-2"
-              />
-              <Field
-                label="Max Tokens"
-                value={String(settings.max_tokens)}
-                onChange={(v) => setSettings({ ...settings, max_tokens: Number(v) || 0 })}
-              />
-              <Field
-                label="上下文窗口"
-                value={String(settings.context_window)}
-                onChange={(v) => setSettings({ ...settings, context_window: Number(v) || 0 })}
-              />
-            </div>
-          </StageSection>
-
-          {/* 阶段 3 */}
-          <StageSection
-            icon={Volume2}
-            title="语音输出处理器"
-            hint="可降级为仅字幕；TTS 失败不中断文字流"
-            testing={testing === "speak"}
-            onTest={() => handleTest("speak")}
-            testResult={testResults.speak}
-          >
-            <ProviderPicker
-              options={catalog.speak}
-              value={settings.speech_speak_handler || "edge"}
-              onPick={pickSpeak}
-            />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-              <div>
-                <label className="field-label">播报方式</label>
-                <select
-                  className="field-input"
-                  value={settings.speech_speak_mode || "tts_from_text"}
-                  onChange={(e) =>
-                    setSettings({ ...settings, speech_speak_mode: e.target.value })
-                  }
-                >
-                  <option value="tts_from_text">文本 TTS</option>
-                  <option value="native_audio">原生出声</option>
-                  <option value="text_only">仅字幕</option>
-                </select>
-              </div>
-              <Field
-                label="音色 / Voice Id"
-                value={settings.tts_voice || ""}
-                onChange={(v) => setSettings({ ...settings, tts_voice: v })}
-              />
-              <Field
-                label="TTS API Base"
-                value={settings.tts_api_base || ""}
-                onChange={(v) => setSettings({ ...settings, tts_api_base: v })}
-                className="sm:col-span-2"
-              />
-              <Field
-                label="TTS API Key（可选；留空则按后端规则使用已保存凭证）"
-                value={settings.tts_api_key || ""}
-                onChange={(v) => setSettings({ ...settings, tts_api_key: v })}
-                type="password"
-                placeholder={settings.has_tts_api_key ? "已配置（留空保持）" : "可选"}
-                className="sm:col-span-2"
-              />
-              <Field
-                label="TTS 模型"
-                value={settings.tts_model || ""}
-                onChange={(v) => setSettings({ ...settings, tts_model: v })}
-                className="sm:col-span-2"
-              />
-            </div>
-          </StageSection>
+          ))}
         </div>
       ) : null}
     </div>
@@ -430,22 +278,41 @@ export default function SettingsPage() {
 }
 
 function StageSection({
-  icon: Icon,
-  title,
-  hint,
-  children,
+  stage,
+  config,
   testing,
-  onTest,
+  saving,
+  message,
+  showKey,
   testResult,
+  onUpdate,
+  onUpdateCapabilities,
+  onUpdateFallback,
+  onToggleKey,
+  onSave,
+  onTest,
 }: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
+  stage: StageKey;
+  config: StageConfig;
   testing: boolean;
-  onTest: () => void;
+  saving: boolean;
+  message: string;
+  showKey: boolean;
   testResult?: LLMTestResponse;
+  onUpdate: (patch: Partial<StageConfig>) => void;
+  onUpdateCapabilities: (patch: Partial<StageModelCapabilities>) => void;
+  onUpdateFallback: (patch: Partial<StageFallbackConfig>) => void;
+  onToggleKey: () => void;
+  onSave: () => void;
+  onTest: () => void;
 }) {
+  const meta = STAGE_META[stage];
+  const Icon = meta.icon;
+
+  const isRecognize = stage === "recognize";
+  const isReason = stage === "reason";
+  const isSpeak = stage === "speak";
+
   return (
     <section className="surface-card p-5 sm:p-6">
       <header className="flex items-start justify-between gap-3 mb-5 pb-3 border-b border-[var(--border)]">
@@ -454,16 +321,197 @@ function StageSection({
             <Icon size={16} />
           </div>
           <div>
-            <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
-            {hint && <p className="text-xs text-[var(--muted)] mt-0.5">{hint}</p>}
+            <h2 className="text-[15px] font-semibold tracking-tight">{meta.title}</h2>
+            {meta.hint && <p className="text-xs text-[var(--muted)] mt-0.5">{meta.hint}</p>}
           </div>
         </div>
-        <button type="button" onClick={onTest} disabled={testing} className="btn-secondary shrink-0">
-          {testing ? <Loader2 className="animate-spin" size={16} /> : <Zap size={16} />}
-          测试
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {message && (
+            <span
+              className={`text-sm font-medium ${
+                message.includes("失败")
+                  ? "text-[var(--danger-ink)]"
+                  : "text-[var(--success-ink)]"
+              }`}
+            >
+              {message}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving}
+            className="btn-primary"
+          >
+            {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+            保存
+          </button>
+          <button
+            type="button"
+            onClick={onTest}
+            disabled={testing}
+            className="btn-secondary"
+          >
+            {testing ? <Loader2 className="animate-spin" size={16} /> : <Zap size={16} />}
+            测试
+          </button>
+        </div>
       </header>
-      {children}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+        <Field
+          label="供应商名称"
+          value={config.provider}
+          onChange={(v) => onUpdate({ provider: v })}
+          placeholder="例如：小米 MiMo"
+          className="sm:col-span-2"
+        />
+        <Field
+          label="Base URL"
+          value={config.api_base}
+          onChange={(v) => onUpdate({ api_base: v })}
+          className="sm:col-span-2"
+        />
+
+        <div className="sm:col-span-2">
+          <label className="field-label">API 格式</label>
+          <select
+            className="field-input"
+            value={config.protocol}
+            onChange={(e) =>
+              onUpdate({ protocol: e.target.value as StageConfig["protocol"] })
+            }
+          >
+            {PROTOCOL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="sm:col-span-2">
+          <label className="field-label">API Key</label>
+          <div className="relative">
+            <input
+              className="field-input font-mono text-[13px] pr-10"
+              type={showKey ? "text" : "password"}
+              value={config.api_key || ""}
+              onChange={(e) => onUpdate({ api_key: e.target.value })}
+              placeholder={config.has_api_key ? "已配置（留空保持）" : "输入 API Key"}
+            />
+            <button
+              type="button"
+              onClick={onToggleKey}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--text-primary)]"
+            >
+              {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+        </div>
+
+        <Field
+          label="模型名称"
+          value={config.model}
+          onChange={(v) => onUpdate({ model: v })}
+          className="sm:col-span-2"
+        />
+
+        <Field
+          label="上下文窗口"
+          value={String(config.context_window)}
+          onChange={(v) => onUpdate({ context_window: Number(v) || 0 })}
+          type="number"
+        />
+        <Field
+          label="最大输出"
+          value={String(config.max_tokens)}
+          onChange={(v) => onUpdate({ max_tokens: Number(v) || 0 })}
+          type="number"
+        />
+        {isSpeak && (
+          <>
+            <div>
+              <label className="field-label">播报模式</label>
+              <select
+                className="field-input"
+                value={String(config.extras.speech_speak_mode || "tts_from_text")}
+                onChange={(e) =>
+                  onUpdate({
+                    extras: { ...config.extras, speech_speak_mode: e.target.value },
+                  })
+                }
+              >
+                <option value="tts_from_text">文本转语音</option>
+                <option value="text_only">仅字幕</option>
+              </select>
+            </div>
+            <Field
+              label="音色 / Voice ID"
+              value={String(
+                config.extras.tts_voice
+                  || (config.provider === "edge"
+                    ? "zh-CN-XiaoxiaoNeural"
+                    : "mimo_default")
+              )}
+              onChange={(v) =>
+                onUpdate({ extras: { ...config.extras, tts_voice: v } })
+              }
+              placeholder="mimo_default"
+            />
+          </>
+        )}
+      </div>
+
+      <div className="mt-4 p-4 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--brand-softer)]/20">
+        <h3 className="text-sm font-medium mb-3">模型能力</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <CapabilityToggle
+            label="图片输入"
+            checked={config.capabilities.supports_vision}
+            onChange={(v) => onUpdateCapabilities({ supports_vision: v })}
+          />
+          <CapabilityToggle
+            label="视频输入"
+            checked={config.capabilities.supports_video_input}
+            onChange={(v) => onUpdateCapabilities({ supports_video_input: v })}
+          />
+          <CapabilityToggle
+            label="语音输入"
+            checked={config.capabilities.supports_audio_input}
+            onChange={(v) => onUpdateCapabilities({ supports_audio_input: v })}
+          />
+          <CapabilityToggle
+            label="语音输出"
+            checked={config.capabilities.supports_audio_output}
+            onChange={(v) => onUpdateCapabilities({ supports_audio_output: v })}
+          />
+        </div>
+      </div>
+
+      {!isReason && (
+        <div className="mt-4 p-4 rounded-[var(--radius)] border border-dashed border-[var(--border)] bg-[var(--muted)]/5">
+          <h3 className="text-sm font-medium mb-3 text-[var(--text-secondary)]">降级处理</h3>
+          <p className="text-xs text-[var(--muted)] mb-3">
+            主模型失败时继续面试：识别默认回退本地 Whisper，播报默认回退 Edge TTS。
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field
+              label="降级处理者"
+              value={config.fallback.handler}
+              onChange={(v) => onUpdateFallback({ handler: v })}
+              placeholder={isRecognize ? "local" : "edge"}
+            />
+            <Field
+              label="降级模式"
+              value={config.fallback.mode}
+              onChange={(v) => onUpdateFallback({ mode: v })}
+              placeholder={isRecognize ? "transcribe" : "tts_from_text"}
+            />
+          </div>
+        </div>
+      )}
+
       {testResult && (
         <div className={`alert mt-4 ${testResult.success ? "alert-success" : "alert-error"}`}>
           {testResult.success ? (
@@ -478,68 +526,32 @@ function StageSection({
   );
 }
 
-function ProviderPicker({
-  options,
-  value,
-  onPick,
+function CapabilityToggle({
+  label,
+  checked,
+  onChange,
+  disabled,
 }: {
-  options: VoiceProviderOption[];
-  value: string;
-  onPick: (p: VoiceProviderOption) => void;
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-2">
-      {options.map((p) => {
-        const active = value === p.id;
-        return (
-          <button
-            type="button"
-            key={p.id}
-            onClick={() => onPick(p)}
-            className={`text-left px-3.5 py-2.5 rounded-[var(--radius)] border transition-colors ${
-              active
-                ? "border-[var(--brand)] bg-[var(--brand-soft)]"
-                : "border-[var(--border)] hover:border-[var(--brand)]/40 hover:bg-[var(--brand-softer)]"
-            }`}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium">{p.label}</span>
-              <CapabilityBadges p={p} />
-              {p.status === "coming_soon" && (
-                <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-[var(--border)] text-[var(--muted)]">
-                  coming soon
-                </span>
-              )}
-            </div>
-            {p.hint && <p className="text-xs text-[var(--muted)] mt-1">{p.hint}</p>}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function CapabilityBadges({ p }: { p: VoiceProviderOption }) {
-  const badges: string[] = [];
-  if (p.can_speech_recognize) {
-    badges.push(p.recognize_via === "native_audio" ? "原生听" : "转写");
-  }
-  if (p.can_interview_reason) badges.push("可思考");
-  if (p.can_speech_speak) {
-    badges.push(p.speak_via === "native_audio" ? "原生说" : "TTS");
-  }
-  if (!badges.length && p.speak_via === "none") badges.push("仅字幕");
-  return (
-    <>
-      {badges.map((b) => (
-        <span
-          key={b}
-          className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--brand-softer)] text-[var(--brand-ink)]"
-        >
-          {b}
-        </span>
-      ))}
-    </>
+    <label
+      className={`flex items-center gap-2 text-sm ${
+        disabled ? "text-[var(--muted)] cursor-not-allowed" : "cursor-pointer"
+      }`}
+    >
+      <input
+        type="checkbox"
+        className="rounded border-[var(--border)] text-[var(--brand)] focus:ring-[var(--brand)]"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      {label}
+    </label>
   );
 }
 

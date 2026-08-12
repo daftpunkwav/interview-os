@@ -16,14 +16,64 @@ from app.core.constants import (
 
 # ── LLM 设置 ──────────────────────────────────────────
 
+class StageModelCapability(BaseModel):
+    """单个模型能力开关。"""
+
+    supports_vision: bool = False
+    supports_audio_input: bool = False
+    supports_audio_output: bool = False
+    supports_video_input: bool = False
+
+
+class StageFallbackConfig(BaseModel):
+    """阶段降级处理配置。"""
+
+    handler: str = ""
+    mode: str = ""
+
+
+class StageConfigUpdate(BaseModel):
+    """单个阶段处理器保存请求。"""
+
+    provider: str = ""
+    api_base: str = ""
+    api_key: str = ""
+    protocol: Literal["openai_chat", "anthropic_messages", "openai_responses"] = "openai_chat"
+    model: str = ""
+    max_tokens: int = Field(default=4096, ge=1)
+    context_window: int = Field(default=128000, ge=1)
+    capabilities: StageModelCapability = Field(default_factory=StageModelCapability)
+    fallback: StageFallbackConfig = Field(default_factory=StageFallbackConfig)
+    extras: dict[str, Any] = Field(default_factory=dict)
+
+
+class StageConfigResponse(BaseModel):
+    """单个阶段处理器返回。"""
+
+    stage: str
+    provider: str
+    api_base: str
+    protocol: str
+    model: str
+    max_tokens: int
+    context_window: int
+    capabilities: StageModelCapability
+    fallback: StageFallbackConfig
+    extras: dict[str, Any]
+    has_api_key: bool
+    updated_at: datetime | None = None
+
+
 class LLMSettingsUpdate(BaseModel):
+    """兼容旧版三阶段统一保存；内部会拆到 stage_configs。"""
+
     api_base: str
     api_key: str
     model: str
     max_tokens: int = 4096
     context_window: int = 128000
-    provider: str = "openai"
-    protocol: str = DEFAULT_LLM_PROTOCOL
+    provider: str = ""
+    protocol: Literal["openai_chat", "anthropic_messages", "openai_responses"] = "openai_chat"
     reasoning_effort: str = "medium"
     supports_vision: bool = True
     supports_audio: bool = False
@@ -79,6 +129,15 @@ class LLMSettingsResponse(BaseModel):
     updated_at: datetime | None = None
 
 
+class StageConfigsResponse(BaseModel):
+    """新版三阶段配置返回。"""
+
+    recognize: StageConfigResponse
+    reason: StageConfigResponse
+    speak: StageConfigResponse
+    updated_at: datetime | None = None
+
+
 class LLMTestResponse(BaseModel):
     success: bool
     message: str
@@ -90,6 +149,7 @@ class LLMTestResponse(BaseModel):
 
 class StageTestRequest(BaseModel):
     """可选覆盖；默认用库内已保存配置。"""
+
     stage: Literal["recognize", "reason", "speak"] | None = None
 
 

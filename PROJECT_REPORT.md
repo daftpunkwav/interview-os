@@ -226,7 +226,7 @@ cd backend
 .\.venv\Scripts\activate
 pip install -r requirements.txt
 # 编辑 .env：LLM_* 、可选 GITHUB_TOKEN
-uvicorn app.main:app --reload --port 8000
+python -m app.main
 
 # 前端
 cd frontend

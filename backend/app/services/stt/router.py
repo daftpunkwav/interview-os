@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from app.services.stt.aliyun import AliyunProvider
 from app.services.stt.baidu import BaiduProvider
 from app.services.stt.base import SttCredentials, SttProvider
 from app.services.stt.local import LocalWhisperProvider
-from app.services.stt.openai_compat import OpenAICompatProvider
+from app.services.stt.openai_compat import MimoAudioProvider, OpenAICompatProvider
 from app.services.stt.tencent import TencentProvider
 from app.services.stt.volcengine import VolcengineProvider
 from app.services.stt.xfyun import XfyunProvider
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 _PROVIDERS: dict[str, SttProvider] = {
     "openai_compat": OpenAICompatProvider(),
+    "mimo_audio": MimoAudioProvider(),
     "local": LocalWhisperProvider(),
     "xfyun": XfyunProvider(),
     "volcengine": VolcengineProvider(),
@@ -64,6 +65,11 @@ async def transcribe_with_handler(
         forced_fallback = True
 
     impl = _PROVIDERS.get(provider_id)
+    # 自定义供应商没有固定 handler id；OpenAI Chat 格式的音频模型统一走
+    # input_audio 适配器（MiMo ASR 就是该协议）。
+    if impl is None and creds.protocol == "openai_chat":
+        impl = _PROVIDERS["mimo_audio"]
+        provider_id = requested
     if impl is None:
         logger.warning("未知识别处理者 %s，回退 local", provider_id)
         impl = _PROVIDERS["local"]
@@ -84,16 +90,44 @@ async def transcribe_with_handler(
             requested_provider=requested,
         )
 
-    if fallback_local and provider_id != "local":
-        logger.info("ASR provider=%s 无结果，回退本地 Whisper", provider_id)
-        local_text = await _PROVIDERS["local"].transcribe(
-            pcm_b64,
-            sample_rate=sample_rate,
-            creds=SttCredentials(provider="local", model="base"),
-        )
+    fallback_handler = (creds.fallback_handler or "local").strip()
+    if creds.fallback_mode in ("none", "text_only"):
         return SttResult(
-            text=local_text,
-            provider="local",
+            text="",
+            provider=provider_id,
+            fallback=True,
+            requested_provider=requested,
+        )
+    if (
+        fallback_local
+        and fallback_handler not in ("", "none", "text_only")
+        and fallback_handler != requested
+    ):
+        fallback_impl = _PROVIDERS.get(fallback_handler)
+        if fallback_impl is not None:
+            logger.info("ASR provider=%s 无结果，回退 %s", provider_id, fallback_handler)
+            fallback_creds = replace(
+                creds,
+                provider=fallback_handler,
+                protocol="openai_chat" if fallback_handler == "local" else creds.protocol,
+                model="base" if fallback_handler == "local" else creds.model,
+            )
+            fallback_text = await fallback_impl.transcribe(
+                pcm_b64,
+                sample_rate=sample_rate,
+                creds=fallback_creds,
+            )
+            return SttResult(
+                text=fallback_text,
+                provider=fallback_handler,
+                fallback=True,
+                requested_provider=requested,
+            )
+    if fallback_local and fallback_handler not in ("", "none", "text_only") and provider_id != "local":
+        logger.info("ASR provider=%s 配置的降级处理者 %s 不可用", provider_id, fallback_handler)
+        return SttResult(
+            text="",
+            provider=provider_id,
             fallback=True,
             requested_provider=requested,
         )

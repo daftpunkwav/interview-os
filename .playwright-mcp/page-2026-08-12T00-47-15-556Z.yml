@@ -1,0 +1,11 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - button "打开导航" [ref=e4] [cursor=pointer]
+    - link "InterviewOS" [ref=e6] [cursor=pointer]:
+      - /url: /
+  - main [ref=e9]:
+    - generic [ref=e11]:
+      - generic [ref=e17]:
+        - heading "个人档案" [level=1] [ref=e18]
+        - paragraph [ref=e19]: 本地存储，无需注册。必填信息用于生成更精准的面试问题。
+      - generic [ref=e20]: 加载档案…

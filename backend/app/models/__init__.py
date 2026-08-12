@@ -67,8 +67,35 @@ class UserProfile(Base):
         self.tech_domains = json.dumps(domains, ensure_ascii=False)
 
 
+class StageConfig(Base):
+    """三阶段处理器独立配置：recognize / reason / speak。
+
+    每条记录对应一个阶段，支持自定义供应商、API 格式、模型能力等。
+    """
+
+    __tablename__ = "stage_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stage: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    provider: Mapped[str] = mapped_column(String(100), default="")
+    api_base: Mapped[str] = mapped_column(String(500), default="")
+    api_key: Mapped[str] = mapped_column(String(500), default="")
+    protocol: Mapped[str] = mapped_column(String(50), default=DEFAULT_LLM_PROTOCOL)
+    model: Mapped[str] = mapped_column(String(100), default="")
+    max_tokens: Mapped[int] = mapped_column(Integer, default=4096)
+    context_window: Mapped[int] = mapped_column(Integer, default=128000)
+    supports_vision: Mapped[bool] = mapped_column(Boolean, default=False)
+    supports_audio_input: Mapped[bool] = mapped_column(Boolean, default=False)
+    supports_audio_output: Mapped[bool] = mapped_column(Boolean, default=False)
+    supports_video_input: Mapped[bool] = mapped_column(Boolean, default=False)
+    fallback_handler: Mapped[str] = mapped_column(String(100), default="")
+    fallback_mode: Mapped[str] = mapped_column(String(30), default="")
+    extras: Mapped[str] = mapped_column(Text, default="{}")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class LLMSettings(Base):
-    """BYOK LLM 配置。"""
+    """BYOK LLM 配置（保留做兼容读；新逻辑优先使用 stage_configs）。"""
 
     __tablename__ = "llm_settings"
 
@@ -78,7 +105,7 @@ class LLMSettings(Base):
     model: Mapped[str] = mapped_column(String(100), default="")
     max_tokens: Mapped[int] = mapped_column(Integer, default=4096)
     context_window: Mapped[int] = mapped_column(Integer, default=128000)
-    provider: Mapped[str] = mapped_column(String(50), default="openai")
+    provider: Mapped[str] = mapped_column(String(50), default="")
     protocol: Mapped[str] = mapped_column(String(50), default=DEFAULT_LLM_PROTOCOL)
     reasoning_effort: Mapped[str] = mapped_column(String(20), default="medium")
     supports_vision: Mapped[bool] = mapped_column(Boolean, default=True)

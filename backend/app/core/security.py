@@ -103,6 +103,18 @@ _LOOPBACK_NETS = (
 # 允许的对外端口：dev 模式可放行任意；生产期仅 HTTP/HTTPS。
 _DEFAULT_ALLOWED_PORTS = frozenset({80, 443})
 
+# 运行环境的 DNS 代理可能把部分国内公网服务解析到 198.18.0.0/15。
+# 该网段本身仍然禁止直接访问，只有明确列出的供应商主机名可以使用它。
+_PROVIDER_NETWORKS = (ipaddress.ip_network("198.18.0.0/15"),)
+MIMO_TRUSTED_HOSTS = frozenset(
+    {
+        "api.xiaomimimo.com",
+        "token-plan-cn.xiaomimimo.com",
+        "token-plan-sgp.xiaomimimo.com",
+        "token-plan-ams.xiaomimimo.com",
+    }
+)
+
 
 class UnsafeURLError(ValueError):
     """传入的 URL 命中安全策略。"""
@@ -181,6 +193,7 @@ def is_safe_http_url(
     require_https: bool = False,
     timeout: float = 3.0,
     allowed_ports: frozenset[int] | None = None,
+    trusted_hosts: frozenset[str] | None = None,
 ) -> bool:
     """校验 ``url`` 是否为安全可外发的 HTTP/HTTPS URL。
 
@@ -217,6 +230,14 @@ def is_safe_http_url(
         ips = _resolve_all(parsed.hostname)
     except ValueError:
         return False
+    trusted = trusted_hosts if trusted_hosts is not None else MIMO_TRUSTED_HOSTS
+    hostname = parsed.hostname.lower()
+    if hostname in trusted:
+        return all(
+            _ip_is_safe(ip, allow_local=allow_local)
+            or any(ip in network for network in _PROVIDER_NETWORKS)
+            for ip in ips
+        )
     return _all_ips_safe(ips, allow_local=allow_local)
 
 
@@ -226,6 +247,7 @@ def assert_safe_http_url(
     allow_local: bool = False,
     require_https: bool = False,
     allowed_ports: frozenset[int] | None = None,
+    trusted_hosts: frozenset[str] | None = None,
 ) -> None:
     """不安全时抛出 :class:`UnsafeURLError`。"""
     if not is_safe_http_url(
@@ -233,6 +255,7 @@ def assert_safe_http_url(
         allow_local=allow_local,
         require_https=require_https,
         allowed_ports=allowed_ports,
+        trusted_hosts=trusted_hosts,
     ):
         raise UnsafeURLError(f"URL 被策略拒绝: {url!r}")
 
@@ -258,6 +281,7 @@ def pin_safe_http_url(
     allow_local: bool = False,
     require_https: bool = False,
     allowed_ports: frozenset[int] | None = None,
+    trusted_hosts: frozenset[str] | None = None,
 ) -> PinnedHttpTarget:
     """单次 DNS 解析 → 校验全部候选 → pin 首个安全 IP。
 
@@ -290,7 +314,16 @@ def pin_safe_http_url(
         raise UnsafeURLError(str(e)) from e
     if not ips:
         raise UnsafeURLError(f"无法解析主机: {hostname!r}")
-    if not _all_ips_safe(ips, allow_local=allow_local):
+    trusted = trusted_hosts if trusted_hosts is not None else MIMO_TRUSTED_HOSTS
+    hostname_key = hostname.lower()
+    ips_safe = _all_ips_safe(ips, allow_local=allow_local)
+    if hostname_key in trusted:
+        ips_safe = all(
+            _ip_is_safe(ip, allow_local=allow_local)
+            or any(ip in network for network in _PROVIDER_NETWORKS)
+            for ip in ips
+        )
+    if not ips_safe:
         raise UnsafeURLError(f"URL 被策略拒绝: {url!r}")
 
     return PinnedHttpTarget(
@@ -360,6 +393,7 @@ def make_pinned_async_client(
     require_https: bool = False,
     timeout: float = 60.0,
     allowed_ports: frozenset[int] | None = None,
+    trusted_hosts: frozenset[str] | None = None,
 ) -> httpx.AsyncClient:
     """创建对 ``url`` 主机做 DNS pin 的 :class:`httpx.AsyncClient`。
 
@@ -370,6 +404,7 @@ def make_pinned_async_client(
         allow_local=allow_local,
         require_https=require_https,
         allowed_ports=allowed_ports,
+        trusted_hosts=trusted_hosts,
     )
     transport = PinnedHostTransport(
         hostname=target.hostname,

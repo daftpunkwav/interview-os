@@ -158,25 +158,38 @@ class LLMClient:
 
     @classmethod
     def from_db(cls, db: Session) -> "LLMClient":
-        """从数据库读取 BYOK 配置，回退到环境变量。"""
-        settings = get_settings()
-        row = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
+        """优先从 stage_configs 读取 reason 阶段配置；否则兼容旧 LLMSettings 与环境变量。"""
+        from app.services.voice.stage_config import get_stage_config_for_runtime
 
-        api_base = (row.api_base if row and row.api_base else None) or settings.llm_api_base
-        raw_api_key = (row.api_key if row and row.api_key else None) or settings.llm_api_key
-        # 自动解密加密的 API Key；解密失败回退空串
-        try:
-            api_key = decrypt_secret(raw_api_key) or ""
-        except LegacySecretFormatError as e:
-            logger.error("API Key 使用旧版加密格式，请重新保存: %s", e)
-            api_key = ""
-        except ValueError as e:
-            logger.error("API Key 解密失败: %s", e)
-            api_key = ""
-        model = (row.model if row and row.model else None) or settings.llm_model
-        max_tokens = (row.max_tokens if row else None) or settings.llm_max_tokens
-        protocol = (row.protocol if row and hasattr(row, "protocol") and row.protocol else None) or DEFAULT_LLM_PROTOCOL
-        reasoning = getattr(row, "reasoning_effort", None) if row else None
+        settings = get_settings()
+        cfg = get_stage_config_for_runtime(db, "reason")
+        cfg_api_key = cfg.get("api_key") or ""
+
+        # 若 stage_configs 已配置 reason，则优先使用
+        if cfg.get("api_base") and cfg_api_key:
+            api_base = cfg["api_base"]
+            api_key = cfg_api_key
+            model = cfg.get("model") or ""
+            max_tokens = cfg.get("max_tokens") or settings.llm_max_tokens
+            protocol = cfg.get("protocol") or DEFAULT_LLM_PROTOCOL
+            reasoning = None
+        else:
+            # 兼容旧 LLMSettings / 环境变量
+            row = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
+            api_base = (row.api_base if row and row.api_base else None) or settings.llm_api_base
+            raw_api_key = (row.api_key if row and row.api_key else None) or settings.llm_api_key
+            try:
+                api_key = decrypt_secret(raw_api_key) or ""
+            except LegacySecretFormatError as e:
+                logger.error("API Key 使用旧版加密格式，请重新保存: %s", e)
+                api_key = ""
+            except ValueError as e:
+                logger.error("API Key 解密失败: %s", e)
+                api_key = ""
+            model = (row.model if row and row.model else None) or settings.llm_model
+            max_tokens = (row.max_tokens if row else None) or settings.llm_max_tokens
+            protocol = (row.protocol if row and hasattr(row, "protocol") and row.protocol else None) or DEFAULT_LLM_PROTOCOL
+            reasoning = getattr(row, "reasoning_effort", None) if row else None
 
         return cls(
             api_base=api_base,
@@ -226,6 +239,21 @@ class LLMClient:
         max_tokens: int | None = None,
     ) -> str:
         """发送 Chat Completions 请求并返回文本内容。"""
+        if self.protocol != DEFAULT_LLM_PROTOCOL:
+            from app.services.llm.unified_client import UnifiedLLMClient
+
+            return await UnifiedLLMClient(
+                api_base=self.api_base,
+                api_key=self.api_key,
+                model=self.model,
+                protocol=self.protocol,
+                max_tokens=self.max_tokens,
+            ).chat(
+                messages,
+                temperature=temperature,
+                response_format=response_format,
+                tools=tools,
+            )
         if not is_safe_http_url(self.api_base, allow_local=_is_local_allowed(), require_https=_require_https()):
             raise UnsafeURLError(f"LLM api_base 不安全: {self.api_base}")
         url = f"{self.api_base}/chat/completions"
@@ -284,6 +312,25 @@ class LLMClient:
 
         用于面试 Agent 的工具调用循环；无 tool_calls 时仅含 content。
         """
+        if self.protocol != DEFAULT_LLM_PROTOCOL:
+            from app.services.llm.unified_client import UnifiedLLMClient
+
+            message = await UnifiedLLMClient(
+                api_base=self.api_base,
+                api_key=self.api_key,
+                model=self.model,
+                protocol=self.protocol,
+                max_tokens=self.max_tokens,
+            ).chat_message(
+                messages,
+                temperature=temperature,
+                response_format=response_format,
+                tools=tools,
+                tool_choice=tool_choice,
+            )
+            if not message.get("tool_calls"):
+                message.pop("tool_calls", None)
+            return message
         if not is_safe_http_url(self.api_base, allow_local=_is_local_allowed(), require_https=_require_https()):
             raise UnsafeURLError(f"LLM api_base 不安全: {self.api_base}")
         url = f"{self.api_base}/chat/completions"
@@ -335,6 +382,18 @@ class LLMClient:
 
         4xx 立即失败；429/5xx 重试。流式响应在重试前需先 aclose 防连接泄漏。
         """
+        if self.protocol != DEFAULT_LLM_PROTOCOL:
+            from app.services.llm.unified_client import UnifiedLLMClient
+
+            async for token in UnifiedLLMClient(
+                api_base=self.api_base,
+                api_key=self.api_key,
+                model=self.model,
+                protocol=self.protocol,
+                max_tokens=self.max_tokens,
+            ).chat_stream(messages, tools=tools):
+                yield token
+            return
         if not is_safe_http_url(self.api_base, allow_local=_is_local_allowed(), require_https=_require_https()):
             raise UnsafeURLError(f"LLM api_base 不安全: {self.api_base}")
         url = f"{self.api_base}/chat/completions"

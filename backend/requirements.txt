@@ -1,3 +1,16 @@
+# InterviewOS 后端依赖（下限约束）
+#
+# 依赖锁定策略：
+# - 采用 `>=` 下限约束（兼容 PyPI 无锁文件时的语义，SECURITY.md §已知可改进项）
+# - 如需可复现构建，请生成 hash-pinned lock：在 CI 相同的 Python 版本（当前 3.12）下
+#   执行 `pip-compile requirements.txt --generate-hashes -o requirements.lock` 并提交。
+#   注意：切勿在本地 Python 3.14 环境生成 lock——faster-whisper/opencv/numpy 等
+#   ABI 依赖在 3.12 可能无对应 wheel，跨版本 lock 会导致 CI 安装失败。
+# - pip-audit 在 CI 中扫描本文件（requirements.lock 存在时自动优先）。
+#
+# 注意：API Key 的 at-rest 加密使用 cryptography AES-256-GCM；
+# 部署时强烈建议设置环境变量 INTERVIEWOS_SECRET_KEY（任意 ≥16 字节字符串）；
+# 未设置时 backend/data/.secret.key 会被自动生成（旧路径 app/data/.secret.key 会自动迁移）。
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 sqlalchemy>=2.0.36
@@ -31,7 +44,3 @@ cachetools>=5.3.0
 # 测试
 pytest>=8.3.0
 pytest-asyncio>=0.24.0
-
-# 注意：API Key 的 at-rest 加密使用 cryptography AES-256-GCM；
-# 部署时强烈建议设置环境变量 INTERVIEWOS_SECRET_KEY（任意 ≥16 字节字符串）；
-# 未设置时 backend/data/.secret.key 会被自动生成（旧路径 app/data/.secret.key 会自动迁移）。

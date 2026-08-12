@@ -53,9 +53,9 @@ function readEnv(): Env {
   }
 
   _cached = {
-    API_BASE: (apiBase || "http://localhost:8000").replace(/\/+$/, ""),
-    WS_BASE: (wsBase || "ws://localhost:8000").replace(/\/+$/, ""),
-    STREAM_API_BASE: (streamBase || "http://localhost:8000").replace(/\/+$/, ""),
+    API_BASE: (apiBase || "http://localhost:8081").replace(/\/+$/, ""),
+    WS_BASE: (wsBase || "ws://localhost:8081").replace(/\/+$/, ""),
+    STREAM_API_BASE: (streamBase || "http://localhost:8081").replace(/\/+$/, ""),
   };
   return _cached;
 }

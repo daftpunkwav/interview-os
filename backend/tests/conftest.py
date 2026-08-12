@@ -19,7 +19,7 @@ def pytest_configure(config: pytest.Config) -> None:
     os.environ.setdefault("LLM_API_KEY", "test-key")
     os.environ.setdefault("LLM_API_BASE", "http://localhost:9999/v1")
     os.environ.setdefault("LLM_MODEL", "test-model")
-    os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
+    os.environ.setdefault("CORS_ORIGINS", "http://localhost:8080")
     # 标记 main.py 在 lifespan 关闭时不 dispose engine，避免破坏
     # StaticPool + :memory: 的跨测试共享语义。
     os.environ["INTERVIEWOS_TEST_MODE"] = "1"

@@ -12,9 +12,10 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models import InterviewSession, LLMSettings
+from app.models import InterviewSession
 from app.services.context.manager import compress_messages
 from app.services.interview.agent import InterviewAgent
+from app.services.voice.stage_config import get_stage_config_for_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -107,10 +108,18 @@ class PromptAssembler:
 
         0 或未设置视为无限制（不压缩）。
         """
-        row = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
-        if not row or not row.context_window:
+        config = get_stage_config_for_runtime(db, "reason")
+        context_window = config.get("context_window")
+        if (config.get("extras") or {}).get("source") == "environment":
+            # 环境变量只是兼容回退；旧接口仍可能在启动后更新 LLMSettings。
+            from app.models import LLMSettings
+
+            legacy = db.query(LLMSettings).filter(LLMSettings.id == 1).first()
+            if legacy and legacy.context_window:
+                context_window = legacy.context_window
+        if not context_window:
             return 0
-        return int(row.context_window)
+        return int(context_window)
 
 
 __all__ = ["PromptAssembler"]

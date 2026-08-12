@@ -3,7 +3,7 @@
 > 报告日期：以 `git log` 最新 commit 为准（不维护固定日期）
 > 分支：`main`
 > 报告范围：仓库当前 `main` 分支的实际代码状态（以代码为准）
-> 权威设想：[`InterviewOS.md`](./InterviewOS.md) · [`docs/PRD/PRD.md`](./docs/PRD/PRD.md)
+> 权威设想：[`InterviewOS.md`](./InterviewOS.md) · [`docs/product/PRD.md`](./docs/product/PRD.md)
 
 本报告回答三件事：
 

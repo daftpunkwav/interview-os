@@ -35,7 +35,7 @@
 （缓解 CSRF）。档案 / 简历 / 设置 / 成长洞察等管理 API，以及**面试/辅导会话的创建与列表**，另加 **local-only**
 （仅 loopback；测试模式仅在非 prod 放行；`peer=testclient` 始终放行）。
 
-威胁模型与部署约定见 `docs/ARCHITECTURE.md §5`。
+威胁模型与部署约定见 `docs/spec/ARCHITECTURE.md §5`。
 
 ### 2. .env 中的 API Key
 
@@ -100,7 +100,9 @@ WS 端点 `ws://.../api/v1/ws/interview/{id}` **必须**携带会话 `access_tok
 
 ## 已知可改进项
 
-- 生产依赖 lockfile / hash pin（当前 `requirements.txt` 仅下限）；
+- 后端 lockfile / hash pin（当前 `requirements.txt` 仅下限；前端已提交 `package-lock.json`）。
+  生成后端 lock 须在 CI 同版本 Python（3.12）下执行 `pip-compile --generate-hashes`，
+  避免本地 Python 3.14 跨 ABI 生成导致 CI 安装失败（见 `backend/requirements.txt` 头注释）；
 - 服务端 Sentry；
 - 上传文件走对象存储 + 病毒扫描（ClamAV）；
 - CSP 进一步去掉 `unsafe-eval`（受 TalkingHead/Three 约束）。
@@ -111,7 +113,25 @@ WS 端点 `ws://.../api/v1/ws/interview/{id}` **必须**携带会话 `access_tok
 | 依赖 | 版本 | 漏洞 | 状态 |
 |---|---|---|---|
 | chromadb | 1.5.9 | PYSEC-2026-311 | PyPI 最新版即 1.5.9，**暂无修复版本**。应用以 `PersistentClient` 嵌入式模式使用，未暴露 chroma server 端口，攻击面有限；上游发布修复版后请升级（`pip install -U chromadb`）并移除 `requirements.txt` 中的注释 |
-| brace-expansion（前端传递依赖） | 1.1.15 / 5.0.7 | npm DoS（指数级展开） | 嵌套在 `@typescript-eslint/typescript-estree` 内部，仅 dev 构建期使用，不进入运行时 bundle；`npm audit fix --force` 可能破坏 ESLint 兼容性，暂不强制升级 |
+| brace-expansion（前端传递依赖） | 已锁 1.1.18 | 原 1.1.15 / 5.0.7 npm DoS（指数级展开） | **已修复**：`package-lock.json` 已锁定 1.1.18（含漏洞修复的版本），实测 `npm audit` 0 漏洞；CI 已恢复严格审计（high 以上直接失败，不再 `\|\| true` 放行） |
+
+## 生产部署最小清单
+
+本项目定位「本地优先、单用户、无登录」。若在公网 / 局域网部署，必须逐项确认：
+
+| # | 项 | 必做 | 校验方式 |
+|---|---|---|---|
+| 1 | 反向代理 + HTTPS 终止 | 前端与后端均置于反代后，仅经反代暴露；后端 `HOST=127.0.0.1` 保持仅本机 | 公网无法直连后端端口 |
+| 2 | `INTERVIEWOS_SECRET_KEY` | 显式设置 ≥16 字节密钥，禁止依赖自动生成的 `data/.secret.key` | 启动即报错（`main.py` 门禁） |
+| 3 | `CORS_ORIGINS` | 显式列出真实前端 origin（含端口），**禁止 `*`** | 启动即报错（`main.py` 门禁） |
+| 4 | `ENV=prod` | 强制 https 出站（LLM 调用）、禁止 `ALLOW_LOCAL_LLM`、拒绝 query token | 启动即报错（config 校验） |
+| 5 | `INTERVIEWOS_TEST_MODE` | **必须未设置**。仅当 `ENV≠prod` 时，设置后 `require_local_peer` 会放行非 loopback 的真实 HTTP | `env \| grep TEST_MODE` 为空 |
+| 6 | `TRUSTED_PROXY_CIDRS` | 填实际反代 CIDR（如 `127.0.0.1`）；否则 `X-Forwarded-For` 不被信任，限流按直连 IP | 反代透传日志核对 |
+| 7 | 防火墙 | 阻断公网对后端 8081 与前端 8080 的直接访问 | 端口扫描 |
+| 8 | 数据库备份 | `backend/data/interviewos.db` 定期备份（API Key 密文随库迁移可解密，前提 #2 成立） | 恢复演练 |
+
+> 注意：`HOST=0.0.0.0` + `ENV` 未设为 prod + `INTERVIEWOS_TEST_MODE=1` 的组合会让「仅本机」的管理接口（档案/简历/设置）放行局域网任意客户端——生产环境须同时避免后两项。
+> 会话使用 capability token（HttpOnly Cookie），但**没有**多用户登录；公网部署等于把所有访问者视为同一用户，请自行权衡（`README.md` 已声明）。
 
 ## License 下的责任边界
 

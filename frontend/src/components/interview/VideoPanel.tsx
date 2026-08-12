@@ -128,7 +128,7 @@ export const VideoPanel = forwardRef<VideoPanelHandle, VideoPanelProps>(
       const video = videoRef.current;
       if (!video || !cameraOn || video.readyState < 2) return;
 
-      let analysis: FaceAnalysis = {
+      const analysis: FaceAnalysis = {
         face_detected: false,
         looking_away: true,
         nervousness: 0,

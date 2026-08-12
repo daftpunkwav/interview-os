@@ -25,10 +25,10 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    # LLM BYOK
-    llm_api_base: str = "https://api.openai.com/v1"
+    # LLM BYOK（不再提供默认模型，避免用户未配置时误用公共默认）
+    llm_api_base: str = ""
     llm_api_key: str = ""
-    llm_model: str = "gpt-4o"
+    llm_model: str = ""
     llm_max_tokens: int = 4096
     llm_context_window: int = 128000
 
@@ -46,12 +46,13 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{BACKEND_ROOT / 'data' / 'interviewos.db'}"
     upload_dir: str = str(BACKEND_ROOT / "uploads")
     cors_origins: str = Field(
-        default="http://localhost:3000,http://127.0.0.1:3000",
+        # 端口规划：前端 8080 / 后端 8081；其他服务依次顺延 8082、8083…
+        default="http://localhost:8080,http://127.0.0.1:8080",
         validation_alias=AliasChoices("CORS_ORIGINS", "INTERVIEWOS_CORS_ORIGINS"),
     )
     # 默认仅本机；局域网调试请显式设 HOST=0.0.0.0
     host: str = "127.0.0.1"
-    port: int = Field(default=8000, ge=1, le=65535)
+    port: int = Field(default=8081, ge=1, le=65535)
     env: str = Field(
         default="dev",
         description="dev / prod，决定 allow_local_llm 与 CORS 严格度",

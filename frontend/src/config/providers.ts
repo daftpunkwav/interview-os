@@ -1,8 +1,8 @@
 /**
- * LLM Provider 预设
+ * LLM Provider 基础配置
  *
- * 由设置页与 API 客户端共用；新增 provider 只需要在这里加一行。
- * 真实的 base-url 拼接 / SSRF 校验在后端 ``PUT /api/settings/llm`` 进行。
+ * 设置页不再预置具体模型供应商，用户在三个处理器中分别填写供应商名称、
+ * Base URL、协议、密钥和模型。真实的 URL 校验仍由后端完成。
  */
 export interface LLMProviderPreset {
   /** 数据库保存的 provider id */
@@ -14,11 +14,7 @@ export interface LLMProviderPreset {
 }
 
 export const LLM_PROVIDERS: readonly LLMProviderPreset[] = [
-  { id: "openai", name: "OpenAI", base: "https://api.openai.com/v1" },
-  { id: "stepfun", name: "StepFun", base: "https://api.stepfun.com/step_plan/v1" },
-  { id: "deepseek", name: "DeepSeek", base: "https://api.deepseek.com/v1" },
-  { id: "openrouter", name: "OpenRouter", base: "https://openrouter.ai/api/v1" },
-  { id: "custom", name: "自定义", base: "" },
+  { id: "custom", name: "自定义供应商", base: "" },
 ] as const;
 
-export const DEFAULT_LLM_PROVIDER_ID = "openai";
+export const DEFAULT_LLM_PROVIDER_ID = "custom";

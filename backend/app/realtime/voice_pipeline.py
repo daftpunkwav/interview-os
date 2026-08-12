@@ -199,10 +199,13 @@ class _SentenceTTSQueue:
                         tts_creds = TtsCredentials(
                             handler=self._tts_creds.handler,
                             mode=self._tts_creds.mode,
+                            protocol=self._tts_creds.protocol,
                             api_base=self._tts_creds.api_base,
                             api_key=self._tts_creds.api_key,
                             model=self._tts_creds.model,
                             voice=p.voice or self._tts_creds.voice,
+                            fallback_handler=self._tts_creds.fallback_handler,
+                            fallback_mode=self._tts_creds.fallback_mode,
                         )
                         audio_b64 = await synthesize_speech(
                             text, creds=tts_creds, rate=p.rate, pitch=p.pitch
@@ -272,10 +275,13 @@ class VoicePipelineMixin:
                 creds=TtsCredentials(
                     handler=tts_creds.handler,
                     mode=tts_creds.mode,
+                    protocol=tts_creds.protocol,
                     api_base=tts_creds.api_base,
                     api_key=tts_creds.api_key,
                     model=tts_creds.model,
                     voice=p.voice or tts_creds.voice,
+                    fallback_handler=tts_creds.fallback_handler,
+                    fallback_mode=tts_creds.fallback_mode,
                 ),
                 rate=p.rate,
                 pitch=p.pitch,

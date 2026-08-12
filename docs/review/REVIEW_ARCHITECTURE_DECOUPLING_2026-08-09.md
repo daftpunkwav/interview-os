@@ -1,7 +1,7 @@
 # InterviewOS 架构脱耦审查报告 v3（2026-08-09）
 
 > **审查日期**：2026-08-09（v3 扩展版，取代同日 v2）
-> **v3 相对 v2 的增量**：新增**错误码体系**审查（问题族 E6，见 §8、§12.6），错误码完整规范与逐站点迁移表独立成文 → [`docs/ERROR_CODES.md`](../ERROR_CODES.md)；路线图扩展至 PR-11。
+> **v3 相对 v2 的增量**：新增**错误码体系**审查（问题族 E6，见 §8、§12.6），错误码完整规范与逐站点迁移表独立成文 → [`docs/spec/ERROR_CODES.md`](../spec/ERROR_CODES.md)；路线图扩展至 PR-11。
 > **v2 相对 v1 的增量**：新增**启动时脱耦**审查（第 5、7、11 章，问题族 S1-S4）与**企业级韧性缺口**审查（第 8、12 章，问题族 E1-E5），目标架构、路线图、故障注入矩阵同步扩展。
 > **审查范围**：`backend/app` 全部 100+ Python 文件（import 全量扫描 + 核心链路逐行通读）、启动路径（模块 import 副作用 + lifespan 引导全步骤）、前端 `src/lib/api.ts`、openwiki 架构页
 > **验证状态声明**：import 依赖、文件行号、代码片段均为**已核实（verified）**；测试套件**未运行**（沿用 2026-08-04 审查的 269/273 通过基线，每个改动项都附了必须执行的验证命令）
@@ -509,13 +509,13 @@ SessionLocal = get_session_factory()
 
 **证据（三处断点，均已核实）**：
 
-1. **REST**：`main.py:237-275` 的 envelope handler 产出的 `error.code` 是通用 `http_{status}`（如 `http_400`/`http_404`），不区分"简历不存在"与"面试会话不存在"等语义迥异的错误；`docs/API.md:53` 文档化的 envelope 同样只有 code/message/trace_id 三字段，无处置建议。
+1. **REST**：`main.py:237-275` 的 envelope handler 产出的 `error.code` 是通用 `http_{status}`（如 `http_400`/`http_404`），不区分"简历不存在"与"面试会话不存在"等语义迥异的错误；`docs/spec/API.md:53` 文档化的 envelope 同样只有 code/message/trace_id 三字段，无处置建议。
 2. **WS/SSE**：实时通道错误帧只有 `{"type":"error","message":...}`（`streaming_consumer.py:113,253,334` 的 `StreamEvent.make_error`、`connection_lifecycle.py:284-413`、`turn_coordinator.py:207-300`、`report_scheduler.py:75`、`voice_pipeline.py:284` 等全部 `send("error", ...)` 调用点均无 code 字段）；`StreamEvent.make_error`（`services/interview/events.py:57-58`）签名只有 `message` 参数。SSE 侧（`api/v1/prep.py:166`、`api/reports.py:133`）同样无码。
 3. **前端**：`frontend/src/lib/api.ts:69-109` 的 `ApiError` 只有 `message`+`status` 两字段，`parseErrorResponse` 读取了 `data.error.message` 却**丢弃 `error.code` 与 `error.trace_id`**；`useInterviewWS.ts:184-202` 的 dispatch 对 error 帧也只消费 `message`。
 
 **为什么是问题**：用户看到报错后无法自助定位——"AI 服务暂时不可用"可能是 Key 没配（A 类）、后端 bug（B 类）、LLM 宕机（C 类）或熔断保护中（C 类），当前只能靠翻后端终端日志逐行找；用户反馈问题时也没有可引用的稳定标识（"我报 C0001"远比"报了个错，弹窗说服务不可用"可检索）。企业级要求错误像日志一样可检索、可分类、可聚合统计。
 
-**设计决策（已定稿，完整规范见 [`docs/ERROR_CODES.md`](../ERROR_CODES.md)）**：
+**设计决策（已定稿，完整规范见 [`docs/spec/ERROR_CODES.md`](../spec/ERROR_CODES.md)）**：
 
 - **格式**：`来源字母 + 域数字 + 两位序号`（如 `A1004`/`C0003`），来源三分法 A（用户端/4xx）/B（本系统/5xx）/C（第三方/502-503）对齐《阿里巴巴 Java 开发手册》错误码规约——本项目故障排查的第一分流问题恰好就是"用户操作、本地系统、BYOK 第三方，谁的错"；
 - **信封扩展**：REST envelope 增加 `hint`（中文处置建议，前端直接展示）与 `retryable` 两字段；WS/SSE error 事件增加 `code`/`retryable`；
@@ -2170,7 +2170,7 @@ async def health_ready():
 
 ### 12.6 E6：错误码体系落地（指向权威规范文档）
 
-**为什么独立成文**：错误码目录表 + 逐站点迁移对照表篇幅大，且是"新增/修改错误码必须先改文档"的长期权威来源，单独维护在 [`docs/ERROR_CODES.md`](../ERROR_CODES.md)。本节只给落地要点与验证方法。
+**为什么独立成文**：错误码目录表 + 逐站点迁移对照表篇幅大，且是"新增/修改错误码必须先改文档"的长期权威来源，单独维护在 [`docs/spec/ERROR_CODES.md`](../spec/ERROR_CODES.md)。本节只给落地要点与验证方法。
 
 **改动清单（五个文件新建/修改 + 一批站点迁移）**：
 
@@ -2304,7 +2304,7 @@ async def health_ready():
 | 探针 | ⚠️ 静态 /health | ✅ /health/live + /health/ready（E4） |
 | 资源生命周期 | ❌ RAG 按连接实例化 | ✅ 进程级单例（S1） |
 | 启动编排 | ❌ 线性单体 | ✅ 步骤注册表 + 摘要（S2） |
-| 错误可观测性 | ⚠️ envelope 有 trace_id，但 code 通用 `http_*`、WS/SSE 无码 | ✅ 业务错误码 A/B/C 三分 + hint/retryable（E6，规范见 docs/ERROR_CODES.md） |
+| 错误可观测性 | ⚠️ envelope 有 trace_id，但 code 通用 `http_*`、WS/SSE 无码 | ✅ 业务错误码 A/B/C 三分 + hint/retryable（E6，规范见 docs/spec/ERROR_CODES.md） |
 
 ## 17. 与 2026-08-04 审查（v3）的关系
 

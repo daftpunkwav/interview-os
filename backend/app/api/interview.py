@@ -13,6 +13,7 @@ from app.core.constants import (
     DEFAULT_SESSION_CREATE_RATE_LIMIT_PER_MINUTE,
     SessionStatus,
 )
+from app.core.errors import ApiBusinessError, raise_error
 from app.core.local_only import require_local_peer
 from app.core.ratelimit import rate_limit_dep
 from app.core.session_auth import (

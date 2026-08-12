@@ -139,7 +139,7 @@
 
 ### 4.1 REST 响应信封
 
-在现有 envelope（`docs/API.md` §1.1）基础上扩展 `hint` 与 `retryable` 两个字段，`detail` 旧字段保留：
+在现有 envelope（`docs/spec/API.md` §1.1）基础上扩展 `hint` 与 `retryable` 两个字段，`detail` 旧字段保留：
 
 ```json
 {
@@ -173,7 +173,7 @@
 ### 5.1 新建错误码注册表 `backend/app/core/errors.py`
 
 ```python
-"""全站错误码注册表（权威实现，目录定义见 docs/ERROR_CODES.md）。
+"""全站错误码注册表（权威实现，目录定义见 docs/spec/ERROR_CODES.md）。
 
 用法：
     from app.core.errors import raise_error
@@ -209,7 +209,7 @@ class ErrorSpec:
 
 
 # ---------------------------------------------------------------------------
-# 目录（与 docs/ERROR_CODES.md §3 一一对应；新增错误码先改文档再改这里）
+# 目录（与 docs/spec/ERROR_CODES.md §3 一一对应；新增错误码先改文档再改这里）
 # ---------------------------------------------------------------------------
 
 CATALOG: dict[str, ErrorSpec] = {
@@ -512,7 +512,7 @@ on("error", (msg) => {
 | 2 | 前端：ApiError 结构化 + parseErrorResponse 改造（兼容无 hint 的旧响应） | `npx tsc --noEmit`；手工触发一个错误看 `[code]` 前缀 |
 | 3 | 后端按 §5.3 表逐文件迁移 REST raise 点（建议按 resume → interview → reports/prep → settings → core 顺序，每个文件一次提交） | 每迁一个文件跑相关测试文件；手工逐接口触发代表性错误核对 code |
 | 4 | WS/SSE 错误帧带码（§5.4）+ 前端 ServerEvent 类型与 toast | `pytest tests/test_ws_handler.py tests/test_ws_hardening.py -q`；手工断 LLM 看面试页 `[C0001]` |
-| 5 | 文档同步：docs/API.md §1.1 错误约定更新为指向本文档；CHANGELOG 记录 | 目检 |
+| 5 | 文档同步：docs/spec/API.md §1.1 错误约定更新为指向本文档；CHANGELOG 记录 | 目检 |
 
 **完成判定**：
 

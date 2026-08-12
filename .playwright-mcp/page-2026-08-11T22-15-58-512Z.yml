@@ -1,0 +1,116 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - button "打开导航" [ref=e4] [cursor=pointer]
+    - link "InterviewOS" [ref=e6] [cursor=pointer]:
+      - /url: /
+  - main [ref=e9]:
+    - generic [ref=e11]:
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: 开源 · BYOK · 数据本地
+          - heading "用真实流程 练好下一场面试" [level=1] [ref=e23]: 用真实流程练好下一场面试
+          - paragraph [ref=e24]: 上传简历，选择目标公司，体验追问与音视频交互。自带 API Key，无需注册账号。
+          - generic [ref=e25]:
+            - link "开始面试" [ref=e26] [cursor=pointer]:
+              - /url: /interview
+            - link "上传简历" [ref=e29] [cursor=pointer]:
+              - /url: /resume
+          - generic [ref=e30]:
+            - generic [ref=e31]:
+              - paragraph [ref=e32]:
+                - generic [ref=e33]: 0+
+              - paragraph [ref=e34]: 企业风格
+            - generic [ref=e35]:
+              - paragraph [ref=e36]:
+                - generic [ref=e37]: 0+
+              - paragraph [ref=e38]: 题库规模
+            - generic [ref=e39]:
+              - paragraph [ref=e40]:
+                - generic [ref=e41]: 0%
+              - paragraph [ref=e42]: 本地可用
+            - generic [ref=e43]:
+              - paragraph [ref=e44]: "0"
+              - paragraph [ref=e45]: 账号注册
+        - generic [ref=e49]:
+          - generic [ref=e50]:
+            - generic [ref=e51]: 模拟面试进行中
+            - generic [ref=e56]: 12:34
+          - generic [ref=e57]:
+            - generic [ref=e58]:
+              - generic [ref=e59]: 面
+              - generic [ref=e60]:
+                - paragraph [ref=e61]: 面试官 · 字节跳动
+                - paragraph [ref=e63]: 请介绍一下你最近负责的项目，重点说明你做了什么决策，以及结果如何衡量。
+            - generic [ref=e64]:
+              - generic [ref=e65]: 我
+              - generic [ref=e66]:
+                - paragraph [ref=e67]: 你
+                - paragraph [ref=e69]: 上一个季度我负责订单履约链路改造，把峰值延迟从…
+          - generic [ref=e71]:
+            - generic [ref=e72]: 视频已连接
+            - generic [ref=e76]: 语音识别中
+      - generic [ref=e81]:
+        - generic [ref=e83]:
+          - generic [ref=e84]:
+            - paragraph [ref=e85]: 上手流程
+            - heading "三步开始" [level=2] [ref=e86]
+          - paragraph [ref=e87]: 密钥 → 简历 → 面试，本地即可跑通
+        - generic [ref=e88]:
+          - link "01 配置密钥 接入你的 LLM API，密钥本地加密存储 前往" [ref=e90] [cursor=pointer]:
+            - /url: /settings
+            - generic [ref=e91]: "01"
+            - heading "配置密钥" [level=3] [ref=e96]
+            - paragraph [ref=e97]: 接入你的 LLM API，密钥本地加密存储
+            - generic [ref=e98]: 前往
+          - link "02 上传简历 解析档案，生成多维度深度评价 前往" [ref=e102] [cursor=pointer]:
+            - /url: /resume
+            - generic [ref=e103]: "02"
+            - heading "上传简历" [level=3] [ref=e108]
+            - paragraph [ref=e109]: 解析档案，生成多维度深度评价
+            - generic [ref=e110]: 前往
+          - link "03 开始面试 选公司与岗位，进入真实模拟 前往" [ref=e114] [cursor=pointer]:
+            - /url: /interview
+            - generic [ref=e115]: "03"
+            - heading "开始面试" [level=3] [ref=e120]
+            - paragraph [ref=e121]: 选公司与岗位，进入真实模拟
+            - generic [ref=e122]: 前往
+      - generic [ref=e126]:
+        - generic [ref=e127]:
+          - paragraph [ref=e128]: 能力
+          - heading "为真实面试准备的工具链" [level=2] [ref=e129]
+          - paragraph [ref=e130]: 从准备到报告，Agent 全链路协助，而不是刷固定题库。
+        - generic [ref=e131]:
+          - generic [ref=e133]:
+            - heading "动态出题" [level=3] [ref=e137]
+            - paragraph [ref=e138]: 基于简历与目标岗位实时生成问题，而不是固定题库。
+          - generic [ref=e140]:
+            - heading "深度追问" [level=3] [ref=e144]
+            - paragraph [ref=e145]: 回答含糊时自动深挖细节，贴近真实面试官节奏。
+          - generic [ref=e147]:
+            - heading "企业风格" [level=3] [ref=e153]
+            - paragraph [ref=e154]: 字节、腾讯、阿里等公司面试风格可切换。
+          - generic [ref=e156]:
+            - heading "音视频交互" [level=3] [ref=e161]
+            - paragraph [ref=e162]: 摄像头与语音实时参与，还原临场压力。
+          - generic [ref=e164]:
+            - heading "面试准备" [level=3] [ref=e168]
+            - paragraph [ref=e169]: 教练式辅导与面经检索，上场前系统梳理。
+          - generic [ref=e171]:
+            - heading "报告与成长" [level=3] [ref=e175]
+            - paragraph [ref=e176]: 场次评分、改进建议，弱项跨场次沉淀。
+      - generic [ref=e180]:
+        - generic [ref=e185]:
+          - paragraph [ref=e186]: 本地优先
+          - paragraph [ref=e187]: 面试数据与密钥默认留在本机，不强制上云
+        - generic [ref=e194]:
+          - paragraph [ref=e195]: 自带密钥
+          - paragraph [ref=e196]: BYOK 接入你的 LLM，成本与模型自己掌控
+        - generic [ref=e202]:
+          - paragraph [ref=e203]: 开源可审计
+          - paragraph [ref=e204]: 代码透明，流程可改，适合二次定制
+      - generic [ref=e209]:
+        - generic [ref=e210]:
+          - heading "下一场面试，现在就开始练" [level=2] [ref=e211]
+          - paragraph [ref=e212]: 本地优先 · BYOK · 无需注册账号
+        - link "开始模拟面试" [ref=e213] [cursor=pointer]:
+          - /url: /interview
