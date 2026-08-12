@@ -1,12 +1,10 @@
-import { Loader2 } from "lucide-react";
-
 export default function GlobalLoading() {
   return (
-    <div className="min-h-[50vh] flex flex-col items-center justify-center gap-3 text-[var(--muted)]">
-      <div className="w-12 h-12 rounded-2xl bg-brand-50 border border-brand-100 flex items-center justify-center">
-        <Loader2 className="animate-spin text-brand-600" size={22} />
-      </div>
-      <p className="text-sm">加载中…</p>
+    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-ink-muted">
+      <span className="icon-badge icon-badge-brand">
+        <span className="block h-4 w-4 anim-spin rounded-full border-2 border-current border-t-transparent" />
+      </span>
+      <p className="text-[13px]">加载中…</p>
     </div>
   );
 }

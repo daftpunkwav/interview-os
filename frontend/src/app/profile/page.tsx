@@ -5,7 +5,6 @@ import { api } from "@/lib/api";
 import type { UserProfile } from "@/types";
 import {
   Save,
-  Loader2,
   User,
   Plus,
   GraduationCap,
@@ -18,10 +17,12 @@ import {
   Mail,
   Phone,
   Award,
+  CheckCircle2,
 } from "lucide-react";
 import { LoadError } from "@/components/LoadError";
+import { CollapsibleSection } from "@/components/CollapsibleSection";
 
-/** 必填字段：保存时校验，并计入完整度核心项 */
+/** 必填字段:保存时校验,并计入完整度核心项 */
 const REQUIRED_KEYS = [
   "name",
   "identity",
@@ -42,7 +43,7 @@ const REQUIRED_LABELS: Record<RequiredKey, string> = {
   tech_domains: "技术领域",
 };
 
-/** 选填字段：计入完整度但不拦截保存 */
+/** 选填字段:计入完整度但不拦截保存 */
 const OPTIONAL_COMPLETION_KEYS = [
   "gender",
   "school",
@@ -117,7 +118,7 @@ export default function ProfilePage() {
     });
     setMissingRequired(missing);
     if (missing.length > 0) {
-      setMsg(`请先填写必填项：${missing.map((k) => REQUIRED_LABELS[k]).join("、")}`);
+      setMsg(`请先填写必填项:${missing.map((k) => REQUIRED_LABELS[k]).join("、")}`);
       return;
     }
     setSaving(true);
@@ -160,8 +161,9 @@ export default function ProfilePage() {
     return (
       <div className="page-shell">
         <PageHead />
-        <div className="flex items-center gap-2 text-sm text-[var(--muted)] py-16 justify-center">
-          <Loader2 className="animate-spin text-[var(--brand)]" size={18} /> 加载档案…
+        <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-ink-muted">
+          <span className="block h-4 w-4 anim-spin rounded-full border-2 border-current border-t-transparent" />
+          加载档案…
         </div>
       </div>
     );
@@ -181,13 +183,13 @@ export default function ProfilePage() {
   const requiredError = (key: RequiredKey) => missingRequired.includes(key);
 
   return (
-    <div className="page-shell">
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+    <div className="page-shell anim-rise">
+      <div className="page-header">
         <PageHead />
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex shrink-0 items-center gap-3">
           {msg && (
             <span
-              className={`text-sm font-medium max-w-xs text-right ${
+              className={`max-w-xs text-right text-[12px] font-medium ${
                 msg.includes("失败") || msg.includes("必填")
                   ? "text-[var(--danger-ink)]"
                   : "text-[var(--success-ink)]"
@@ -197,16 +199,25 @@ export default function ProfilePage() {
             </span>
           )}
           <button type="button" onClick={handleSave} disabled={saving} className="btn-primary">
-            {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+            {saving ? (
+              <span className="block h-3.5 w-3.5 anim-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <Save size={13} />
+            )}
             保存档案
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-6 items-start">
-        <div className="space-y-5">
-          <Section title="基本信息" icon={User} hint="带 * 为必填，影响面试问题生成">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-5">
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="space-y-4">
+          <CollapsibleSection
+            title="基本信息"
+            icon={User}
+            hint="带 * 为必填,影响面试问题生成"
+            tone="brand"
+          >
+            <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field
                 label="姓名"
                 required
@@ -242,10 +253,10 @@ export default function ProfilePage() {
                 placeholder="手机号或微信号"
               />
             </div>
-          </Section>
+          </CollapsibleSection>
 
-          <Section title="教育背景" icon={GraduationCap}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-5">
+          <CollapsibleSection title="教育背景" icon={GraduationCap} tone="brand">
+            <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field
                 label="学校"
                 value={profile.school || ""}
@@ -277,10 +288,10 @@ export default function ProfilePage() {
                 placeholder="CET-6 / 雅思 7 / 工作语言"
               />
             </div>
-          </Section>
+          </CollapsibleSection>
 
-          <Section title="求职意向" icon={Briefcase}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-5">
+          <CollapsibleSection title="求职意向" icon={Briefcase} tone="brand">
+            <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
               <Field
                 label="求职方向"
                 required
@@ -346,10 +357,10 @@ export default function ProfilePage() {
                 placeholder="yes / no / hybrid"
               />
             </div>
-          </Section>
+          </CollapsibleSection>
 
-          <Section title="在线身份" icon={Link2}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-5">
+          <CollapsibleSection title="在线身份" icon={Link2} tone="brand">
+            <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
               <Field
                 label="GitHub"
                 value={profile.github_username || ""}
@@ -377,10 +388,23 @@ export default function ProfilePage() {
                 className="sm:col-span-2"
               />
             </div>
-          </Section>
+          </CollapsibleSection>
 
-          <Section title="技能与介绍" icon={Sparkles}>
-            <div className="space-y-5">
+          <CollapsibleSection
+            title="技能与介绍"
+            icon={Sparkles}
+            tone="brand"
+            actions={
+              <button
+                type="button"
+                onClick={addDomain}
+                className="btn-tertiary !h-8 !px-2 !text-xs text-[var(--primary)]"
+              >
+                <Plus size={13} /> 添加技术领域
+              </button>
+            }
+          >
+            <div className="space-y-4">
               <div>
                 <label className="field-label">
                   自我介绍 <span className="text-[var(--danger)]">*</span>
@@ -411,10 +435,10 @@ export default function ProfilePage() {
                   rows={3}
                   value={profile.signature_projects || ""}
                   onChange={(e) => patch("signature_projects", e.target.value)}
-                  placeholder="1–3 个代表性项目：名称、职责、技术栈、结果…"
+                  placeholder="1–3 个代表性项目:名称、职责、技术栈、结果…"
                 />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="field-label">优势</label>
                   <textarea
@@ -447,30 +471,21 @@ export default function ProfilePage() {
                 />
               </div>
               <div>
-                <div className="flex items-center justify-between mb-1.5">
+                <div className="mb-2 flex items-center justify-between">
                   <label className="field-label !mb-0">
                     技术领域 <span className="text-[var(--danger)]">*</span>
                   </label>
-                  <button
-                    type="button"
-                    onClick={addDomain}
-                    className="btn-tertiary !h-8 !px-2 !text-xs text-[var(--brand)]"
-                  >
-                    <Plus size={14} /> 添加
-                  </button>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {profile.tech_domains.map((d, i) => (
                     <div
                       key={i}
-                      className={`inline-flex items-center gap-1 h-9 pl-3 pr-1 rounded-[var(--radius)] border bg-[var(--card)] focus-within:border-[var(--brand)] focus-within:shadow-[0_0_0_3px_rgba(66,133,244,0.18)] ${
-                        requiredError("tech_domains")
-                          ? "border-[var(--danger)]"
-                          : "border-[var(--input)]"
+                      className={`inline-flex h-9 items-center gap-1 rounded-md border bg-surface-card pl-3 pr-1 transition-colors focus-within:border-[var(--primary)] focus-within:shadow-focus ${
+                        requiredError("tech_domains") ? "border-[var(--danger)]" : "border-surface-border"
                       }`}
                     >
                       <input
-                        className="w-28 sm:w-32 text-sm bg-transparent outline-none placeholder:text-[var(--muted-soft)]"
+                        className="w-28 bg-transparent text-[13px] outline-none placeholder:text-ink-subtle sm:w-32"
                         value={d}
                         placeholder="如 Python"
                         onChange={(e) => {
@@ -482,7 +497,7 @@ export default function ProfilePage() {
                       <button
                         type="button"
                         onClick={() => removeDomain(i)}
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-[var(--muted)] hover:bg-[var(--popover)] hover:text-[var(--foreground)]"
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink"
                         aria-label="移除"
                       >
                         <X size={12} />
@@ -495,20 +510,70 @@ export default function ProfilePage() {
                 )}
               </div>
             </div>
-          </Section>
+          </CollapsibleSection>
         </div>
 
-        <aside className="xl:sticky xl:top-6 space-y-4">
-          <div className="surface-card p-5 sm:p-6">
-            <div className="flex items-center gap-3.5 mb-5">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[var(--brand)] to-[var(--brand-deep)] flex items-center justify-center text-white text-lg font-semibold shrink-0 tracking-tight">
+        <aside className="space-y-4 xl:sticky xl:top-6">
+          {/* 完整度卡片 */}
+          <div className="surface-card p-5">
+            <div className="mb-2.5 flex items-center justify-between">
+              <span className="text-[13px] font-semibold tracking-tight text-ink">
+                档案完整度
+              </span>
+              <span className="font-mono text-[14px] font-semibold text-[var(--primary)] num-tabular">
+                {completionPct}%
+              </span>
+            </div>
+            <div className="progress">
+              <div
+                className="progress-bar anim-progress-fill"
+                style={{ width: `${completionPct}%` }}
+              />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-center">
+              <div className="kpi-card !p-2.5">
+                <p className="font-mono text-[15px] font-semibold text-ink num-tabular">
+                  {requiredDone}/{REQUIRED_KEYS.length}
+                </p>
+                <p className="kpi-label mt-0.5">必填</p>
+              </div>
+              <div className="kpi-card !p-2.5">
+                <p className="font-mono text-[15px] font-semibold text-ink num-tabular">
+                  {optionalDone}/{OPTIONAL_COMPLETION_KEYS.length}
+                </p>
+                <p className="kpi-label mt-0.5">选填</p>
+              </div>
+            </div>
+            {requiredMissing.length > 0 ? (
+              <div className="mt-3 rounded-md border border-[var(--danger)]/30 bg-[var(--danger-soft)] px-3 py-2">
+                <p className="text-[11px] leading-relaxed text-[var(--danger-ink)]">
+                  待补必填:{requiredMissing.map((k) => REQUIRED_LABELS[k]).join("、")}
+                </p>
+              </div>
+            ) : (
+              <div className="mt-3 flex items-center gap-2 rounded-md border border-[var(--success)]/30 bg-[var(--success-soft)] px-3 py-2">
+                <CheckCircle2 size={13} className="text-[var(--success)]" />
+                <span className="text-[11px] font-medium text-[var(--success-ink)]">
+                  所有必填项已就绪
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* 档案预览 */}
+          <div className="surface-card p-5">
+            <div className="mb-5 flex items-center gap-3.5">
+              <div
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold tracking-tight text-white"
+                style={{ background: "var(--primary)" }}
+              >
                 {(profile.name || "?").charAt(0)}
               </div>
               <div className="min-w-0">
-                <h2 className="font-semibold text-[15px] truncate tracking-tight leading-snug">
+                <h2 className="truncate text-[15px] font-semibold leading-snug tracking-tight text-ink">
                   {profile.name || "未填写姓名"}
                 </h2>
-                <p className="text-[12px] text-[var(--muted)] truncate mt-1 leading-snug">
+                <p className="mt-1 truncate text-[11px] text-ink-subtle">
                   {[profile.identity, profile.school].filter(Boolean).join(" · ") ||
                     "完善档案以生成预览"}
                 </p>
@@ -549,8 +614,8 @@ export default function ProfilePage() {
             </dl>
 
             {filledDomains.length > 0 && (
-              <div className="mt-5 pt-4 border-t border-[var(--border)]">
-                <p className="text-[11px] font-medium text-[var(--muted)] mb-2.5 tracking-wide">
+              <div className="mt-5 border-t border-surface-border pt-4">
+                <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-subtle">
                   技术栈
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -564,35 +629,14 @@ export default function ProfilePage() {
             )}
 
             {profile.self_intro && (
-              <div className="mt-5 pt-4 border-t border-[var(--border)]">
-                <p className="text-[11px] font-medium text-[var(--muted)] mb-2 tracking-wide">
+              <div className="mt-5 border-t border-surface-border pt-4">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-subtle">
                   自我介绍
                 </p>
-                <p className="text-[12.5px] text-[var(--text-secondary)] leading-[1.7] line-clamp-6 text-justify [text-align-last:left]">
+                <p className="line-clamp-6 text-[12.5px] leading-relaxed text-ink-muted text-balance">
                   {profile.self_intro}
                 </p>
               </div>
-            )}
-          </div>
-
-          <div className="surface-card p-5 sm:p-6">
-            <div className="flex items-center justify-between mb-2.5">
-              <span className="text-sm font-medium tracking-tight">档案完整度</span>
-              <span className="text-sm font-semibold text-[var(--brand)] tabular-nums">
-                {completionPct}%
-              </span>
-            </div>
-            <div className="progress">
-              <div className="progress-bar" style={{ width: `${completionPct}%` }} />
-            </div>
-            <p className="text-[12px] text-[var(--muted)] mt-3 leading-relaxed">
-              必填 {requiredDone}/{REQUIRED_KEYS.length} · 选填 {optionalDone}/
-              {OPTIONAL_COMPLETION_KEYS.length}
-            </p>
-            {requiredMissing.length > 0 && (
-              <p className="text-[12px] text-[var(--danger-ink)] mt-2 leading-relaxed">
-                待补必填：{requiredMissing.map((k) => REQUIRED_LABELS[k]).join("、")}
-              </p>
             )}
           </div>
         </aside>
@@ -603,44 +647,16 @@ export default function ProfilePage() {
 
 function PageHead() {
   return (
-    <div className="page-header !mb-0">
-      <div className="icon-badge">
-        <User size={20} />
-      </div>
+    <div className="flex items-start gap-3">
+      <span className="icon-badge">
+        <User size={18} strokeWidth={1.75} />
+      </span>
       <div>
+        <p className="page-eyebrow">Profile</p>
         <h1 className="page-title">个人档案</h1>
-        <p className="page-desc">本地存储，无需注册。必填信息用于生成更精准的面试问题。</p>
+        <p className="page-desc">本地存储,无需注册。必填信息用于生成更精准的面试问题。</p>
       </div>
     </div>
-  );
-}
-
-function Section({
-  title,
-  icon: Icon,
-  hint,
-  children,
-}: {
-  title: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="surface-card p-5 sm:p-7">
-      <header className="flex items-center gap-3 mb-6 pb-3.5 border-b border-[var(--border)]">
-        <div className="w-9 h-9 rounded-lg bg-[var(--brand-softer)] text-[var(--brand)] flex items-center justify-center shrink-0">
-          <Icon size={17} />
-        </div>
-        <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold tracking-tight text-[var(--foreground)] leading-snug">
-            {title}
-          </h2>
-          {hint && <p className="text-[12px] text-[var(--muted)] mt-1 leading-snug">{hint}</p>}
-        </div>
-      </header>
-      {children}
-    </section>
   );
 }
 
@@ -663,13 +679,13 @@ function Field({
 }) {
   return (
     <div className={className}>
-      <label className="field-label !mb-2 !text-[12.5px] !tracking-wide">
+      <label className="field-label !mb-1.5 !text-xs">
         {label}
         {required ? <span className="text-[var(--danger)]"> *</span> : null}
       </label>
       <input
         type="text"
-        className={`field-input !h-11 !text-[13.5px] ${error ? "field-invalid" : ""}`}
+        className={`field-input !text-[13px] ${error ? "field-invalid" : ""}`}
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
@@ -686,16 +702,18 @@ function PreviewRow({
   label,
   value,
 }: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
   label: string;
   value: string;
 }) {
   return (
     <div className="flex items-start gap-3">
-      <Icon size={14} className="text-[var(--muted)] mt-1 shrink-0" />
+      <Icon size={14} className="mt-1 shrink-0 text-ink-subtle" strokeWidth={1.75} />
       <div className="min-w-0 flex-1">
-        <dt className="text-[11px] text-[var(--muted)] leading-none tracking-wide">{label}</dt>
-        <dd className="text-[13.5px] font-medium text-[var(--foreground)] mt-1.5 leading-snug break-words">
+        <dt className="text-[10px] uppercase leading-none tracking-[0.1em] text-ink-subtle">
+          {label}
+        </dt>
+        <dd className="mt-1.5 break-words text-[13px] font-medium leading-snug text-ink">
           {value}
         </dd>
       </div>

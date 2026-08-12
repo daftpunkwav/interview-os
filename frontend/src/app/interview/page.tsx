@@ -7,7 +7,6 @@ import { toast } from "@/components/Toast";
 import type { Options, Resume, InterviewConfig } from "@/types";
 import {
   Play,
-  Loader2,
   Sparkles,
   Building2,
   UserCircle,
@@ -115,21 +114,28 @@ export default function InterviewSetupPage() {
       onClick={handleStart}
       disabled={creating || loading || !!loadError}
     >
-      {creating ? <Loader2 className="animate-spin" size={18} /> : <Play size={18} />}
+      {creating ? (
+        <span className="block h-3.5 w-3.5 anim-spin rounded-full border-2 border-current border-t-transparent" />
+      ) : (
+        <Play size={14} className="btn-arrow transition-transform" />
+      )}
       开始模拟面试
     </button>
   );
 
   return (
-    <div className="h-full flex flex-col overflow-hidden page-shell !py-4 sm:!py-5">
-      <div className="flex items-center justify-between gap-4 mb-4 shrink-0">
+    <div className="page-shell flex h-full flex-col overflow-hidden !py-4 sm:!py-5 anim-rise">
+      <div className="mb-4 flex shrink-0 items-center justify-between gap-4">
         <div className="page-header !mb-0 min-w-0">
-          <div className="icon-badge shrink-0">
-            <Sparkles size={18} />
-          </div>
-          <div className="min-w-0">
-            <h1 className="page-title !text-xl">配置模拟面试</h1>
-            <p className="page-desc !text-xs">定制你的专属面试体验</p>
+          <div className="flex items-start gap-3">
+            <span className="icon-badge icon-badge-brand shrink-0">
+              <Sparkles size={18} strokeWidth={1.75} />
+            </span>
+            <div className="min-w-0">
+              <p className="page-eyebrow">Mock Setup</p>
+              <h1 className="page-title !text-[20px]">配置模拟面试</h1>
+              <p className="page-desc !text-xs">定制你的专属面试体验</p>
+            </div>
           </div>
         </div>
         <div className="hidden sm:block">
@@ -138,17 +144,18 @@ export default function InterviewSetupPage() {
       </div>
 
       {loading ? (
-        <div className="flex-1 flex items-center justify-center gap-2 text-[var(--muted)] text-sm">
-          <Loader2 className="animate-spin text-brand-500" size={18} /> 加载配置中…
+        <div className="flex flex-1 items-center justify-center gap-2 text-[13px] text-ink-muted">
+          <span className="block h-4 w-4 anim-spin rounded-full border-2 border-current border-t-transparent" />
+          加载配置中…
         </div>
       ) : loadError ? (
         <LoadError message={loadError} onRetry={loadData} />
       ) : options ? (
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-3 overflow-hidden">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden lg:grid-cols-[1fr_260px]">
           {/* 左侧配置 */}
-          <div className="min-h-0 flex flex-col gap-3 overflow-y-auto pr-0.5 pb-2">
+          <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pb-2 pr-0.5">
             <div className="surface-card p-3.5">
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+              <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
                 <Select label="目标岗位" value={config.role} options={options.roles} onChange={(v) => setConfig({ ...config, role: v })} />
                 <Select label="职级" value={config.level} options={options.levels} onChange={(v) => setConfig({ ...config, level: v })} />
                 <Select
@@ -174,48 +181,54 @@ export default function InterviewSetupPage() {
             </div>
 
             <div className="surface-card p-3.5">
-              <label className="field-label !text-xs !mb-2">目标公司</label>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-1.5">
-                {options.companies.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setConfig({ ...config, company: c.id })}
-                    className={`px-2 py-2 rounded-[var(--radius)] border text-center text-xs font-medium transition-colors ${
-                      config.company === c.id
-                        ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-ink)]"
-                        : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--brand)]/40 hover:bg-[var(--brand-softer)]"
-                    }`}
-                  >
-                    {c.name}
-                  </button>
-                ))}
+              <label className="field-label !mb-2 !text-xs">目标公司</label>
+              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 md:grid-cols-7">
+                {options.companies.map((c) => {
+                  const selected = config.company === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setConfig({ ...config, company: c.id })}
+                      className={`rounded-md border px-2 py-2 text-center text-[12px] font-medium transition-all duration-base ease-google active:scale-[0.98] ${
+                        selected
+                          ? "border-[var(--primary)] bg-[var(--info-soft)] text-[var(--info-ink)] shadow-focus"
+                          : "border-surface-border bg-surface-card text-ink-muted hover:border-[var(--primary)] hover:bg-[var(--info-soft)] hover:text-[var(--info-ink)]"
+                      }`}
+                    >
+                      {c.name}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             <div className="surface-card p-3.5">
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-end">
+              <div className="grid grid-cols-1 items-end gap-3 lg:grid-cols-[1fr_auto]">
                 <div>
-                  <label className="field-label !text-xs !mb-2">面试官性格</label>
+                  <label className="field-label !mb-2 !text-xs">面试官性格</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {options.personalities.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setConfig({ ...config, personality: p.id })}
-                        className={`px-3 py-1.5 rounded-[var(--radius)] text-xs border font-medium transition-colors ${
-                          config.personality === p.id
-                            ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-ink)]"
-                            : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--brand)]/40"
-                        }`}
-                      >
-                        {p.name}
-                      </button>
-                    ))}
+                    {options.personalities.map((p) => {
+                      const selected = config.personality === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setConfig({ ...config, personality: p.id })}
+                          className={`rounded-md border px-3 py-1.5 text-[12px] font-medium transition-all duration-base ease-google active:scale-[0.98] ${
+                            selected
+                              ? "border-[var(--primary)] bg-[var(--info-soft)] text-[var(--info-ink)] shadow-focus"
+                              : "border-surface-border bg-surface-card text-ink-muted hover:border-[var(--primary)] hover:bg-[var(--info-soft)] hover:text-[var(--info-ink)]"
+                          }`}
+                        >
+                          {p.name}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="lg:w-48">
-                  <label className="field-label !text-xs !mb-2">
+                  <label className="field-label !mb-2 !text-xs">
                     严厉 {config.strictness}/10 · {strictnessLabel}
                   </label>
                   <input
@@ -224,14 +237,14 @@ export default function InterviewSetupPage() {
                     max={10}
                     value={config.strictness}
                     onChange={(e) => setConfig({ ...config, strictness: Number(e.target.value) })}
-                    className="w-full accent-brand-500 h-2"
+                    className="h-2 w-full accent-[var(--primary)]"
                   />
                 </div>
               </div>
             </div>
 
             <div className="surface-card p-3.5">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
                 {options.avatars && options.avatars.length > 0 && (
                   <Select
                     label="面试官形象"
@@ -240,7 +253,7 @@ export default function InterviewSetupPage() {
                     labels={options.avatars.map((a) => {
                       const voiceName =
                         options.tts_voices?.find((v) => v.id === a.voice)?.name || a.voice;
-                      return voiceName ? `${a.name}（匹配：${voiceName}）` : a.name;
+                      return voiceName ? `${a.name}(匹配:${voiceName})` : a.name;
                     })}
                     onChange={(v) => setConfig({ ...config, avatar_id: v })}
                   />
@@ -264,9 +277,11 @@ export default function InterviewSetupPage() {
                   />
                 ) : (
                   <div>
-                    <label className="block text-xs font-medium mb-1 text-[var(--text-secondary)]">关联简历</label>
-                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-2.5 py-2">
-                      暂无简历，可稍后在「简历管理」上传
+                    <label className="mb-1 block text-xs font-medium text-ink-muted">
+                      关联简历
+                    </label>
+                    <p className="rounded-md border border-[var(--warning)]/30 bg-[var(--warning-soft)] px-2.5 py-2 text-[11px] text-[var(--warning-ink)]">
+                      暂无简历,可稍后在「简历管理」上传
                     </p>
                   </div>
                 )}
@@ -274,16 +289,16 @@ export default function InterviewSetupPage() {
             </div>
 
             {/* 小屏底部开始按钮 */}
-            <div className="sm:hidden shrink-0 pt-1 sticky bottom-0 bg-[var(--background)]/90 backdrop-blur-sm pb-1">
+            <div className="sticky bottom-0 shrink-0 bg-[var(--background)]/90 pb-1 pt-1 backdrop-blur-sm sm:hidden">
               {startButton(true)}
             </div>
           </div>
 
-          {/* 右侧摘要（大屏） */}
-          <div className="hidden lg:flex min-h-0 flex-col gap-2.5 overflow-hidden">
+          {/* 右侧摘要(大屏) */}
+          <div className="hidden min-h-0 flex-col gap-2.5 overflow-hidden lg:flex">
             <div className="surface-card p-3.5">
-              <h2 className="font-semibold text-xs mb-2.5 flex items-center gap-1.5 text-[var(--foreground)]">
-                <ListChecks size={14} className="text-brand-600" />
+              <h2 className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold text-ink">
+                <ListChecks size={14} className="text-[var(--primary)]" />
                 配置预览
               </h2>
               <div className="space-y-2 text-xs">
@@ -320,16 +335,16 @@ export default function InterviewSetupPage() {
             </div>
 
             {selectedCompany && (
-              <div className="surface-card p-3.5 flex-1 min-h-0 overflow-y-auto">
-                <h2 className="font-semibold text-xs mb-1.5 flex items-center gap-1.5 text-[var(--foreground)]">
-                  <Building2 size={14} className="text-brand-600" />
+              <div className="surface-card flex-1 min-h-0 overflow-y-auto p-3.5">
+                <h2 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-ink">
+                  <Building2 size={14} className="text-[var(--primary)]" />
                   {selectedCompany.name} 面经
                 </h2>
-                <p className="text-[11px] text-[var(--muted)] leading-snug line-clamp-3 mb-2">{selectedCompany.style}</p>
+                <p className="mb-2 line-clamp-3 text-[11px] leading-snug text-ink-muted">{selectedCompany.style}</p>
                 {selectedCompany.focus_areas.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mb-2">
+                  <div className="mb-2 flex flex-wrap gap-1">
                     {selectedCompany.focus_areas.slice(0, 6).map((area) => (
-                      <span key={area} className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-100">
+                      <span key={area} className="chip chip-blue !text-[10px]">
                         {area}
                       </span>
                     ))}
@@ -337,25 +352,27 @@ export default function InterviewSetupPage() {
                 )}
                 {selectedWorkflow && selectedWorkflow.phases.length > 0 && (
                   <div className="mb-2">
-                    <p className="text-[10px] text-[var(--muted-soft)] mb-1">流程</p>
-                    <p className="text-[11px] text-[var(--muted)] leading-snug">
+                    <p className="mb-1 text-[10px] uppercase tracking-[0.08em] text-ink-subtle">
+                      流程
+                    </p>
+                    <p className="font-mono text-[11px] leading-snug text-ink-muted">
                       {selectedWorkflow.phases.join(" → ")}
                     </p>
                   </div>
                 )}
                 {selectedCompany.sample_questions.length > 0 && (
-                  <p className="text-[11px] text-[var(--muted)] leading-snug line-clamp-3">
-                    <span className="text-[var(--muted-soft)]">参考：</span>
+                  <p className="line-clamp-3 text-[11px] leading-snug text-ink-muted">
+                    <span className="text-ink-subtle">参考:</span>
                     {selectedCompany.sample_questions[0]}
                   </p>
                 )}
               </div>
             )}
 
-            <div className="surface-card px-3.5 py-2.5 shrink-0">
-              <p className="text-[11px] text-[var(--muted)] leading-snug flex items-start gap-1.5">
-                <Lightbulb size={13} className="text-brand-600 shrink-0 mt-0.5" />
-                关联简历后问题更贴合项目；建议先完成 BYOK 配置
+            <div className="surface-card shrink-0 px-3.5 py-2.5">
+              <p className="flex items-start gap-1.5 text-[11px] leading-snug text-ink-muted">
+                <Lightbulb size={13} className="mt-0.5 shrink-0 text-[var(--primary)]" />
+                关联简历后问题更贴合项目;建议先完成 BYOK 配置。
               </p>
             </div>
           </div>
@@ -365,19 +382,27 @@ export default function InterviewSetupPage() {
   );
 }
 
-function Select({ label, value, options, labels, onChange }: {
-  label: string; value: string; options: string[]; labels?: string[]; onChange: (v: string) => void;
+function Select({
+  label,
+  value,
+  options,
+  labels,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  labels?: string[];
+  onChange: (v: string) => void;
 }) {
   return (
     <div>
-      <label className="field-label !text-xs !mb-1">{label}</label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="field-input !h-9 !text-xs"
-      >
+      <label className="field-label !mb-1 !text-xs">{label}</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="field-select !h-9 !text-xs">
         {options.map((o, i) => (
-          <option key={o} value={o}>{labels?.[i] || o}</option>
+          <option key={o} value={o}>
+            {labels?.[i] || o}
+          </option>
         ))}
       </select>
     </div>
@@ -389,16 +414,16 @@ function PreviewRow({
   label,
   value,
 }: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
   label: string;
   value: string;
 }) {
   return (
     <div className="flex items-start gap-1.5">
-      <Icon size={12} className="text-[var(--muted)] mt-0.5 shrink-0" />
+      <Icon size={12} className="mt-0.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
       <div className="min-w-0">
-        <span className="text-[10px] text-[var(--muted)]">{label}</span>
-        <p className="text-[12px] font-medium text-[var(--foreground)] leading-snug break-words">{value}</p>
+        <span className="text-[10px] uppercase tracking-[0.08em] text-ink-subtle">{label}</span>
+        <p className="break-words text-[12px] font-medium leading-snug text-ink">{value}</p>
       </div>
     </div>
   );

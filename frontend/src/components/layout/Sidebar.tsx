@@ -32,23 +32,27 @@ function NavContent({
   return (
     <>
       {/* Logo */}
-      <div className="px-4 py-5 flex items-center justify-between overflow-hidden min-h-[72px]">
-        <Link href="/" onClick={onNavigate} className="flex items-center gap-3 min-w-0 group">
-          <span className="g-logo-dot shadow-sm" aria-hidden />
+      <div className="flex h-[60px] items-center justify-between overflow-hidden border-b border-[var(--sidebar-border)] px-4">
+        <Link
+          href="/"
+          onClick={onNavigate}
+          className="group flex min-w-0 items-center gap-2.5"
+        >
+          <span className="g-logo-dot shadow-xs" aria-hidden />
           <AnimatePresence initial={false}>
             {!collapsed && (
               <motion.div
-                className="overflow-hidden min-w-0"
+                className="min-w-0 overflow-hidden"
                 initial={{ opacity: 0, width: 0 }}
                 animate={{ opacity: 1, width: "auto" }}
                 exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.18 }}
+                transition={{ duration: 0.16, ease: [0.2, 0, 0, 1] }}
               >
-                <h1 className="text-[17px] font-semibold text-[var(--foreground)] whitespace-nowrap tracking-tight">
+                <h1 className="whitespace-nowrap text-[15px] font-semibold tracking-tight text-[var(--sidebar-foreground)]">
                   InterviewOS
                 </h1>
-                <p className="text-[11px] text-[var(--muted)] whitespace-nowrap">
-                  AI 模拟面试 Agent
+                <p className="whitespace-nowrap text-[10px] uppercase tracking-[0.1em] text-[var(--muted-foreground)]">
+                  AI Mock Interview
                 </p>
               </motion.div>
             )}
@@ -57,7 +61,24 @@ function NavContent({
       </div>
 
       {/* 导航 */}
-      <nav className="flex-1 px-3 pb-3 space-y-0.5 overflow-y-auto" aria-label="主导航">
+      <nav
+        className="flex-1 space-y-0.5 overflow-y-auto px-2.5 py-3"
+        aria-label="主导航"
+      >
+        <AnimatePresence>
+          {!collapsed && (
+            <motion.p
+              key="nav-label"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="px-2.5 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]"
+            >
+              Workspace
+            </motion.p>
+          )}
+        </AnimatePresence>
+
         {NAV_ITEMS.filter((item) => !item.hidden).map(({ href, label, icon: Icon }) => {
           const isActive = isNavActive(pathname, href);
           return (
@@ -71,29 +92,43 @@ function NavContent({
             >
               <div
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-full text-sm relative group transition-colors",
+                  "group/nav relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] transition-colors duration-base ease-google",
                   isActive
-                    ? "bg-[var(--sidebar-active)] text-[var(--brand-ink)] font-medium"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--foreground)]",
+                    ? "bg-[var(--sidebar-active)] font-medium text-[var(--sidebar-accent-foreground)]"
+                    : "text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-hover)]",
                 )}
               >
+                {/* 激活态左侧 3px 指示条 */}
+                {isActive && (
+                  <span
+                    className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-[var(--sidebar-primary)]"
+                    aria-hidden
+                  />
+                )}
                 <Icon
-                  size={18}
-                  strokeWidth={isActive ? 2.25 : 1.75}
+                  size={17}
+                  strokeWidth={isActive ? 2 : 1.75}
                   className={cn(
-                    "shrink-0 transition-colors",
+                    "shrink-0 transition-all duration-base ease-google group-hover/nav:scale-110",
                     isActive
-                      ? "text-[var(--brand)]"
-                      : "text-[var(--muted)] group-hover:text-[var(--text-secondary)]",
+                      ? "text-[var(--sidebar-primary)]"
+                      : "text-[var(--muted-foreground)] group-hover/nav:text-[var(--sidebar-foreground)]",
                   )}
                 />
-
                 {!collapsed && (
-                  <span className="whitespace-nowrap overflow-hidden flex-1">{label}</span>
+                  <span className="min-w-0 flex-1 truncate">{label}</span>
                 )}
-
                 {href === "/interview" && !collapsed && (
-                  <span className="chip chip-blue ml-auto !px-1.5 !py-0 !text-[10px]">Hot</span>
+                  <span className="chip chip-blue !px-1.5 !py-0 !text-[10px]">Hot</span>
+                )}
+                {!collapsed && (
+                  <ChevronRight
+                    size={13}
+                    className={cn(
+                      "shrink-0 -translate-x-1 text-ink-subtle opacity-0 transition-all duration-base ease-google group-hover/nav:translate-x-0 group-hover/nav:opacity-100",
+                      isActive && "text-[var(--sidebar-primary)] opacity-60 translate-x-0",
+                    )}
+                  />
                 )}
               </div>
             </Link>
@@ -101,19 +136,19 @@ function NavContent({
         })}
       </nav>
 
-      {/* 底部状态 */}
-      <ThemeToggle collapsed={collapsed} />
-      {!collapsed && (
-        <div className="mx-3 mb-3 px-3 py-3 rounded-xl bg-[var(--sidebar-hover)] border border-transparent">
-          <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--g-green)] opacity-40" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--g-green)]" />
+      {/* 底部状态条 + 主题切换 */}
+      <div className="border-t border-[var(--sidebar-border)] px-1 pt-2">
+        <ThemeToggle collapsed={collapsed} />
+        {!collapsed && (
+          <div className="mx-3 mb-3 flex items-center gap-2 px-1 text-[11px] text-[var(--muted-foreground)]">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--success)] opacity-40" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
             </span>
-            <span>开源 · BYOK · 本地优先</span>
+            <span className="font-medium">开源 · BYOK · 本地优先</span>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </>
   );
 }
@@ -139,26 +174,26 @@ export function Sidebar() {
   return (
     <>
       {/* 移动端顶栏 */}
-      <div className="lg:hidden sticky top-0 z-30 flex items-center gap-3 px-4 h-14 border-b border-[var(--border)] bg-[var(--card)]/95 backdrop-blur-md">
+      <div className="sticky top-0 z-30 flex h-12 items-center gap-3 border-b border-surface-border bg-surface-card/95 px-4 backdrop-blur-md lg:hidden">
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
-          className="btn-ghost !w-9 !h-9"
+          className="btn-ghost !h-9 !w-9"
           aria-label="打开导航"
         >
           <Menu size={18} />
         </button>
         <Link href="/" className="flex items-center gap-2">
           <span className="g-logo-dot-sm" aria-hidden />
-          <span className="font-semibold text-[var(--foreground)]">InterviewOS</span>
+          <span className="text-[14px] font-semibold text-ink">InterviewOS</span>
         </Link>
       </div>
 
-      {/* 移动端抽屉遮罩 */}
+      {/* 移动端遮罩 */}
       <AnimatePresence>
         {mobileOpen && (
           <motion.div
-            className="lg:hidden fixed inset-0 z-40 bg-black/40"
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -171,19 +206,19 @@ export function Sidebar() {
       <AnimatePresence>
         {mobileOpen && (
           <motion.aside
-            className="lg:hidden fixed inset-y-0 left-0 z-50 w-72 bg-[var(--sidebar)] border-r border-[var(--sidebar-border)] flex flex-col shadow-elevate"
+            className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] shadow-lg lg:hidden"
             initial={{ x: -288 }}
             animate={{ x: 0 }}
             exit={{ x: -288 }}
-            transition={{ type: "spring", stiffness: 400, damping: 36 }}
+            transition={{ type: "spring", stiffness: 420, damping: 38 }}
           >
             <button
               type="button"
               onClick={() => setMobileOpen(false)}
-              className="absolute right-3 top-4 btn-ghost !w-8 !h-8"
+              className="btn-ghost absolute right-3 top-3 !h-8 !w-8"
               aria-label="关闭导航"
             >
-              <X size={18} />
+              <X size={16} />
             </button>
             <NavContent collapsed={false} onNavigate={() => setMobileOpen(false)} />
           </motion.aside>
@@ -193,22 +228,46 @@ export function Sidebar() {
       {/* 桌面侧栏 */}
       <motion.aside
         className={cn(
-          "hidden lg:flex border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] flex-col shrink-0 relative sticky top-0 h-screen z-20 shadow-[1px_0_0_0_rgba(60,64,67,0.04)]",
-          collapsed ? "w-[72px]" : "w-64",
+          "sticky top-0 z-20 hidden h-screen shrink-0 flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] lg:flex",
+          collapsed ? "w-[64px]" : "w-[248px]",
         )}
         initial={false}
-        animate={{ width: collapsed ? 72 : 256 }}
-        transition={{ duration: 0.25, ease: [0.2, 0, 0, 1] }}
+        animate={{ width: collapsed ? 64 : 248 }}
+        transition={{ duration: 0.22, ease: [0.2, 0, 0, 1] }}
       >
         <NavContent collapsed={collapsed} />
 
+        {/* 桌面收起 / 展开按钮 */}
         <button
           type="button"
-          className="absolute -right-3 top-[4.75rem] w-6 h-6 rounded-full bg-[var(--card)] border border-[var(--border)] shadow-sm flex items-center justify-center text-[var(--muted)] hover:text-[var(--brand)] hover:border-brand-300 z-20"
+          className={cn(
+            "group absolute -right-3 top-[68px] z-30 flex items-center gap-1.5 rounded-full border border-surface-border bg-surface-card text-ink-muted shadow-md transition-all duration-base ease-google hover:border-[var(--primary)] hover:text-[var(--primary)] hover:shadow-brand active:scale-95",
+            collapsed ? "h-7 px-2 text-[10px] font-medium" : "h-7 w-7 justify-center",
+          )}
           onClick={() => setCollapsed(!collapsed)}
           aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
+          title={collapsed ? "展开侧栏" : "收起侧栏"}
         >
-          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          {collapsed ? (
+            <>
+              <ChevronRight
+                size={12}
+                className="transition-transform duration-base group-hover:translate-x-0.5"
+              />
+              <span className="opacity-0 transition-opacity duration-base group-hover:opacity-100">
+                展开
+              </span>
+            </>
+          ) : (
+            <ChevronLeft
+              size={13}
+              className="transition-transform duration-base group-hover:-translate-x-0.5"
+            />
+          )}
+          <span
+            className="pointer-events-none absolute inset-0 rounded-full ring-[3px] ring-[var(--primary)]/0 transition-all duration-base ease-google group-hover:ring-[3px] group-hover:ring-[var(--primary)]/25"
+            aria-hidden
+          />
         </button>
       </motion.aside>
     </>

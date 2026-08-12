@@ -8,7 +8,6 @@ import { ThinkAnswerMessage } from "@/components/ThinkAnswerMessage";
 import { SearchResultCards } from "@/components/prep/SearchResultCards";
 import {
   Send,
-  Loader2,
   BookOpen,
   Sparkles,
   User,
@@ -84,7 +83,7 @@ export default function PrepPage() {
         {
           id: nextMsgId("a"),
           role: "assistant",
-          content: "你好！我是你的面试准备教练。告诉我你的目标岗位，或让我帮你分析简历、出题练习。",
+          content: "你好!我是你的面试准备教练。告诉我你的目标岗位,或让我帮你分析简历、出题练习。",
         },
       ]);
       return id;
@@ -145,7 +144,7 @@ export default function PrepPage() {
             ? {
                 ...msg,
                 streaming: false,
-                content: msg.content || `错误：${e instanceof Error ? e.message : "失败"}`,
+                content: msg.content || `错误:${e instanceof Error ? e.message : "失败"}`,
               }
             : msg,
         ),
@@ -168,30 +167,35 @@ export default function PrepPage() {
   };
 
   return (
-    <div className="page-shell !max-w-6xl h-full flex flex-col min-h-0 overflow-hidden !pb-4">
+    <div className="page-shell !max-w-6xl flex h-full min-h-0 flex-col overflow-hidden !pb-4 anim-rise">
       <div className="page-header !mb-4 shrink-0">
-        <div className="icon-badge">
-          <BookOpen size={20} />
-        </div>
-        <div>
-          <h1 className="page-title">面试准备</h1>
-          <p className="page-desc">ReAct 辅导 Agent — 简历分析、面经搜索、主动出题</p>
+        <div className="flex items-start gap-3">
+          <span className="icon-badge icon-badge-brand">
+            <BookOpen size={18} strokeWidth={1.75} />
+          </span>
+          <div>
+            <p className="page-eyebrow">Prep Coach</p>
+            <h1 className="page-title">面试准备</h1>
+            <p className="page-desc">ReAct 辅导 Agent — 简历分析、面经搜索、主动出题。</p>
+          </div>
         </div>
       </div>
 
-      <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 overflow-hidden">
-        {/* 左侧：对话主区 */}
-        <div className="flex flex-col min-h-0 overflow-hidden">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden lg:grid-cols-[1fr_300px]">
+        {/* 左侧:对话主区 */}
+        <div className="flex min-h-0 flex-col overflow-hidden">
           {!prepSessionId ? (
-            <div className="flex-1 min-h-0 surface-card p-8 flex flex-col justify-center overflow-hidden">
-              <div className="max-w-md mx-auto w-full space-y-5">
+            <div className="surface-card flex flex-1 flex-col justify-center overflow-hidden p-8">
+              <div className="mx-auto w-full max-w-md space-y-5">
                 <div className="text-center">
-                  <div className="w-16 h-16 rounded-[var(--radius-lg)] bg-[var(--brand-soft)] text-[var(--brand-deep)] flex items-center justify-center mx-auto mb-4">
-                    <Sparkles size={28} />
-                  </div>
-                  <h2 className="text-lg font-semibold tracking-tight">开始你的面试辅导</h2>
-                  <p className="text-sm text-[var(--muted)] mt-1">
-                    关联简历后，AI 教练将基于你的背景进行针对性辅导
+                  <span className="icon-badge icon-badge-brand mx-auto mb-4 !h-14 !w-14">
+                    <Sparkles size={22} strokeWidth={1.75} />
+                  </span>
+                  <h2 className="text-[18px] font-semibold tracking-tight text-ink">
+                    开始你的面试辅导
+                  </h2>
+                  <p className="mt-1.5 text-[13px] text-ink-muted">
+                    关联简历后,AI 教练将基于你的背景进行针对性辅导。
                   </p>
                 </div>
 
@@ -199,69 +203,75 @@ export default function PrepPage() {
                   <div>
                     <label className="field-label">关联简历</label>
                     <select
-                      className="field-input !h-11"
+                      className="field-select"
                       value={resumeId ?? ""}
                       onChange={(e) => setResumeId(Number(e.target.value))}
                     >
                       {resumes.map((r) => (
                         <option key={r.id} value={r.id}>
-                          {r.filename}{r.is_active ? " (投递)" : ""}
+                          {r.filename}
+                          {r.is_active ? " (投递)" : ""}
                         </option>
                       ))}
                     </select>
                   </div>
                 ) : (
-                  <div className="alert alert-warning text-center !block">
-                    暂无简历，可先去「简历管理」上传，也可直接开始通用辅导
+                  <div className="alert alert-warning !block text-center">
+                    暂无简历,可先去「简历管理」上传,也可直接开始通用辅导
                   </div>
                 )}
 
                 {prepError && (
-                  <div className="alert alert-error text-center !block">
-                    {prepError}
-                  </div>
+                  <div className="alert alert-error !block text-center">{prepError}</div>
                 )}
 
                 <button
                   type="button"
                   onClick={startPrep}
                   disabled={starting}
-                  className="btn-primary w-full !h-11"
+                  className="btn-primary !h-10 w-full"
                 >
-                  {starting ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
+                  {starting ? (
+                    <span className="block h-3.5 w-3.5 anim-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : (
+                    <Sparkles size={14} />
+                  )}
                   {starting ? "正在连接…" : "开始辅导"}
                 </button>
               </div>
             </div>
           ) : (
             <>
-              <div className="flex items-center justify-between text-xs text-[var(--muted)] mb-2 px-1 shrink-0">
-                <span className="chip chip-green !text-[11px]">辅导中 · {messages.length} 条</span>
-                <span className="font-mono tabular-nums">Token ≈ {tokenUsage || 0}</span>
+              <div className="mb-2 flex shrink-0 items-center justify-between px-1 text-[11px] text-ink-subtle">
+                <span className="chip chip-green !text-[10px]">
+                  <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
+                  辅导中 · {messages.length} 条
+                </span>
+                <span className="font-mono num-tabular">Token ≈ {tokenUsage || 0}</span>
               </div>
               <div
                 ref={chatScrollRef}
-                className="flex-1 min-h-0 overflow-y-auto surface-card p-4 space-y-3.5 mb-3"
+                className="surface-card mb-3 flex-1 space-y-3.5 overflow-y-auto p-4"
               >
                 {messages.map((m) => (
                   <div
                     key={m.id}
                     className={`flex gap-2.5 ${m.role === "user" ? "flex-row-reverse" : ""}`}
                   >
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
                         m.role === "user"
-                          ? "bg-[var(--brand)] text-white"
-                          : "bg-[var(--brand-soft)] text-[var(--brand-deep)]"
+                          ? "bg-[var(--primary)] text-white"
+                          : "bg-[var(--info-soft)] text-[var(--info-ink)]"
                       }`}
                     >
                       {m.role === "user" ? <User size={14} /> : <Bot size={14} />}
-                    </div>
+                    </span>
                     <div
-                      className={`max-w-[88%] px-3.5 py-2.5 rounded-[var(--radius-lg)] text-sm leading-relaxed ${
+                      className={`max-w-[88%] rounded-md px-3.5 py-2.5 text-[13px] leading-relaxed ${
                         m.role === "user"
-                          ? "bg-[var(--brand)] text-white rounded-br-sm"
-                          : "bg-[var(--popover)] text-[var(--foreground)] border border-[var(--border)] rounded-bl-sm"
+                          ? "rounded-br-sm bg-[var(--primary)] text-white"
+                          : "rounded-bl-sm border border-surface-border bg-surface-alt text-ink"
                       }`}
                     >
                       {m.role === "assistant" ? (
@@ -284,9 +294,9 @@ export default function PrepPage() {
                 ))}
                 <div ref={endRef} />
               </div>
-              <div className="flex gap-2 shrink-0">
+              <div className="flex shrink-0 gap-2">
                 <input
-                  className="field-input !h-11 flex-1"
+                  className="field-input flex-1"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
@@ -297,39 +307,45 @@ export default function PrepPage() {
                   type="button"
                   onClick={handleSend}
                   disabled={loading}
-                  className="btn-primary !w-11 !px-0 shrink-0"
+                  className="btn-primary !h-9 !w-12 shrink-0 !px-0"
                   aria-label="发送"
                 >
-                  {loading ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
+                  {loading ? (
+                    <span className="block h-3.5 w-3.5 anim-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : (
+                    <Send size={14} />
+                  )}
                 </button>
               </div>
             </>
           )}
         </div>
 
-        {/* 右侧：上下文与快捷操作 */}
-        <div className="hidden lg:flex flex-col gap-3 min-h-0 overflow-y-auto pr-0.5">
+        {/* 右侧:上下文与快捷操作 */}
+        <div className="hidden min-h-0 flex-col gap-3 overflow-y-auto pr-0.5 lg:flex">
           <div className="surface-card p-4">
-            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 tracking-tight">
-              <FileText size={15} className="text-[var(--brand)]" />
+            <h2 className="mb-3 flex items-center gap-2 text-[13px] font-semibold tracking-tight text-ink">
+              <FileText size={14} className="text-[var(--primary)]" />
               关联简历
             </h2>
             {selectedResume ? (
               <>
-                <p className="font-medium text-sm truncate">{selectedResume.filename}</p>
-                <p className="text-xs text-[var(--muted)] mt-1">
+                <p className="truncate text-[13px] font-medium text-ink">
+                  {selectedResume.filename}
+                </p>
+                <p className="mt-1 text-[11px] text-ink-subtle">
                   {selectedResume.parsed_profile.name || "未解析姓名"}
                   {selectedResume.score != null && ` · 评分 ${selectedResume.score}`}
                 </p>
                 {selectedResume.parsed_profile.summary && (
-                  <p className="text-xs text-[var(--text-secondary)] mt-2 leading-relaxed line-clamp-3">
+                  <p className="mt-2 line-clamp-3 text-[11px] leading-relaxed text-ink-muted">
                     {selectedResume.parsed_profile.summary}
                   </p>
                 )}
                 {selectedResume.parsed_profile.skills.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-3">
+                  <div className="mt-3 flex flex-wrap gap-1">
                     {selectedResume.parsed_profile.skills.slice(0, 8).map((s) => (
-                      <span key={s} className="chip chip-blue !text-[11px]">
+                      <span key={s} className="chip chip-blue !text-[10px]">
                         {s}
                       </span>
                     ))}
@@ -337,13 +353,13 @@ export default function PrepPage() {
                 )}
               </>
             ) : (
-              <p className="text-sm text-[var(--muted)]">未关联简历，将进行通用辅导</p>
+              <p className="text-[12px] text-ink-subtle">未关联简历,将进行通用辅导</p>
             )}
           </div>
 
           <div className="surface-card p-4">
-            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 tracking-tight">
-              <Zap size={15} className="text-[var(--g-yellow)]" />
+            <h2 className="mb-3 flex items-center gap-2 text-[13px] font-semibold tracking-tight text-ink">
+              <Zap size={14} className="text-[var(--warning)]" />
               快捷提问
             </h2>
             <div className="space-y-1.5">
@@ -353,7 +369,7 @@ export default function PrepPage() {
                   type="button"
                   onClick={() => handleQuickPrompt(prompt)}
                   disabled={loading}
-                  className="w-full text-left text-xs px-3 py-2.5 rounded-[var(--radius)] border border-[var(--border)] hover:border-[var(--brand)]/40 hover:bg-[var(--brand-softer)] transition-colors disabled:opacity-50 leading-relaxed text-[var(--text-secondary)]"
+                  className="w-full rounded-md border border-surface-border px-3 py-2 text-left text-[12px] leading-relaxed text-ink-muted transition-colors hover:border-[var(--primary)] hover:bg-[var(--info-soft)] hover:text-ink disabled:opacity-50"
                 >
                   {prompt}
                 </button>
@@ -362,35 +378,33 @@ export default function PrepPage() {
           </div>
 
           <div className="surface-card p-4">
-            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 tracking-tight">
-              <MessageSquare size={15} className="text-[var(--brand)]" />
+            <h2 className="mb-3 flex items-center gap-2 text-[13px] font-semibold tracking-tight text-ink">
+              <MessageSquare size={14} className="text-[var(--primary)]" />
               会话状态
             </h2>
             <div className="grid grid-cols-2 gap-2 text-center">
-              <div className="rounded-lg bg-[var(--popover)] py-3">
-                <p className="text-xl font-semibold text-[var(--brand)] tabular-nums">
+              <div className="kpi-card !p-3">
+                <p className="kpi-value !text-xl">
                   {prepSessionId ? messages.length : 0}
                 </p>
-                <p className="text-[11px] text-[var(--muted)] mt-0.5">消息数</p>
+                <p className="kpi-label mt-1">消息数</p>
               </div>
-              <div className="rounded-lg bg-[var(--popover)] py-3">
-                <p className="text-xl font-semibold text-[var(--brand)] tabular-nums">
-                  {tokenUsage || "—"}
-                </p>
-                <p className="text-[11px] text-[var(--muted)] mt-0.5">Token</p>
+              <div className="kpi-card !p-3">
+                <p className="kpi-value !text-xl">{tokenUsage || "—"}</p>
+                <p className="kpi-label mt-1">Token</p>
               </div>
             </div>
           </div>
 
           <div className="surface-card p-4">
-            <h2 className="text-sm font-semibold mb-2.5 flex items-center gap-2 tracking-tight">
-              <Lightbulb size={15} className="text-[var(--brand)]" />
+            <h2 className="mb-2.5 flex items-center gap-2 text-[13px] font-semibold tracking-tight text-ink">
+              <Lightbulb size={14} className="text-[var(--primary)]" />
               使用提示
             </h2>
-            <ul className="text-xs text-[var(--muted)] space-y-2 leading-relaxed">
-              <li>· 可要求 Agent 搜索真实面经；结果以可点击来源卡片展示</li>
-              <li>· 描述目标公司与岗位，获得针对性模拟题</li>
-              <li>· 回答后请教练点评，识别表达漏洞</li>
+            <ul className="space-y-2 text-[11px] leading-relaxed text-ink-subtle">
+              <li>· 可要求 Agent 搜索真实面经;结果以可点击来源卡片展示</li>
+              <li>· 描述目标公司与岗位,获得针对性模拟题</li>
+              <li>· 回答后请教练点评,识别表达漏洞</li>
               <li>· 支持 Markdown 流式回复</li>
             </ul>
           </div>

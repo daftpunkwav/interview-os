@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { InterviewReport, ScoreBreakdown } from "@/types";
-import { Loader2, ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, RefreshCw, FileBarChart } from "lucide-react";
 
 export default function ReportPage() {
   const params = useParams();
@@ -29,7 +29,8 @@ export default function ReportPage() {
   const loadReport = () => {
     setLoading(true);
     setError("");
-    api.getReport(sessionId)
+    api
+      .getReport(sessionId)
       .then(applyPayload)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
@@ -43,7 +44,6 @@ export default function ReportPage() {
     }
     let cancelled = false;
 
-    // 只读拉取；缺报告时不自动 finish（避免打开链接即触发昂贵 LLM）
     api
       .getReport(sessionId)
       .then((data) => {
@@ -73,22 +73,22 @@ export default function ReportPage() {
 
   if (loading) {
     return (
-      <div className="page-shell flex items-center justify-center min-h-[40vh] gap-2 text-[var(--muted)]">
-        <Loader2 className="animate-spin text-brand-500" size={18} /> 生成报告中…
+      <div className="page-shell-tight flex min-h-[40vh] items-center justify-center gap-2 text-[13px] text-ink-muted">
+        <span className="block h-4 w-4 anim-spin rounded-full border-2 border-current border-t-transparent" />
+        生成报告中…
       </div>
     );
   }
 
   if (error || !report) {
     return (
-      <div className="page-shell text-center py-16">
-        <p className="text-[var(--muted)] mb-4">{error || "报告不可用"}</p>
-        <div className="flex items-center justify-center gap-3">
+      <div className="page-shell-tight py-16 text-center">
+        <p className="mb-4 text-[13px] text-ink-muted">{error || "报告不可用"}</p>
+        <div className="flex flex-wrap justify-center gap-2.5">
           <button
             type="button"
-            className="btn-secondary inline-flex items-center gap-2"
+            className="btn-secondary"
             onClick={() => {
-              // 用户主动触发：补一次 HTTP 生成后再拉取
               setLoading(true);
               api
                 .finishInterview(sessionId)
@@ -96,9 +96,11 @@ export default function ReportPage() {
                 .finally(() => loadReport());
             }}
           >
-            <RefreshCw size={16} /> 生成 / 重新加载
+            <RefreshCw size={13} /> 生成 / 重新加载
           </button>
-          <Link href="/interview" className="btn-primary">返回面试</Link>
+          <Link href="/interview" className="btn-primary">
+            返回面试
+          </Link>
         </div>
       </div>
     );
@@ -110,39 +112,50 @@ export default function ReportPage() {
     (typeof duration === "number" && duration < 5);
 
   return (
-    <div className="page-shell max-w-3xl">
-      <Link href="/history" className="text-sm text-[var(--muted)] hover:text-brand-600 flex items-center gap-1 mb-6 w-fit">
-        <ArrowLeft size={14} /> 返回记录
+    <div className="page-shell-tight anim-rise">
+      <Link
+        href="/history"
+        className="mb-6 flex w-fit items-center gap-1 text-[12px] text-ink-subtle hover:text-[var(--primary)]"
+      >
+        <ArrowLeft size={13} /> 返回记录
       </Link>
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 surface-card p-5">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">面试评估报告</h1>
-          {duration != null && (
-            <p className="text-sm text-[var(--muted)] mt-1">
-              面试时长：{duration} 分钟
-              {typeof messagesCount === "number" ? ` · 有效对话 ${messagesCount} 条` : ""}
-            </p>
-          )}
+      <div className="surface-card mb-6 flex flex-col justify-between gap-4 p-5 sm:flex-row sm:items-center">
+        <div className="flex items-start gap-3">
+          <span className="icon-badge icon-badge-brand">
+            <FileBarChart size={18} strokeWidth={1.75} />
+          </span>
+          <div>
+            <p className="page-eyebrow">Report</p>
+            <h1 className="page-title !mt-1">面试评估报告</h1>
+            {duration != null && (
+              <p className="mt-1.5 text-[12px] text-ink-subtle">
+                面试时长:{duration} 分钟
+                {typeof messagesCount === "number" ? ` · 有效对话 ${messagesCount} 条` : ""}
+              </p>
+            )}
+          </div>
         </div>
-        <div className="text-center sm:text-right px-4 py-2 rounded-2xl bg-brand-50 dark:bg-brand-500/10 border border-brand-100 dark:border-brand-500/20">
+        <div className="rounded-md border border-surface-border bg-surface-alt px-5 py-3 text-center sm:text-right">
           <div
-            className="text-4xl font-bold tabular-nums"
+            className="font-mono text-[36px] font-semibold leading-none tracking-tight num-tabular"
             style={{ color: scoreColor(report.overall_score) }}
           >
             {formatScore(report.overall_score)}
           </div>
-          <div className="text-xs text-[var(--muted)] mt-0.5">综合评分 / 100</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-subtle">
+            综合评分 / 100
+          </div>
         </div>
       </div>
 
       {shortSession && (
-        <div className="mb-6 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-sm text-amber-800 dark:text-amber-200">
-          本场对话较短或有效作答很少，维度分可能偏低或接近 0，属评估结果而非页面缺数。
+        <div className="alert alert-warning mb-6">
+          本场对话较短或有效作答很少,维度分可能偏低或接近 0,属评估结果而非页面缺数。
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
+      <div className="mb-6 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
         {[
           { label: "技术能力", score: scores.technical },
           { label: "表达能力", score: scores.communication },
@@ -157,17 +170,17 @@ export default function ReportPage() {
           return (
             <div
               key={item.label}
-              className="border border-[var(--border)] rounded-xl p-4 text-center bg-[var(--card)]"
+              className="kpi-card items-center text-center !p-3"
             >
               <div
-                className="text-2xl font-bold tabular-nums"
-                style={{ color: numeric ? scoreColor(scoreVal) : "var(--muted)" }}
+                className="font-mono text-[24px] font-semibold leading-none num-tabular"
+                style={{ color: numeric ? scoreColor(scoreVal) : undefined }}
               >
                 {display}
               </div>
-              <div className="text-xs text-[var(--muted)] mt-1">{item.label}</div>
+              <div className="kpi-label mt-2 text-center">{item.label}</div>
               {numeric && scoreVal != null && (
-                <div className="mt-2 h-1.5 bg-[var(--border)]/60 rounded-full overflow-hidden">
+                <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-surface-muted">
                   <div
                     className="h-full rounded-full transition-all"
                     style={{
@@ -184,27 +197,31 @@ export default function ReportPage() {
 
       <RadarChart scores={scores} />
 
-      <Section title="优势" items={report.strengths} color="green" />
-      <Section title="不足" items={report.weaknesses} color="red" />
-      <Section title="简历改进建议" items={report.resume_suggestions || []} color="blue" />
-      <Section title="面试表现建议" items={report.interview_suggestions || []} color="blue" />
-      <Section title="综合建议" items={report.improvement_suggestions} color="blue" />
-      <Section title="下一阶段训练计划" items={report.training_plan} color="brand" />
+      <Section title="优势" items={report.strengths} tone="success" />
+      <Section title="不足" items={report.weaknesses} tone="danger" />
+      <Section title="简历改进建议" items={report.resume_suggestions || []} tone="brand" />
+      <Section title="面试表现建议" items={report.interview_suggestions || []} tone="brand" />
+      <Section title="综合建议" items={report.improvement_suggestions} tone="brand" />
+      <Section title="下一阶段训练计划" items={report.training_plan} tone="warning" />
 
       {report.presence_moments && report.presence_moments.length > 0 && (
-        <Section title="临场关键时刻" items={report.presence_moments} color="brand" />
+        <Section title="临场关键时刻" items={report.presence_moments} tone="brand" />
       )}
 
       {report.face_analysis_summary && (
-        <div className="mt-6 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)]">
-          <h3 className="font-semibold mb-2">面试状态分析</h3>
-          <p className="text-sm text-[var(--muted)]">{report.face_analysis_summary}</p>
+        <div className="surface-card mt-5 p-4">
+          <h3 className="mb-2 text-[13px] font-semibold tracking-tight text-ink">
+            面试状态分析
+          </h3>
+          <p className="text-[12.5px] leading-relaxed text-ink-muted">
+            {report.face_analysis_summary}
+          </p>
         </div>
       )}
 
-      <div className="mt-8 flex flex-wrap gap-3">
+      <div className="mt-7 flex flex-wrap gap-2.5">
         <Link href="/interview" className="btn-primary">
-          <RefreshCw size={16} /> 再来一次
+          <RefreshCw size={13} /> 再来一次
         </Link>
         <Link href="/growth" className="btn-secondary">
           查看成长记录
@@ -214,7 +231,7 @@ export default function ReportPage() {
   );
 }
 
-/** 保证雷达/卡片拿到完整数值字段；缺省为 null（显示 —），0 视为有效分。 */
+/** 保证雷达/卡片拿到完整数值字段;缺省为 null(显示 —),0 视为有效分。 */
 function normalizeScores(raw: ScoreBreakdown | undefined | null): {
   technical: number | null;
   communication: number | null;
@@ -273,9 +290,11 @@ function RadarChart({
   const hasAny = values.some((v) => v > 0);
 
   return (
-    <div className="mb-8 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)]">
-      <h3 className="font-semibold mb-1 text-center">能力雷达图</h3>
-      <p className="text-xs text-[var(--muted)] text-center mb-4">各轴满分 100；0 分会落在中心附近</p>
+    <div className="surface-card mb-6 p-4">
+      <h3 className="mb-1 text-center text-[14px] font-semibold tracking-tight text-ink">
+        能力雷达图
+      </h3>
+      <p className="mb-4 text-center text-[11px] text-ink-subtle">各轴满分 100;0 分会落在中心附近</p>
       <div className="flex justify-center">
         <svg width="240" height="240" viewBox="0 0 240 240" aria-label="能力雷达图">
           {rings.map((ring) => (
@@ -304,7 +323,7 @@ function RadarChart({
                 y={y}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                className="fill-[var(--muted)]"
+                className="fill-ink-subtle"
                 style={{ fontSize: 10 }}
               >
                 {d.label}
@@ -315,8 +334,8 @@ function RadarChart({
           {hasAny && (
             <polygon
               points={points}
-              fill="rgba(59,130,246,0.35)"
-              stroke="#3b82f6"
+              fill="color-mix(in srgb, var(--primary) 28%, transparent)"
+              stroke="var(--primary)"
               strokeWidth="2"
             />
           )}
@@ -326,7 +345,7 @@ function RadarChart({
               y={cy}
               textAnchor="middle"
               dominantBaseline="middle"
-              className="fill-[var(--muted)]"
+              className="fill-ink-subtle"
               style={{ fontSize: 11 }}
             >
               暂无有效维度分
@@ -339,29 +358,62 @@ function RadarChart({
 }
 
 function scoreColor(score: number | null | undefined): string {
-  if (score == null || Number.isNaN(score)) return "var(--muted)";
-  if (score >= 85) return "#22c55e";
-  if (score >= 70) return "#3b82f6";
-  if (score >= 60) return "#f59e0b";
-  return "#ef4444";
+  if (score == null || Number.isNaN(score)) return "var(--muted-foreground)";
+  if (score >= 85) return "var(--success)";
+  if (score >= 70) return "var(--primary)";
+  if (score >= 60) return "var(--warning)";
+  return "var(--danger)";
 }
 
-function Section({ title, items, color }: { title: string; items: string[]; color: string }) {
+function Section({
+  title,
+  items,
+  tone,
+}: {
+  title: string;
+  items: string[];
+  tone: "brand" | "success" | "danger" | "warning";
+}) {
   if (!items.length) return null;
-  const bgMap: Record<string, string> = {
-    green: "bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/25",
-    red: "bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/25",
-    blue: "bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/25",
-    brand: "bg-brand-50 dark:bg-brand-500/10 border-brand-200 dark:border-brand-500/25",
+  const tintMap: Record<string, { bg: string; fg: string; border: string }> = {
+    success: {
+      bg: "var(--success-soft)",
+      fg: "var(--success-ink)",
+      border: "color-mix(in srgb, var(--success) 22%, transparent)",
+    },
+    danger: {
+      bg: "var(--danger-soft)",
+      fg: "var(--danger-ink)",
+      border: "color-mix(in srgb, var(--danger) 22%, transparent)",
+    },
+    brand: {
+      bg: "var(--info-soft)",
+      fg: "var(--info-ink)",
+      border: "color-mix(in srgb, var(--primary) 22%, transparent)",
+    },
+    warning: {
+      bg: "var(--warning-soft)",
+      fg: "var(--warning-ink)",
+      border: "color-mix(in srgb, var(--warning) 28%, transparent)",
+    },
   };
+  const t = tintMap[tone] ?? tintMap.brand!;
   return (
-    <div className={`mt-4 p-4 rounded-xl border ${bgMap[color] || "border-[var(--border)]"}`}>
-      <h3 className="font-semibold mb-2">{title}</h3>
+    <div
+      className="mt-4 rounded-md border p-4"
+      style={{ background: t.bg, borderColor: t.border }}
+    >
+      <h3
+        className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em]"
+        style={{ color: t.fg }}
+      >
+        {title}
+      </h3>
       <ul className="space-y-1.5">
         {items.map((item, i) => (
-          <li key={i} className="text-sm flex items-start gap-2">
-            <span className="text-[var(--muted)]">•</span>
-            {item}
+          <li key={i} className="flex items-start gap-2 text-[13px] leading-relaxed text-ink">
+            <span className="mt-1 inline-block h-1 w-1 shrink-0 rounded-full bg-current opacity-50" />
+            <span className="min-w-0 break-words">{item}</span>
           </li>
         ))}
       </ul>

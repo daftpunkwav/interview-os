@@ -1,7 +1,6 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { motion } from "framer-motion";
 import { Sidebar } from "./Sidebar";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -9,21 +8,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isFullscreen = /^\/interview\/\d+/.test(pathname);
   const isFixedHeightPage = pathname === "/prep" || pathname === "/interview";
 
+  // 面试房间页默认沿用用户/系统主题,不再强制覆盖为 dark。
   if (isFullscreen) {
     return (
-      <motion.main
-        className="h-screen w-screen overflow-hidden bg-gray-950"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.25 }}
-      >
+      <main className="h-screen w-screen overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
         {children}
-      </motion.main>
+      </main>
     );
   }
 
   return (
-    <div className="flex min-h-screen flex-col lg:flex-row">
+    <div className="flex min-h-screen flex-col lg:flex-row bg-[var(--background)]">
       <Sidebar />
       <main
         className={
@@ -32,15 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             : "flex-1 overflow-y-auto [scrollbar-gutter:stable]"
         }
       >
-        <motion.div
-          key={pathname}
-          className={isFixedHeightPage ? "h-full min-h-0" : undefined}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-        >
-          {children}
-        </motion.div>
+        {children}
       </main>
     </div>
   );

@@ -94,10 +94,10 @@ export const toast = {
 };
 
 const ICONS: Record<ToastKind, ReactNode> = {
-  info: <Info className="text-[var(--g-blue)]" size={18} />,
-  success: <CheckCircle2 className="text-[var(--g-green)]" size={18} />,
-  warning: <AlertTriangle className="text-[var(--g-yellow)]" size={18} />,
-  error: <XCircle className="text-[var(--g-red)]" size={18} />,
+  info: <Info className="text-[var(--primary)]" size={16} />,
+  success: <CheckCircle2 className="text-[var(--success)]" size={16} />,
+  warning: <AlertTriangle className="text-[var(--warning)]" size={16} />,
+  error: <XCircle className="text-[var(--danger)]" size={16} />,
 };
 
 export function Toaster() {
@@ -145,10 +145,10 @@ function ToastView({ item }: { item: ToastItem }) {
   }, [item.persist, item.durationMs, close]);
 
   const kindAccent: Record<ToastKind, string> = {
-    info: "border-l-[var(--g-blue)]",
-    success: "border-l-[var(--g-green)]",
-    warning: "border-l-[var(--g-yellow)]",
-    error: "border-l-[var(--g-red)]",
+    info: "border-l-[var(--primary)]",
+    success: "border-l-[var(--success)]",
+    warning: "border-l-[var(--warning)]",
+    error: "border-l-[var(--danger)]",
   };
 
   return (
@@ -157,20 +157,21 @@ function ToastView({ item }: { item: ToastItem }) {
       initial={{ opacity: 0, y: -8, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, x: 24, scale: 0.98 }}
-      className={`pointer-events-auto bg-[var(--card)] border border-[var(--border)] border-l-4 ${kindAccent[item.kind]} rounded-[var(--radius)] shadow-elevate p-3.5 flex items-start gap-3`}
+      transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }}
+      className={`pointer-events-auto flex items-start gap-2.5 rounded-md border border-surface-border bg-surface-card p-3 shadow-md border-l-[3px] ${kindAccent[item.kind]}`}
       role="status"
     >
       <div className="mt-0.5 shrink-0">{ICONS[item.kind]}</div>
-      <p className="flex-1 text-sm text-[var(--foreground)] whitespace-pre-wrap leading-relaxed">
+      <p className="flex-1 text-[13px] leading-relaxed text-ink whitespace-pre-wrap">
         {item.message}
       </p>
       <button
         type="button"
         onClick={close}
-        className="btn-ghost !w-7 !h-7 shrink-0"
+        className="shrink-0"
         aria-label="关闭"
       >
-        <X size={14} />
+        <X size={14} className="text-ink-subtle hover:text-ink" />
       </button>
     </motion.div>
   );

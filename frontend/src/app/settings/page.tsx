@@ -12,7 +12,6 @@ import type {
 import {
   Save,
   Zap,
-  Loader2,
   CheckCircle,
   XCircle,
   Settings2,
@@ -21,8 +20,12 @@ import {
   Volume2,
   Eye,
   EyeOff,
+  KeyRound,
+  Cpu,
+  ArrowRight,
 } from "lucide-react";
 import { LoadError } from "@/components/LoadError";
+import { CollapsibleSection } from "@/components/CollapsibleSection";
 
 type StageKey = "recognize" | "reason" | "speak";
 
@@ -69,11 +72,11 @@ function hydrateStage(stage: StageKey, incoming: StageConfig): StageConfig {
 
 const STAGE_META: Record<
   StageKey,
-  { icon: typeof Mic; title: string; hint: string }
+  { icon: typeof Mic; title: string; hint: string; tone: string }
 > = {
-  recognize: { icon: Mic, title: "语音识别处理器", hint: "听麦 → 文字" },
-  reason: { icon: Brain, title: "面试思考处理器", hint: "必须是文本 LLM" },
-  speak: { icon: Volume2, title: "语音输出处理器", hint: "可降级为仅字幕" },
+  recognize: { icon: Mic, title: "语音识别处理器", hint: "听麦 → 文字", tone: "brand" },
+  reason: { icon: Brain, title: "面试思考处理器", hint: "必须是文本 LLM", tone: "warning" },
+  speak: { icon: Volume2, title: "语音输出处理器", hint: "可降级为仅字幕", tone: "success" },
 };
 
 const PROTOCOL_OPTIONS: { value: StageConfig["protocol"]; label: string }[] = [
@@ -91,6 +94,15 @@ export default function SettingsPage() {
   const [testResults, setTestResults] = useState<Partial<Record<StageKey, LLMTestResponse>>>({});
   const [messages, setMessages] = useState<Partial<Record<StageKey, string>>>({});
   const [showKey, setShowKey] = useState<Partial<Record<StageKey, boolean>>>({});
+
+  const scrollToStage = (stage: StageKey) => {
+    const el = document.getElementById(`stage-${stage}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    // 高亮提示
+    el.classList.add("ring-google");
+    window.setTimeout(() => el.classList.remove("ring-google"), 1600);
+  };
 
   const loadSettings = () => {
     setLoading(true);
@@ -224,52 +236,109 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="page-shell !max-w-4xl">
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
-        <div className="page-header !mb-0">
-          <div className="icon-badge">
-            <Settings2 size={20} />
-          </div>
+    <div className="page-shell !max-w-6xl anim-rise">
+      <div className="page-header">
+        <div className="flex items-start gap-3">
+          <span className="icon-badge">
+            <Settings2 size={18} strokeWidth={1.75} />
+          </span>
           <div>
+            <p className="page-eyebrow">Pipeline</p>
             <h1 className="page-title">三处理器设置</h1>
             <p className="page-desc">
-              语音识别 → 面试思考 → 语音输出，各自独立指派；密钥本地加密。
+              语音识别 → 面试思考 → 语音输出,各自独立指派;密钥本地加密。
             </p>
           </div>
         </div>
       </div>
 
+      {/* Pipeline Overview · 可点击跳转 */}
+      <div className="surface-card mb-6 overflow-hidden">
+        <div className="flex items-center justify-between border-b border-surface-border bg-surface-alt px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <Cpu size={13} className="text-ink-muted" />
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
+              Pipeline Overview
+            </span>
+          </div>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-subtle">
+            点击跳转
+          </span>
+        </div>
+        <div className="grid grid-cols-1 divide-y divide-surface-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          {(Object.keys(STAGE_META) as StageKey[]).map((stage, idx) => {
+            const meta = STAGE_META[stage];
+            const configured = !!configs?.[stage]?.provider;
+            return (
+              <button
+                key={stage}
+                type="button"
+                onClick={() => scrollToStage(stage)}
+                className="group relative flex items-center gap-3 px-5 py-4 text-left transition-colors duration-base ease-google hover:bg-[var(--info-soft)]"
+              >
+                <span className="icon-badge icon-badge-muted transition-colors group-hover:icon-badge-brand">
+                  <meta.icon size={15} strokeWidth={1.75} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[11px] font-semibold text-ink-subtle">
+                      {String(idx + 1).padStart(2, "0")}
+                    </span>
+                    <p className="truncate text-[13px] font-medium text-ink">{meta.title}</p>
+                  </div>
+                  <p className="mt-0.5 truncate text-[11px] text-ink-subtle">{meta.hint}</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className={configured ? "chip chip-green" : "chip chip-gray"}>
+                    {configured ? "已配置" : "未配置"}
+                  </span>
+                  <ArrowRight
+                    size={13}
+                    className="text-ink-subtle transition-transform duration-base group-hover:translate-x-0.5 group-hover:text-[var(--primary)]"
+                  />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-[var(--muted)] py-16 justify-center">
-          <Loader2 className="animate-spin text-[var(--brand)]" size={18} /> 加载设置…
+        <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-ink-muted">
+          <span className="block h-4 w-4 anim-spin rounded-full border-2 border-current border-t-transparent" />
+          加载设置…
         </div>
       ) : loadError ? (
         <LoadError message={loadError} onRetry={loadSettings} />
       ) : configs ? (
-        <div className="space-y-6">
-          <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--brand-softer)]/40 px-4 py-3 text-sm text-[var(--text-secondary)]">
-            管道顺序：语音识别 → 面试思考（文本 LLM）→ 语音输出；各阶段凭证相互独立保存与测试。
+        <div className="space-y-5">
+          <div className="alert alert-info">
+            <KeyRound size={14} className="mt-0.5 shrink-0" />
+            <span className="text-[13px] leading-relaxed">
+              管道顺序:语音识别 → 面试思考(文本 LLM)→ 语音输出;各阶段凭证相互独立保存与测试。
+            </span>
           </div>
 
           {(Object.keys(STAGE_META) as StageKey[]).map((stage) => (
-            <StageSection
-              key={stage}
-              stage={stage}
-              config={configs[stage]}
-              testing={testing === stage}
-              saving={saving === stage}
-              message={messages[stage] || ""}
-              showKey={showKey[stage] || false}
-              testResult={testResults[stage]}
-              onUpdate={(patch) => updateStage(stage, patch)}
-              onUpdateCapabilities={(patch) => updateCapabilities(stage, patch)}
-              onUpdateFallback={(patch) => updateFallback(stage, patch)}
-              onToggleKey={() =>
-                setShowKey((prev) => ({ ...prev, [stage]: !prev[stage] }))
-              }
-              onSave={() => handleSave(stage)}
-              onTest={() => handleTest(stage)}
-            />
+            <div key={stage} id={`stage-${stage}`} className="rounded-lg transition-shadow duration-slow">
+              <StageSection
+                stage={stage}
+                config={configs[stage]}
+                testing={testing === stage}
+                saving={saving === stage}
+                message={messages[stage] || ""}
+                showKey={showKey[stage] || false}
+                testResult={testResults[stage]}
+                onUpdate={(patch) => updateStage(stage, patch)}
+                onUpdateCapabilities={(patch) => updateCapabilities(stage, patch)}
+                onUpdateFallback={(patch) => updateFallback(stage, patch)}
+                onToggleKey={() =>
+                  setShowKey((prev) => ({ ...prev, [stage]: !prev[stage] }))
+                }
+                onSave={() => handleSave(stage)}
+                onTest={() => handleTest(stage)}
+              />
+            </div>
           ))}
         </div>
       ) : null}
@@ -314,56 +383,54 @@ function StageSection({
   const isSpeak = stage === "speak";
 
   return (
-    <section className="surface-card p-5 sm:p-6">
-      <header className="flex items-start justify-between gap-3 mb-5 pb-3 border-b border-[var(--border)]">
+    <section className="surface-card overflow-hidden">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-surface-border bg-surface-alt px-5 py-3.5">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-[var(--brand-softer)] text-[var(--brand)] flex items-center justify-center">
-            <Icon size={16} />
-          </div>
+          <span className="icon-badge icon-badge-brand">
+            <Icon size={15} strokeWidth={1.75} />
+          </span>
           <div>
-            <h2 className="text-[15px] font-semibold tracking-tight">{meta.title}</h2>
-            {meta.hint && <p className="text-xs text-[var(--muted)] mt-0.5">{meta.hint}</p>}
+            <h2 className="text-[14px] font-semibold tracking-tight text-ink">{meta.title}</h2>
+            {meta.hint && (
+              <p className="mt-0.5 text-[11px] text-ink-subtle">{meta.hint}</p>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2">
           {message && (
             <span
-              className={`text-sm font-medium ${
-                message.includes("失败")
-                  ? "text-[var(--danger-ink)]"
-                  : "text-[var(--success-ink)]"
+              className={`text-[12px] font-medium ${
+                message.includes("失败") ? "text-[var(--danger-ink)]" : "text-[var(--success-ink)]"
               }`}
             >
               {message}
             </span>
           )}
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={saving}
-            className="btn-primary"
-          >
-            {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-            保存
-          </button>
-          <button
-            type="button"
-            onClick={onTest}
-            disabled={testing}
-            className="btn-secondary"
-          >
-            {testing ? <Loader2 className="animate-spin" size={16} /> : <Zap size={16} />}
+          <button type="button" onClick={onTest} disabled={testing} className="btn-secondary">
+            {testing ? (
+              <span className="block h-3.5 w-3.5 anim-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <Zap size={13} />
+            )}
             测试
+          </button>
+          <button type="button" onClick={onSave} disabled={saving} className="btn-primary">
+            {saving ? (
+              <span className="block h-3.5 w-3.5 anim-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <Save size={13} />
+            )}
+            保存
           </button>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+      <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
         <Field
           label="供应商名称"
           value={config.provider}
           onChange={(v) => onUpdate({ provider: v })}
-          placeholder="例如：小米 MiMo"
+          placeholder="例如:小米 MiMo"
           className="sm:col-span-2"
         />
         <Field
@@ -376,7 +443,7 @@ function StageSection({
         <div className="sm:col-span-2">
           <label className="field-label">API 格式</label>
           <select
-            className="field-input"
+            className="field-select"
             value={config.protocol}
             onChange={(e) =>
               onUpdate({ protocol: e.target.value as StageConfig["protocol"] })
@@ -394,20 +461,22 @@ function StageSection({
           <label className="field-label">API Key</label>
           <div className="relative">
             <input
-              className="field-input font-mono text-[13px] pr-10"
+              className="field-input pr-10 font-mono text-[13px]"
               type={showKey ? "text" : "password"}
               value={config.api_key || ""}
               onChange={(e) => onUpdate({ api_key: e.target.value })}
-              placeholder={config.has_api_key ? "已配置（留空保持）" : "输入 API Key"}
+              placeholder={config.has_api_key ? "已配置(留空保持)" : "输入 API Key"}
             />
             <button
               type="button"
               onClick={onToggleKey}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--text-primary)]"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
+              aria-label={showKey ? "隐藏密钥" : "显示密钥"}
             >
-              {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
             </button>
           </div>
+          <p className="field-hint">密钥仅保存在本地,从不离开你的设备。</p>
         </div>
 
         <Field
@@ -434,7 +503,7 @@ function StageSection({
             <div>
               <label className="field-label">播报模式</label>
               <select
-                className="field-input"
+                className="field-select"
                 value={String(config.extras.speech_speak_mode || "tts_from_text")}
                 onChange={(e) =>
                   onUpdate({
@@ -463,9 +532,11 @@ function StageSection({
         )}
       </div>
 
-      <div className="mt-4 p-4 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--brand-softer)]/20">
-        <h3 className="text-sm font-medium mb-3">模型能力</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="mx-5 mb-5 rounded-md border border-surface-border bg-surface-alt p-4">
+        <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+          模型能力
+        </h3>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <CapabilityToggle
             label="图片输入"
             checked={config.capabilities.supports_vision}
@@ -490,12 +561,14 @@ function StageSection({
       </div>
 
       {!isReason && (
-        <div className="mt-4 p-4 rounded-[var(--radius)] border border-dashed border-[var(--border)] bg-[var(--muted)]/5">
-          <h3 className="text-sm font-medium mb-3 text-[var(--text-secondary)]">降级处理</h3>
-          <p className="text-xs text-[var(--muted)] mb-3">
-            主模型失败时继续面试：识别默认回退本地 Whisper，播报默认回退 Edge TTS。
+        <div className="mx-5 mb-5 rounded-md border border-dashed border-surface-border p-4">
+          <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+            降级处理
+          </h3>
+          <p className="mb-3 text-[12px] text-ink-muted">
+            主模型失败时继续面试:识别默认回退本地 Whisper,播报默认回退 Edge TTS。
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field
               label="降级处理者"
               value={config.fallback.handler}
@@ -513,13 +586,13 @@ function StageSection({
       )}
 
       {testResult && (
-        <div className={`alert mt-4 ${testResult.success ? "alert-success" : "alert-error"}`}>
+        <div className={`alert mx-5 mb-5 ${testResult.success ? "alert-success" : "alert-error"}`}>
           {testResult.success ? (
-            <CheckCircle size={16} className="mt-0.5 shrink-0" />
+            <CheckCircle size={14} className="mt-0.5 shrink-0" />
           ) : (
-            <XCircle size={16} className="mt-0.5 shrink-0" />
+            <XCircle size={14} className="mt-0.5 shrink-0" />
           )}
-          <span className="text-sm leading-relaxed break-words">{testResult.message}</span>
+          <span className="break-words text-[13px] leading-relaxed">{testResult.message}</span>
         </div>
       )}
     </section>
@@ -539,18 +612,24 @@ function CapabilityToggle({
 }) {
   return (
     <label
-      className={`flex items-center gap-2 text-sm ${
-        disabled ? "text-[var(--muted)] cursor-not-allowed" : "cursor-pointer"
-      }`}
+      className={`flex items-center gap-2 rounded-md border border-surface-border bg-surface-card px-3 py-2 text-[13px] ${
+        checked ? "border-[var(--primary)] bg-[var(--info-soft)] text-[var(--info-ink)]" : "text-ink-muted"
+      } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-[var(--primary)]"}`}
     >
       <input
         type="checkbox"
-        className="rounded border-[var(--border)] text-[var(--brand)] focus:ring-[var(--brand)]"
+        className="h-3.5 w-3.5 rounded border-surface-border text-[var(--primary)] focus:ring-[var(--primary)]"
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />
-      {label}
+      <span className="font-medium">{label}</span>
+      <span
+        className={`ml-auto inline-flex h-1.5 w-1.5 rounded-full ${
+          checked ? "bg-[var(--primary)]" : "bg-[var(--muted-foreground)] opacity-40"
+        }`}
+        aria-hidden
+      />
     </label>
   );
 }

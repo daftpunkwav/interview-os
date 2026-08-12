@@ -20,23 +20,29 @@ export function LoadError({
   }
 
   return (
-    <div className="alert alert-error shadow-sm">
-      <div className="w-9 h-9 rounded-lg bg-[var(--card)]/60 flex items-center justify-center shrink-0">
-        <AlertCircle size={18} className="text-[var(--danger)]" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-semibold">加载失败</p>
-        <p className="mt-1 text-[13px] opacity-90 break-words leading-relaxed">{message}</p>
-        <p className="mt-2 text-xs opacity-70 leading-relaxed">
-          请确认后端已启动（当前配置：
-          <code className="mx-1 px-1.5 py-0.5 rounded bg-[var(--card)]/80 border border-[var(--danger)]/20 font-mono text-[11px] text-[var(--danger-ink)]">
+    <div className="alert alert-error">
+      <span className="icon-badge icon-badge-danger shrink-0">
+        <AlertCircle size={16} strokeWidth={1.75} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-semibold">加载失败</p>
+        <p className="mt-1 break-words text-[13px] leading-relaxed opacity-90">
+          {message}
+        </p>
+        <p className="mt-2 text-[11px] leading-relaxed opacity-70">
+          请确认后端已启动(当前配置:
+          <code className="mx-1 rounded border border-[var(--danger)]/30 bg-surface-card px-1.5 py-0.5 font-mono text-[11px] text-[var(--danger-ink)]">
             {backendHint}
           </code>
-          ）。若刚改过端口，请重启 frontend。
+          )。若刚改过端口,请重启 frontend。
         </p>
         {onRetry && (
-          <button type="button" onClick={onRetry} className="mt-3 btn-secondary !h-9 !text-[var(--danger-ink)] !border-[var(--danger)]/30 hover:!bg-[var(--card)]/70">
-            <RefreshCw size={14} />
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--danger)]/30 bg-surface-card px-3 text-[12px] font-medium text-[var(--danger-ink)] transition-colors hover:bg-surface-alt"
+          >
+            <RefreshCw size={13} />
             重试
           </button>
         )}

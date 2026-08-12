@@ -69,7 +69,7 @@ export function StreamingReveal({
     <div className="relative">
       <MarkdownContent content={visibleContent} className={streaming ? "markdown-streaming" : ""} />
       {streaming && (
-        <span className="inline-block w-1.5 h-4 ml-0.5 bg-brand-500 animate-pulse align-middle rounded-sm" />
+        <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-[var(--primary)] align-middle" />
       )}
     </div>
   );

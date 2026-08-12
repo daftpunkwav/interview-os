@@ -11,7 +11,7 @@ function hostOf(url: string): string {
   }
 }
 
-/** 仅允许 http(s) 链接，防止 javascript:/data: 等危险协议。 */
+/** 仅允许 http(s) 链接,防止 javascript:/data: 等危险协议。 */
 function safeHttpUrl(url: string): string | null {
   try {
     const u = new URL(url);
@@ -24,22 +24,22 @@ function safeHttpUrl(url: string): string | null {
   return null;
 }
 
-/** 面试准备：可点击打开原文的搜索结果卡片。 */
+/** 面试准备:可点击打开原文的搜索结果卡片。 */
 export function SearchResultCards({ groups }: { groups: PrepSearchGroup[] }) {
   const visible = groups.filter((g) => g.results?.length > 0);
   if (visible.length === 0) return null;
 
   return (
-    <div className="mt-3 space-y-3 border-t border-[var(--border)] pt-3">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--muted)] flex items-center gap-1.5">
-        <Search size={12} />
+    <div className="mt-3 space-y-3 border-t border-surface-border pt-3">
+      <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-subtle">
+        <Search size={11} />
         检索来源
       </p>
       {visible.map((group) => (
         <div key={group.query || group.results[0]?.url} className="space-y-1.5">
           {group.query ? (
-            <p className="text-[11px] text-[var(--muted)] truncate" title={group.query}>
-              查询：{group.query}
+            <p className="truncate text-[11px] text-ink-subtle" title={group.query}>
+              查询:{group.query}
             </p>
           ) : null}
           <ul className="space-y-1.5">
@@ -48,22 +48,22 @@ export function SearchResultCards({ groups }: { groups: PrepSearchGroup[] }) {
               const inner = (
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-[var(--brand-deep)] leading-snug line-clamp-2">
+                    <p className="line-clamp-2 text-[13px] font-medium leading-snug text-[var(--info-ink)]">
                       {hit.title}
                     </p>
-                    <p className="text-[11px] text-[var(--muted)] mt-0.5 truncate">
+                    <p className="mt-0.5 truncate text-[11px] text-ink-subtle">
                       {hostOf(hit.url)}
                     </p>
                     {hit.snippet ? (
-                      <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed line-clamp-2">
+                      <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-ink-muted">
                         {hit.snippet}
                       </p>
                     ) : null}
                   </div>
                   {href ? (
                     <ExternalLink
-                      size={14}
-                      className="shrink-0 mt-0.5 text-[var(--muted)]"
+                      size={13}
+                      className="mt-0.5 shrink-0 text-ink-subtle"
                       aria-hidden
                     />
                   ) : null}
@@ -76,12 +76,12 @@ export function SearchResultCards({ groups }: { groups: PrepSearchGroup[] }) {
                       href={href}
                       target="_blank"
                       rel="noopener noreferrer nofollow"
-                      className="block rounded-[var(--radius)] border border-[var(--border)] bg-[var(--background)] px-3 py-2 hover:border-[var(--brand)]/40 hover:bg-[var(--brand-softer)] transition-colors"
+                      className="block rounded-md border border-surface-border bg-surface-alt px-3 py-2 transition-colors hover:border-[var(--primary)] hover:bg-[var(--info-soft)]"
                     >
                       {inner}
                     </a>
                   ) : (
-                    <div className="block rounded-[var(--radius)] border border-[var(--border)] bg-[var(--background)] px-3 py-2">
+                    <div className="block rounded-md border border-surface-border bg-surface-alt px-3 py-2">
                       {inner}
                     </div>
                   )}

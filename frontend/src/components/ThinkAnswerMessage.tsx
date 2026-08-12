@@ -7,15 +7,15 @@ import { splitThinkAnswer, stripToolCallJson } from "@/lib/thinkStream";
 import { cn } from "@/lib/utils";
 
 interface ThinkAnswerMessageProps {
-  /** 原始流式/完整内容（可含 think 标签） */
+  /** 原始流式/完整内容(可含 think 标签) */
   content: string;
   streaming?: boolean;
   className?: string;
 }
 
 /**
- * 准备页助手气泡：
- * - 思考过程默认折叠，可展开
+ * 准备页助手气泡:
+ * - 思考过程默认折叠,可展开
  * - 正式回答走 StreamingReveal 流式渲染
  * - 剥离误流出的 tool JSON
  */
@@ -35,46 +35,46 @@ export function ThinkAnswerMessage({
   }, [content]);
 
   const showThinking = hasThinking || inThinking || thinking.length > 0;
-  // 仍在思考且尚无正式回答时，给用户可见反馈
+  // 仍在思考且尚无正式回答时,给用户可见反馈
   const thinkingOnly = showThinking && !answer && (streaming || inThinking);
 
   return (
-    <div className={cn("space-y-2 min-w-0", className)}>
+    <div className={cn("min-w-0 space-y-2", className)}>
       {showThinking && (
-        <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--popover)] overflow-hidden">
+        <div className="overflow-hidden rounded-md border border-surface-border bg-surface-alt">
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs text-[var(--muted)] hover:bg-[var(--surface-soft)]/60 transition-colors"
+            className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11px] text-ink-muted transition-colors hover:bg-surface-muted"
             aria-expanded={expanded}
           >
             <ChevronRight
-              size={14}
+              size={13}
               className={cn(
-                "shrink-0 transition-transform text-[var(--muted-soft)]",
+                "shrink-0 text-ink-subtle transition-transform",
                 expanded && "rotate-90",
               )}
             />
-            <Brain size={13} className="shrink-0 text-[var(--brand)]" />
-            <span className="font-medium text-[var(--text-secondary)]">
+            <Brain size={12} className="shrink-0 text-[var(--primary)]" />
+            <span className="font-medium text-ink-muted">
               {inThinking && streaming ? "思考中…" : "思考过程"}
             </span>
             {!expanded && thinking && (
-              <span className="truncate text-[var(--muted-soft)] flex-1 min-w-0">
+              <span className="line-clamp-1 min-w-0 flex-1 truncate text-ink-subtle">
                 {thinking.slice(0, 48)}
                 {thinking.length > 48 ? "…" : ""}
               </span>
             )}
             {inThinking && streaming && (
-              <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--brand)] animate-pulse shrink-0" />
+              <span className="ml-auto h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--primary)]" />
             )}
           </button>
           {expanded && (
-            <div className="px-3 pb-2.5 pt-0 border-t border-[var(--border)]">
-              <pre className="mt-2 text-[11px] leading-relaxed text-[var(--muted)] whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">
+            <div className="border-t border-surface-border px-3 pb-2.5 pt-0">
+              <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-ink-subtle">
                 {thinking || (streaming ? "…" : "（无内容）")}
                 {inThinking && streaming && (
-                  <span className="inline-block w-1 h-3 ml-0.5 bg-[var(--muted-soft)] animate-pulse align-middle" />
+                  <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-ink-subtle align-middle" />
                 )}
               </pre>
             </div>
@@ -83,17 +83,17 @@ export function ThinkAnswerMessage({
       )}
 
       {thinkingOnly && !expanded && (
-        <p className="text-xs text-[var(--muted)] flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand)] animate-pulse" />
-          模型思考中，正式回答即将开始…
+        <p className="flex items-center gap-1.5 text-[11px] text-ink-muted">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--primary)]" />
+          模型思考中,正式回答即将开始…
         </p>
       )}
 
       {answer ? (
         <StreamingReveal content={answer} streaming={streaming && !inThinking} />
       ) : streaming && !showThinking ? (
-        <span className="flex items-center gap-2 text-xs text-[var(--muted)]">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand)] animate-pulse" />
+        <span className="flex items-center gap-2 text-[11px] text-ink-muted">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--primary)]" />
           生成中…
         </span>
       ) : null}

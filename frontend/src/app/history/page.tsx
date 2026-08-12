@@ -5,7 +5,6 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import type { InterviewSession } from "@/types";
 import {
-  Loader2,
   ExternalLink,
   BarChart3,
   Clock,
@@ -65,44 +64,48 @@ export default function HistoryPage() {
   );
 
   return (
-    <div className="page-shell">
+    <div className="page-shell anim-rise">
       <div className="page-header">
-        <div className="icon-badge !bg-[#dbeafe] !text-[#0043ad]">
-          <BarChart3 size={20} />
-        </div>
-        <div>
-          <h1 className="page-title">面试记录</h1>
-          <p className="page-desc">回顾每一次模拟面试与报告</p>
+        <div className="flex items-start gap-3">
+          <span className="icon-badge icon-badge-brand">
+            <BarChart3 size={18} strokeWidth={1.75} />
+          </span>
+          <div>
+            <p className="page-eyebrow">History</p>
+            <h1 className="page-title">面试记录</h1>
+            <p className="page-desc">回顾每一次模拟面试与报告</p>
+          </div>
         </div>
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-[var(--muted)] py-16 justify-center">
-          <Loader2 className="animate-spin text-[var(--brand)]" size={18} /> 加载记录…
+        <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-ink-muted">
+          <span className="block h-4 w-4 anim-spin rounded-full border-2 border-current border-t-transparent" />
+          加载记录…
         </div>
       ) : loadError ? (
         <LoadError message={loadError} onRetry={load} />
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-6 items-start">
+        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
           <div className="surface-card overflow-hidden">
-            <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between">
-              <h2 className="text-sm font-semibold tracking-tight">全部场次</h2>
+            <div className="flex items-center justify-between border-b border-surface-border px-4 py-3">
+              <h2 className="text-[13px] font-semibold tracking-tight text-ink">全部场次</h2>
               <span className="chip chip-gray">{stats.total} 场</span>
             </div>
 
             {sessions.length === 0 ? (
               <div className="empty-state !py-14">
                 <div className="empty-state-icon">
-                  <BarChart3 size={24} />
+                  <BarChart3 size={22} />
                 </div>
-                <p className="text-sm mb-4">暂无面试记录</p>
+                <p className="mb-4 text-[13px]">暂无面试记录</p>
                 <Link href="/interview" className="btn-primary !h-9">
-                  <Play size={14} />
+                  <Play size={13} />
                   开始模拟面试
                 </Link>
               </div>
             ) : (
-              <ul className="divide-y divide-[var(--border)]">
+              <ul className="divide-y divide-surface-border">
                 {sessions.map((s) => {
                   const active = selectedId === s.id;
                   return (
@@ -110,25 +113,25 @@ export default function HistoryPage() {
                       <button
                         type="button"
                         onClick={() => setSelectedId(s.id)}
-                        className={`w-full text-left px-4 py-3.5 flex items-start gap-3 transition-colors ${
-                          active ? "bg-[var(--brand-softer)]" : "hover:bg-[var(--surface-muted)]"
+                        className={`flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors ${
+                          active ? "bg-[var(--info-soft)]" : "hover:bg-surface-alt"
                         }`}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-medium text-[var(--foreground)]">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[13px] font-medium text-ink">
                               {s.role} · {s.level}
                             </span>
                             <StatusBadge status={s.status} />
                           </div>
-                          <p className="text-xs text-[var(--muted)] mt-1">
+                          <p className="mt-1 text-[11px] text-ink-subtle">
                             {s.company} · {s.workflow_type} ·{" "}
                             {new Date(s.created_at).toLocaleString("zh-CN")}
                           </p>
                         </div>
                         <div className="shrink-0 text-right">
                           {s.overall_score != null && (
-                            <p className="text-lg font-semibold text-[var(--brand)] tabular-nums leading-none">
+                            <p className="font-mono text-[18px] font-semibold leading-none text-[var(--primary)] num-tabular">
                               {s.overall_score}
                             </p>
                           )}
@@ -141,16 +144,16 @@ export default function HistoryPage() {
             )}
           </div>
 
-          <aside className="xl:sticky xl:top-6 space-y-3">
+          <aside className="space-y-3 xl:sticky xl:top-6">
             <div className="surface-card p-5">
-              <h2 className="text-sm font-semibold mb-3.5 flex items-center gap-2 tracking-tight">
-                <TrendingUp size={15} className="text-[var(--brand)]" />
+              <h2 className="mb-3.5 flex items-center gap-2 text-[13px] font-semibold tracking-tight text-ink">
+                <TrendingUp size={14} className="text-[var(--primary)]" />
                 数据概览
               </h2>
               <div className="grid grid-cols-2 gap-2">
                 <StatCell value={stats.total} label="总场次" />
-                <StatCell value={stats.completed} label="已完成" accent="green" />
-                <StatCell value={stats.active} label="进行中" accent="blue" />
+                <StatCell value={stats.completed} label="已完成" tone="success" />
+                <StatCell value={stats.active} label="进行中" tone="info" />
                 <StatCell value={stats.avgScore ?? "—"} label="平均分" />
               </div>
             </div>
@@ -158,7 +161,9 @@ export default function HistoryPage() {
             <div className="surface-card p-5">
               {selected ? (
                 <>
-                  <h2 className="text-sm font-semibold mb-3.5 tracking-tight">场次详情</h2>
+                  <h2 className="mb-3.5 text-[13px] font-semibold tracking-tight text-ink">
+                    场次详情
+                  </h2>
                   <dl className="space-y-2.5 text-sm">
                     <DetailRow label="岗位" value={`${selected.role} · ${selected.level}`} />
                     <DetailRow label="公司" value={selected.company} />
@@ -172,7 +177,7 @@ export default function HistoryPage() {
                       <DetailRow
                         label="综合评分"
                         value={
-                          <span className="font-semibold text-[var(--brand)] text-base tabular-nums">
+                          <span className="font-mono text-[16px] font-semibold text-[var(--primary)] num-tabular">
                             {selected.overall_score}
                           </span>
                         }
@@ -183,25 +188,25 @@ export default function HistoryPage() {
                     )}
                   </dl>
 
-                  <div className="mt-5 pt-4 border-t border-[var(--border)]">
+                  <div className="mt-5 border-t border-surface-border pt-4">
                     {selected.status === "completed" ? (
                       <Link href={`/report/${selected.id}`} className="btn-primary w-full">
-                        <FileText size={16} />
+                        <FileText size={13} />
                         查看报告
-                        <ExternalLink size={14} />
+                        <ExternalLink size={13} />
                       </Link>
                     ) : selected.status === "active" ? (
                       <Link href={`/interview/${selected.id}`} className="btn-primary w-full">
-                        <Play size={16} />
+                        <Play size={13} />
                         继续面试
                       </Link>
                     ) : (
-                      <p className="text-xs text-[var(--muted)] text-center py-1">该场次尚未开始</p>
+                      <p className="py-1 text-center text-[11px] text-ink-subtle">该场次尚未开始</p>
                     )}
                   </div>
                 </>
               ) : (
-                <p className="text-sm text-[var(--muted)] text-center py-6">选择一条记录查看详情</p>
+                <p className="py-6 text-center text-[13px] text-ink-subtle">选择一条记录查看详情</p>
               )}
             </div>
           </aside>
@@ -214,22 +219,22 @@ export default function HistoryPage() {
 function StatCell({
   value,
   label,
-  accent,
+  tone,
 }: {
   value: string | number;
   label: string;
-  accent?: "green" | "blue";
+  tone?: "success" | "info";
 }) {
   const color =
-    accent === "green"
-      ? "text-[var(--g-green)]"
-      : accent === "blue"
-        ? "text-[var(--brand)]"
-        : "text-[var(--brand)]";
+    tone === "success"
+      ? "text-[var(--success)]"
+      : tone === "info"
+        ? "text-[var(--primary)]"
+        : "text-ink";
   return (
-    <div className="rounded-lg bg-[var(--popover)] py-3 text-center">
-      <p className={`text-xl font-semibold tabular-nums ${color}`}>{value}</p>
-      <p className="text-[11px] text-[var(--muted)] mt-0.5">{label}</p>
+    <div className="kpi-card !p-3">
+      <p className={`kpi-value !text-xl ${color}`}>{value}</p>
+      <p className="kpi-label mt-1">{label}</p>
     </div>
   );
 }
@@ -253,8 +258,10 @@ function StatusBadge({ status }: { status: string }) {
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <span className="text-xs text-[var(--muted)] shrink-0 pt-0.5">{label}</span>
-      <span className="text-right text-[13px] font-medium text-[var(--foreground)]">{value}</span>
+      <span className="shrink-0 pt-0.5 text-[10px] uppercase tracking-[0.08em] text-ink-subtle">
+        {label}
+      </span>
+      <span className="text-right text-[13px] font-medium text-ink">{value}</span>
     </div>
   );
 }
